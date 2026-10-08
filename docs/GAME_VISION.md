@@ -41,6 +41,10 @@ These are **vision items**, not claims about current implementation. The roadmap
 
 The target direction is stylized-realistic and cross-platform: Android, iOS, PC, and browser where the technical and performance trade-offs are acceptable. A browser build is a delivery option, not a promise of identical capabilities or performance on every device.
 
-## Stage 0 boundary
+## Stage 0 boundary (completed)
 
-Stage 0 establishes the repository, technology direction, documentation, a minimal Godot title shell, and a testable read-only API foundation. It does **not** implement gameplay, a production database, authentication, multiplayer, a Nigerian map, a simulated clock, a complete NPC society, or release-ready assets.
+Stage 0 established the repository, technology direction, documentation, a minimal Godot title shell, and a testable read-only API foundation. At the end of that phase there was no gameplay, production database, authentication, multiplayer, Nigerian map, simulated clock, complete NPC society, or release-ready art.
+
+## Stage 1 prototype boundary (current)
+
+Stage 1 adds the implementation of a small local single-player life-simulation slice in the fictional Idera Quarter: student creation, home and family, movement/interactions, school activities, basic needs, inventory, and local JSON save/load. Godot runtime and restart persistence remain unverified in the current workspace. This slice is not the full Nigeria, online play, production data, or the long-term life simulation; see [`DEVELOPMENT_STATUS.md`](DEVELOPMENT_STATUS.md) for verified status.

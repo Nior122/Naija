@@ -2,7 +2,7 @@
 
 ## Status
 
-No production database, migration framework, schema, credentials, or database connection is part of Stage 0. PostgreSQL is the leading future candidate because it is open source, relational constraints fit many authoritative records, and it can evolve toward geospatial needs. Confirm version, hosting, extensions, retention, and backup design before adopting it.
+No production database, migration framework, schema, credentials, or database connection is part of Stage 1. The Godot prototype stores local single-player state in a JSON file; that file is unverified and is not shared or authoritative. PostgreSQL remains the leading future candidate because it is open source, relational constraints fit many authoritative records, and it can evolve toward geospatial needs. Confirm version, hosting, extensions, retention, and backup design before adopting it.
 
 Do not create hundreds of tables from this plan. Add a small schema slice only when a roadmap feature needs it, with migrations, constraints, tests, ownership, and rollback/recovery notes.
 
@@ -54,6 +54,6 @@ A geospatial PostgreSQL extension such as PostGIS may be appropriate for coordin
 
 Physical partitioning must preserve one logical world. Any regional/partition key describes placement or ownership and must not become a user-selected alternate `world_id`. Shared national invariants need a coordinated write path and recovery plan. Replicas and caches serve performance/read availability; define stale-read tolerance and do not allow them to commit conflicting authoritative histories.
 
-## Stage 0 reality check
+## Current reality check
 
-The current API serves a static descriptor from source code. It does not create users, characters, bank accounts, transactions, maps, NPCs, or persisted world state. Its tests verify only HTTP response behavior.
+The Node API serves a static descriptor from source code. It does not create users, characters, bank accounts, transactions, maps, NPCs, or persisted world state. Its tests verify only HTTP response behavior. Separately, the Stage 1 client has a local JSON character save implementation and a restart-test harness, but neither has been runtime-tested; they are not a database or production persistence.

@@ -1,11 +1,11 @@
 # Master Roadmap
 
-The roadmap describes intended development, not completed features. **Only Phase 0 is complete at the end of Stage 0.** Every later phase remains not started until its implementation and verification are recorded in `DEVELOPMENT_STATUS.md`.
+The roadmap describes intended development, not completed features. Phase 0 is complete. Phase 1 has an implementation in the repository but remains in progress until Godot runtime, gameplay, and save/restart verification are recorded in `DEVELOPMENT_STATUS.md`. Later phases remain not started.
 
 | Phase | Name | Purpose | Status |
 |---:|---|---|---|
 | 0 | Game Foundation & Architecture | Establish the repository, chosen stack, modular boundaries, plans, minimal client/API shells, and development checks. | **Complete** |
-| 1 | First Playable Prototype | Build a deliberately small life-simulation slice: create/control a student character, explore one bounded setting, and complete a few understandable interactions. | Not started |
+| 1 | First Playable Prototype | Build a deliberately small life-simulation slice: create/control a student character, explore one bounded setting, and complete a few understandable interactions. | **Implementation present; Godot/runtime verification pending** |
 | 2 | Multiplayer Foundation | Add server-authoritative identity, sessions, synchronization, and persistence for a small test population while retaining one logical world. | Not started |
 | 3 | Nigerian Geography Expansion | Introduce validated administrative geography, place data, coordinates, and a repeatable import/provenance pipeline. | Not started |
 | 4 | Complete Education System | Expand secondary school, universities, polytechnics, vocational study, apprenticeships, school years, and education records. | Not started |
@@ -34,6 +34,8 @@ The roadmap describes intended development, not completed features. **Only Phase
 | 27 | Launch Preparation | Complete operational readiness, privacy/safety review, support, release pipelines, localization, and platform compliance. | Not started |
 | 28 | Full Game | Deliver and operate the integrated life-simulation experience, then continue evolving it responsibly. | Not started |
 
-## Stage 1 exit direction
+## Stage 1 exit gate
 
-Phase 1 should end with a small, testable, single-player vertical slice rather than a broad feature collection. The exact scene and interaction set should be scoped before implementation. A suggested target is one representative school/neighborhood scene, a simple student profile, movement or navigation, and a small number of interactions that demonstrate the life-simulation loop. Use temporary, data-driven content and keep multiplayer, full geography, economy, and production persistence out of scope.
+The Stage 1 scope is a local, single-player 2D life-simulation slice in fictional Idera Quarter: create a 15–16-year-old student, begin in a generated family home, move and interact with NPCs/objects, visit school and complete class activities, manage basic needs/money/inventory, and save locally. The code is present; implementation alone does not complete the phase.
+
+Before marking Phase 1 complete, import and launch the project with Godot 4.7.2, run the domain and movement scripts, run both `save_restart.gd` phases in separate processes, and manually verify the creation-to-school-to-save loop. Record exact results and fix any engine/runtime failures in `DEVELOPMENT_STATUS.md`. Keep multiplayer, full Nigeria geography, accounts, and production persistence out of scope.

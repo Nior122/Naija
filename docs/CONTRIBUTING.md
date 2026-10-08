@@ -20,7 +20,7 @@ Naija: One World is a long-term project. Keep changes small, testable, documente
 
 - Keep domain rules out of UI and transport glue. Clients request actions; authoritative server modules validate them.
 - Add focused tests for changed behavior and update API/schema documentation when contracts change.
-- Do not introduce a database, third-party service, framework, large data import, or platform-specific dependency without a documented reason and a Stage 0/roadmap scope fit.
+- Do not introduce a database, third-party service, framework, large data import, or platform-specific dependency without a documented reason and a fit with the current roadmap phase.
 - Avoid speculative abstractions and empty directories for future systems.
 - Do not silently alter the one-logical-Nigeria invariant, world identity, or persistence semantics.
 - Treat Nigerian cultural/geographic data with provenance, license review, and respectful regional representation.

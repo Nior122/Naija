@@ -4,24 +4,42 @@
 
 Naija: One World is a long-term Nigerian life-simulation game project. The intended game will let players begin as secondary-school students and shape lives across education, work, family, community, culture, public life, and future generations in **one shared logical Nigeria**.
 
-**This repository is currently at Stage 0 — Foundation.** It contains the project architecture and documentation, a tiny Godot launch shell, and a testable read-only Node.js world API foundation. It is not yet a playable game, persistent simulation, or multiplayer service.
+## Current status
 
-## Start here
+The repository now contains a **Stage 1 first-playable-prototype implementation** in Godot, alongside the preserved Stage 0 Node.js/TypeScript world API foundation. The playable slice is deliberately small and single-player. It is not the full country, an online world, multiplayer, or production persistence.
 
-Before changing the project, read [`docs/AI_AGENT_GUIDE.md`](docs/AI_AGENT_GUIDE.md) and [`docs/DEVELOPMENT_STATUS.md`](docs/DEVELOPMENT_STATUS.md). The status file is the source of truth for what exists and what should happen next.
+**Verification caveat:** Godot is not installed in the current development workspace. GDScript formatting/lint checks and the Node API suite have run, but the Godot project has not been imported, launched, or runtime-tested here. In particular, the Godot domain tests and the two-process save/restart test are present but **have not been run**. See [`docs/DEVELOPMENT_STATUS.md`](docs/DEVELOPMENT_STATUS.md) for exact checks and limitations.
 
-## Technology at a glance
+Before changing the project, read [`docs/AI_AGENT_GUIDE.md`](docs/AI_AGENT_GUIDE.md) and [`docs/DEVELOPMENT_STATUS.md`](docs/DEVELOPMENT_STATUS.md). The status file is the source of truth for verified behavior and outstanding work.
 
-- **Game client:** Godot 4.7.2, GDScript. Open source, suitable for a future stylized 3D game, and exports to desktop and mobile; browser delivery is possible with constraints.
-- **Backend foundation:** Node.js 22.22.3 baseline, TypeScript 5.9, Node's built-in HTTP server. This is only a small API shell; it does not own or persist gameplay state yet.
-- **Future persistence direction:** PostgreSQL is the leading candidate, but no database or production schema has been created.
+## Stage 1 prototype slice
 
-See [`docs/TECH_STACK.md`](docs/TECH_STACK.md) for the evaluation and limitations.
+The implementation is designed around a new 15–16-year-old secondary-school student:
+
+- Create a named character with age, character-type, skin-tone, hairstyle, and clothing choices; start in a procedurally generated family/guardian household and home.
+- Explore a small, fictional Nigerian neighbourhood called **Idera Quarter**, drawn from original procedural shapes. Travel between the home, streets, school yard, classroom, market, clinic, police station, and community hall.
+- Move with **WASD** or **arrow keys**, hold **Shift** to run, and press **E** or use the HUD button to interact with nearby people and objects.
+- Talk with family, neighbours, students, teachers, and service NPCs; use a small neighbourhood shop, school timetable, bus stop, clinic, bed, and other reusable interaction targets.
+- Track Naira, hunger, energy, health, inventory, school attendance, subject averages, household/home, and current location; a basic reputation field is present but has no progression rules.
+- Attend short class activities for Mathematics, English, Computer Studies, Biology, and Civic Education. Answers update academic averages and attendance records.
+- Advance a morning/afternoon/evening/night clock. Menus pause the clock. Rest, food, bus travel, movement, and clinic visits affect selected needs or money.
+- Save and load one local character through a versioned JSON save in Godot's `user://` data folder. The implementation also includes autosave hooks and a separate-process restart test harness; **runtime persistence is not yet verified**.
+
+This is a 2D prototype with simple procedural placeholder drawings, not a final art style. It does not use real map data or third-party assets. See [`docs/ASSETS.md`](docs/ASSETS.md).
+
+## Technology
+
+- **Game client:** Godot 4.7.2 + GDScript. The Stage 1 code is local/offline and does not yet call the backend.
+- **Backend foundation:** Node.js 22.22.3 baseline, TypeScript 5.9, Node's built-in HTTP server. It remains read-only and does not own or persist gameplay state.
+- **Future persistence direction:** PostgreSQL is the leading candidate, but there is no database or production schema.
+
+See [`docs/TECH_STACK.md`](docs/TECH_STACK.md) and [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ## Requirements
 
-- Node.js **22.13 or newer in the 22.x line** and npm. The checked-in `.nvmrc` pins the tested environment baseline.
-- Godot **4.7.2 stable** to open and run the client shell.
+- Node.js **22.13 or newer in the 22.x line** and npm for the API checks.
+- Godot **4.7.2 stable** to import, run, or test the game. The binary is not bundled in this repository.
+- Optional: `gdtoolkit` for GDScript formatting/parser/lint checks (`gdformat` and `gdlint`). These checks do not replace Godot engine validation.
 
 ## Run the backend foundation
 
@@ -46,19 +64,19 @@ npm run build
 npm run start
 ```
 
-## Open the game shell
+## Run the game
 
-Open `game/project.godot` with Godot 4.7.2, then run the project. Alternatively, if the `godot` executable is on your `PATH`:
+Open `game/project.godot` with Godot 4.7.2, or run it from the repository root:
 
 ```sh
 godot --path game
 ```
 
-This currently displays a Stage 0 foundation screen only. No gameplay controls or simulation loop exist yet.
+The first screen offers character creation and, when a local save exists, a continue option. The prototype uses generated procedural art and local state only. Engine/runtime behaviour has not yet been verified in this workspace.
 
 ## Development checks
 
-Run from the repository root:
+Run the backend checks from the repository root:
 
 ```sh
 npm run build  # compile the TypeScript API
@@ -67,22 +85,39 @@ npm run lint   # lint the TypeScript source
 npm run check  # lint and test
 ```
 
-The Node checks do not validate/import the Godot project. When Godot is installed, a headless project smoke check can be run with:
+When Godot is installed, run the project import smoke check and Stage 1 tests from the repository root:
 
 ```sh
+godot --headless --editor --path game --quit
 godot --headless --path game --quit
+godot --headless --path game --script res://tests/domain_smoke.gd
+godot --headless --path game --script res://tests/player_movement.gd
+```
+
+The save/restart check must use **two separate Godot processes**; allow the first to exit before starting the second:
+
+```sh
+godot --headless --path game --script res://tests/save_restart.gd -- write
+godot --headless --path game --script res://tests/save_restart.gd -- read
+```
+
+The Godot tests cover character/household creation, age limits, needs, money, inventory, school attendance/performance, interaction targeting, clock progression, domain save/load, movement, bounds, disabled-movement behaviour, and persistence across process restart. They are test scripts, not automated CI jobs, and are not claimed as passing until run with the engine.
+
+If `gdtoolkit` is installed, GDScript static checks are:
+
+```sh
+gdformat --check $(find game -name '*.gd' -print)
+gdlint $(find game -name '*.gd' -print)
 ```
 
 ## Repository layout
 
 ```text
-game/                       Godot client shell
-services/world-api/         Minimal read-only TypeScript API
+game/                       Godot client, prototype scripts, and GDScript test harnesses
+services/world-api/         Minimal read-only TypeScript API foundation
 docs/                       Vision, plans, architecture, status, and agent guidance
 .github/workflows/          Automated Node foundation checks
 ```
-
-Future domains should be introduced as small, testable modules only when their roadmap phase begins. Do not create empty scaffolding for every future system.
 
 ## Project documents
 
@@ -94,10 +129,11 @@ Future domains should be introduced as small, testable modules only when their r
 - [Database plan](docs/DATABASE_PLAN.md)
 - [Multiplayer plan](docs/MULTIPLAYER_PLAN.md)
 - [World and time plan](docs/WORLD_PLAN.md)
+- [Asset and licensing notes](docs/ASSETS.md)
 - [Security plan](docs/SECURITY_PLAN.md)
 - [Contributing](docs/CONTRIBUTING.md)
 - [AI agent guide](docs/AI_AGENT_GUIDE.md)
 
-## Project status
+## Scope boundary
 
-Stage 0 is the only completed roadmap phase. See [`docs/ROADMAP.md`](docs/ROADMAP.md) for all planned phases and [`docs/DEVELOPMENT_STATUS.md`](docs/DEVELOPMENT_STATUS.md) for verified implementation details and limitations.
+Stage 1 introduces only the first small life-simulation slice. The single logical Nigeria architecture remains unchanged, but no full-country geography, account/authentication flow, multiplayer, backend gameplay integration, production persistence, or large-scale NPC simulation has been added. The next step is to run and verify the Godot project and all of its tests before extending the prototype toward Stage 2.

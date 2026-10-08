@@ -6,11 +6,11 @@ There is **one logical Nigeria**: one canonical world identity, one shared natio
 
 The eventual infrastructure may use many processes, regions, simulation workers, database partitions, queues, replicas, and caches. Those are slices of one implementation, not separate game worlds.
 
-## Stage 0 state
+## Current prototype state (Stage 1)
 
-- No accounts, authentication, player sessions, client/server game connection, multiplayer transport, synchronization, persistence, or anti-cheat exists.
+- No accounts, authentication, online player sessions, client/server game connection, multiplayer transport, synchronization, server persistence, or anti-cheat exists.
 - The read-only API returns a static descriptor with logical ID `nigeria-main`; it does not host or simulate Nigeria.
-- The Godot client is a static foundation screen and does not call the API.
+- The Godot client is a local single-player prototype and does not call the API. Its versioned JSON save is client-local, non-authoritative, and not runtime-verified; it is not shared-world persistence.
 
 ## Future authority and command flow
 
@@ -51,4 +51,4 @@ Begin with a small controlled multiplayer prototype; test many simulated clients
 
 ## Security and safety
 
-Authentication, authorization, server validation, anti-cheat, economy protection, abuse controls, moderation, reporting, audit logs, privacy boundaries, backups, and disaster recovery are mandatory design work before public multiplayer. See `SECURITY_PLAN.md`. They are not implemented in Stage 0.
+Authentication, authorization, server validation, anti-cheat, economy protection, abuse controls, moderation, reporting, audit logs, privacy boundaries, backups, and disaster recovery are mandatory design work before public multiplayer. See `SECURITY_PLAN.md`. They are not implemented for online play in Stage 1.

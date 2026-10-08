@@ -24,7 +24,7 @@ Names, administrative boundaries, and jurisdiction may change over time. Preserv
 - Build a repeatable import pipeline with source URL/provider, license/attribution, retrieval date, version, validation, transformation, and reconciliation logs.
 - Validate jurisdiction nesting, invalid geometries, duplicate/renamed places, missing coordinates, and coverage before publishing an import.
 - Use datasets whose terms permit the intended commercial/non-commercial use and modification. Review local geography and legal constraints with appropriate experts.
-- Start with a small bounded test area when Phase 1/3 begins. Do **not** download or process all Nigerian geography in Stage 0. Do not commit country-scale datasets or generated map tiles to Git.
+- Stage 1 uses a small bounded fictional area, Idera Quarter, drawn procedurally; it is not real geographic data. Keep this prototype scope small. Do **not** download or process all Nigerian geography for Stage 1, and do not commit country-scale datasets or generated map tiles to Git.
 
 A spatial database extension may later help with geographic queries, but it is a technology decision for a real import/query prototype, not a current dependency.
 
@@ -46,7 +46,7 @@ Use a monotonic/process-safe time source for measuring elapsed server time and U
 
 ## Offline progression and catch-up
 
-World time and selected systems must progress while an individual player is offline. The server records a canonical time anchor/configuration and advances shared time independently of connected clients. On restart or after missed worker intervals, compute elapsed time from durable state and process scheduled work in bounded, resumable batches.
+For the future shared simulation, world time and selected systems must progress while an individual player is offline. The Stage 1 local prototype is an explicit exception: its simple day/minute clock advances only during active play, pauses with menus, is stored in the local save, and does not progress while the app is closed. It has no server time anchor or offline catch-up. The future server should record a canonical time anchor/configuration and process scheduled work in bounded, resumable batches.
 
 Do not simulate every NPC every second. Use event scheduling and aggregate/cohort updates for low-priority populations, while preserving exact rules for important player-facing deadlines and economic/legal transactions. Define idempotency, ordering, pause/maintenance behavior, maximum catch-up work, and recovery checkpoints so a long outage does not duplicate or skip irreversible events.
 
@@ -60,4 +60,4 @@ Before implementation, specify and test:
 - Which updates are exact events versus aggregate approximations, and which require player notification.
 - Clock ownership, failover, snapshots, ordering, and acceptable drift between physical workers.
 
-Stage 0 implements no clock, calendar, weather, geography, or offline progression.
+Stage 1 implements only a local prototype clock and procedural fictional locations. It has no full calendar, weather, real geography, shared/authoritative time, or offline progression. Those remain future systems.

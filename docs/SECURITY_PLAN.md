@@ -1,6 +1,6 @@
 # Security and Safety Plan
 
-Security and player safety are foundational constraints, but Stage 0 implements only a static read-only API. There is no authentication, authorization, database, player content, public multiplayer, or anti-cheat system yet.
+Security and player safety are foundational constraints. Stage 1 adds local single-player character data and a user:// JSON save, but this is an unverified prototype and is not encrypted, authenticated, authoritative, or shared. The Node API remains a static read-only foundation. There is no authentication, authorization, production database, public multiplayer, or anti-cheat system.
 
 ## Requirements before multiplayer or valuable state
 
@@ -15,11 +15,12 @@ Security and player safety are foundational constraints, but Stage 0 implements 
 - **Backups and recovery:** encrypted, access-controlled backups; tested restore procedures; recovery objectives, migration recovery, incident response, and documented ownership.
 - **Privacy and data minimization:** collect only what is needed; classify data; control access/retention/export/deletion; consider legal duties and minors' safety. Sensitive life, message, justice, and identity data need stronger controls.
 
-## Stage 0 controls
+## Existing API controls (Stage 0 foundation)
 
 - The API has no write route; non-GET methods return `405`.
 - Responses use JSON, `Cache-Control: no-store`, and `X-Content-Type-Options: nosniff`.
 - No credentials or secret values are required. Local `.env` files and common credential files are ignored by Git.
 - The world descriptor is static metadata; it does not expose personal data or authoritative simulation state.
+- The Stage 1 save is local user data only. Treat it as user-controlled and potentially damaged; do not store authentication secrets or use its values as online authority. Save/load has not been runtime-tested in the current workspace.
 
 These controls are not a substitute for production security review. Before public exposure, add HTTPS at the deployment boundary, security headers appropriate to the full client, request logging without sensitive data, rate limiting, dependency review, threat modeling, and operational monitoring.

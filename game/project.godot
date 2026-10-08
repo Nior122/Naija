@@ -1,20 +1,19 @@
-; Godot 4 project for the Naija: One World client shell.
-; This project intentionally contains only a Stage 0 title/foundation scene.
+; Godot 4 project for the Naija: One World first playable prototype.
 config_version=5
 
 [application]
 
 config/name="Naija: One World"
-config/description="Foundation shell for a persistent Nigerian life simulation."
-run/main_scene="res://scenes/main.tscn"
+config/description="A small first playable life-simulation prototype set in a fictional Nigerian neighbourhood."
+run/main_scene="res://scenes/prototype.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 
 [display]
 
 window/size/viewport_width=1280
-window/size/viewport_height=720
+window/size/viewport_height=800
 window/size/window_width_override=1280
-window/size/window_height_override=720
+window/size/window_height_override=800
 window/stretch/mode="canvas_items"
 
 [rendering]
