@@ -4,11 +4,14 @@ extends Node2D
 const MAP_SIZE: Vector2 = Vector2(1600.0, 900.0)
 const ENTITY_SCRIPT = preload("res://scripts/world/world_entity.gd")
 const GEOGRAPHIC_REGION_SCRIPT = preload("res://scripts/world/geographic_region_preview.gd")
+const EducationServiceScript = preload("res://scripts/domain/education_service.gd")
 const LOCATION_NAMES: Dictionary = {
 	"town": "Idera Quarter · Streets",
 	"home": "Family home · Living area and bedroom",
 	"schoolyard": "Idera Community Secondary School · Yard",
 	"classroom": "Idera Community Secondary School · Classroom",
+	"campus": "Idera tertiary campus · Fictional institutions",
+	"training_center": "Idera Community Skills Centre · Workshops",
 	"market": "Neighbourhood market · Small shop",
 	"clinic": "Community clinic",
 	"police_station": "Neighbourhood police station",
@@ -99,6 +102,10 @@ func enter_location(next_location: String, family_data: Dictionary) -> void:
 			_populate_schoolyard()
 		"classroom":
 			_populate_classroom()
+		"campus":
+			_populate_campus()
+		"training_center":
+			_populate_training_center()
 		"market":
 			_populate_market()
 		"clinic":
@@ -384,6 +391,22 @@ func _populate_schoolyard() -> void:
 		{"location": "classroom", "spawn": Vector2(260.0, 650.0)}
 	)
 	_add_object(
+		"tertiary-campus-gate",
+		"Tertiary campus gate",
+		Vector2(1400.0, 550.0),
+		"travel",
+		"Enter the campus for your enrolled program",
+		{"location": "campus", "spawn": Vector2(260.0, 650.0)}
+	)
+	_add_object(
+		"community-skills-centre",
+		"Community skills centre",
+		Vector2(1400.0, 690.0),
+		"travel",
+		"Enter the skills centre for training",
+		{"location": "training_center", "spawn": Vector2(260.0, 650.0)}
+	)
+	_add_object(
 		"yard-timetable",
 		"Notice board",
 		Vector2(530.0, 390.0),
@@ -391,23 +414,37 @@ func _populate_schoolyard() -> void:
 		"Read today's school timetable",
 		{}
 	)
+	_add_object(
+		"school-assembly",
+		"Morning assembly",
+		Vector2(420.0, 390.0),
+		"education_activity",
+		"Join a scheduled school activity",
+		{"activity_id": "morning-assembly"}
+	)
+	_add_object(
+		"school-club",
+		"School club",
+		Vector2(670.0, 390.0),
+		"education_activity",
+		"Join a scheduled school activity",
+		{"activity_id": "school-club"}
+	)
 	_add_npc("teacher-yard", "Mr. Okafor", Vector2(770.0, 530.0), "teacher")
-	_add_npc(
-		"student-yard",
-		"Aisha",
-		Vector2(480.0, 560.0),
-		"student",
-		Rect2(Vector2(380.0, 460.0), Vector2(360.0, 155.0)),
-		true
-	)
-	_add_npc(
-		"student-yard-tunde",
-		"Tunde",
-		Vector2(650.0, 590.0),
-		"student",
-		Rect2(Vector2(380.0, 460.0), Vector2(360.0, 155.0)),
-		true
-	)
+	var npc_students: Array = EducationServiceScript.catalog().get("npc_students", [])
+	var positions: Array[Vector2] = [
+		Vector2(480.0, 560.0), Vector2(650.0, 590.0), Vector2(550.0, 520.0)
+	]
+	for index in range(mini(3, npc_students.size())):
+		var student: Dictionary = npc_students[index]
+		_add_npc(
+			str(student.get("id", "student-yard-%d" % index)),
+			str(student.get("name", "Student")),
+			positions[index],
+			"student",
+			Rect2(Vector2(380.0, 460.0), Vector2(360.0, 155.0)),
+			true
+		)
 
 
 func _populate_classroom() -> void:
@@ -438,6 +475,95 @@ func _populate_classroom() -> void:
 	_add_npc("teacher-classroom", "Mr. Okafor", Vector2(800.0, 350.0), "teacher")
 	_add_npc("student-classroom", "Aisha", Vector2(610.0, 500.0), "student")
 	_add_npc("student-classroom-tunde", "Tunde", Vector2(1050.0, 520.0), "student")
+
+
+func _populate_campus() -> void:
+	_add_object(
+		"campus-exit",
+		"Campus gate",
+		Vector2(180.0, 650.0),
+		"travel",
+		"Return to the school yard",
+		{"location": "schoolyard", "spawn": Vector2(1370.0, 550.0)}
+	)
+	_add_object(
+		"campus-course-desk",
+		"Course desk",
+		Vector2(820.0, 560.0),
+		"begin_course",
+		"Attend the next course assessment",
+		{}
+	)
+	_add_object(
+		"campus-program-board",
+		"Program board",
+		Vector2(1020.0, 300.0),
+		"education_panel",
+		"Review your program and semester",
+		{}
+	)
+	var teachers: Array = EducationServiceScript.catalog().get("teachers", [])
+	for teacher in teachers:
+		if (
+			str(teacher.get("institution_id", ""))
+			in [
+				"idera_metropolitan_university",
+				"idera-technical-polytechnic",
+				"idera-college-of-education"
+			]
+		):
+			_add_npc(
+				"campus-" + str(teacher.get("id", "tutor")),
+				str(teacher.get("name", "Lecturer")),
+				Vector2(790.0, 390.0),
+				"teacher"
+			)
+			break
+	var npc_students: Array = EducationServiceScript.catalog().get("npc_students", [])
+	for index in range(mini(2, npc_students.size())):
+		var student: Dictionary = npc_students[index]
+		_add_npc(
+			"campus-" + str(student.get("id", "student-%d" % index)),
+			str(student.get("name", "Student")),
+			Vector2(610.0 + float(index) * 320.0, 500.0),
+			"student"
+		)
+
+
+func _populate_training_center() -> void:
+	_add_object(
+		"training-centre-exit",
+		"Skills centre exit",
+		Vector2(180.0, 650.0),
+		"travel",
+		"Return to the school yard",
+		{"location": "schoolyard", "spawn": Vector2(1370.0, 690.0)}
+	)
+	_add_object(
+		"training-practice-bench",
+		"Practice workshop",
+		Vector2(820.0, 560.0),
+		"practice_training",
+		"Complete a practical training session",
+		{}
+	)
+	_add_object(
+		"training-course-board",
+		"Skills course board",
+		Vector2(1020.0, 300.0),
+		"education_panel",
+		"Review your trade or apprenticeship",
+		{}
+	)
+	for teacher in EducationServiceScript.catalog().get("teachers", []):
+		if str(teacher.get("institution_id", "")) == "idera-community-skills-centre":
+			_add_npc(
+				"training-" + str(teacher.get("id", "mentor")),
+				str(teacher.get("name", "Community mentor")),
+				Vector2(790.0, 390.0),
+				"teacher"
+			)
+			break
 
 
 func _populate_market() -> void:
@@ -526,6 +652,18 @@ func _draw() -> void:
 			_draw_schoolyard()
 		"classroom":
 			_draw_classroom()
+		"campus":
+			_draw_public_room(
+				Color("#dce8e0"),
+				"IDERA TERTIARY CAMPUS",
+				"Fictional university, ND / HND polytechnic and NCE study"
+			)
+		"training_center":
+			_draw_public_room(
+				Color("#e2d6bc"),
+				"COMMUNITY SKILLS CENTRE",
+				"Fictional vocational practice and mentored apprenticeship"
+			)
 		"market":
 			_draw_market()
 		"clinic":

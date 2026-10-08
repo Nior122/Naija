@@ -1,6 +1,7 @@
 class_name CharacterState
 extends RefCounted
 
+const EducationServiceScript = preload("res://scripts/domain/education_service.gd")
 const STARTING_MONEY: int = 5000
 const STARTING_SCORES: Dictionary = {
 	"Mathematics": 72,
@@ -28,6 +29,7 @@ var position: Vector2 = Vector2(720.0, 540.0)
 var inventory: Array[Dictionary] = []
 var academic_scores: Dictionary = {}
 var attendance: Array[Dictionary] = []
+var education_record: Dictionary = {}
 var reputation: int = 0
 var household: Dictionary = {}
 var geographic_location: Dictionary = {}
@@ -70,6 +72,8 @@ func create_new(
 	add_item("uniform", "School uniform", 1, "clothing")
 	academic_scores = STARTING_SCORES.duplicate(true)
 	attendance.clear()
+	education_record = EducationServiceScript.create_student_record(character_id, age, 1)
+	EducationServiceScript.sync_legacy_character(self)
 	reputation = 0
 	created_at = now
 	updated_at = now
@@ -185,6 +189,7 @@ func to_dictionary() -> Dictionary:
 		"inventory": inventory.duplicate(true),
 		"academic_scores": academic_scores.duplicate(true),
 		"attendance": attendance.duplicate(true),
+		"education_record": education_record.duplicate(true),
 		"reputation": reputation,
 		"household": household.duplicate(true),
 		"geographic_location": geographic_location.duplicate(true),
@@ -232,6 +237,18 @@ func load_dictionary(data: Dictionary) -> void:
 		for record in raw_attendance:
 			if record is Dictionary:
 				attendance.append(record.duplicate(true))
+	var raw_education: Variant = data.get("education_record", {})
+	if (
+		raw_education is Dictionary
+		and EducationServiceScript._record_shape_is_valid(raw_education)
+		and str(raw_education.get("character_id", "")) == character_id
+		and str(raw_education.get("student_id", "")) == "student-" + character_id
+	):
+		education_record = raw_education.duplicate(true)
+	else:
+		education_record = EducationServiceScript.migrate_legacy_record(
+			character_id, age, school_id, academic_scores, attendance, 1
+		)
 	reputation = int(data.get("reputation", 0))
 	var raw_household: Variant = data.get("household", {})
 	household = raw_household.duplicate(true) if raw_household is Dictionary else {}
@@ -241,6 +258,7 @@ func load_dictionary(data: Dictionary) -> void:
 	)
 	created_at = str(data.get("created_at", _timestamp()))
 	updated_at = str(data.get("updated_at", _timestamp()))
+	EducationServiceScript.sync_legacy_character(self)
 
 
 static func _new_id(prefix: String) -> String:

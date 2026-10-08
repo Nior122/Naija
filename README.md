@@ -6,11 +6,11 @@ Naija: One World is a long-term Nigerian life-simulation game project. The inten
 
 ## Current status
 
-The repository preserves the Stage 0 Node/TypeScript API, the Stage 1 offline Godot prototype, and the Stage 2 multiplayer foundation; **Stage 3 geography expansion is now implemented as a bounded, license-aware foundation**. The single logical world keeps the canonical ID `nigeria-main`. Stage 1 local play and saves remain separate from optional online play.
+The repository preserves the Stage 0 Node/TypeScript API, Stage 1 offline Godot prototype, Stage 2 multiplayer foundation, and Stage 3 bounded geography; **Stage 4 adds a data-driven Nigerian education progression** to the same `nigeria-main` world. Local play/save files remain separate from online player authority and JSON state.
 
-Stage 3 includes a canonical registry for 36 states plus FCT and 774 LGAs, a reproducible geographic import pipeline, and a small 200-feature OpenStreetMap preview sample for Akure South, Ondo State. The sample can be toggled in the existing outdoor prototype; it is not full city, LGA, state, or national coverage. On the current tree, the backend TypeScript build/lint and all 18 Node tests pass, as do the deterministic geography import checks. **Godot is not installed in the current workspace**, so rendering, input, local save/load, and the Godot client integration remain unverified in-engine. See [`docs/DEVELOPMENT_STATUS.md`](docs/DEVELOPMENT_STATUS.md) for exact results and limitations.
+Stage 3 includes a canonical registry for 36 states plus FCT and 774 LGAs, a reproducible geographic import pipeline, and a small 200-feature OpenStreetMap preview sample for Akure South, Ondo State. The sample is not full city, LGA, state, or national coverage. Stage 4 includes configurable JSS1–JSS3/SS1–SS3 schooling, subjects, timetable/attendance, weighted assessment/progression, a fictional senior certificate examination, fictional university/ND/HND/vocational/apprenticeship pathways, scholarships, persistent student history, and online server authority. The current backend lint/build and 26 Node tests pass; focused education tests and the deterministic geography check pass. GDScript formatting passes, while static GDScript lint has four structural warnings. **Godot is not installed in the current workspace**, so engine import, offline/online education gameplay, UI, and client save/runtime behavior remain unverified. See [`docs/DEVELOPMENT_STATUS.md`](docs/DEVELOPMENT_STATUS.md) for exact results and limits.
 
-This is not the complete Nigeria simulation, production online service, account system, national visual build, or Stage 4 education system. Stage 1/2 game content remains prototype scope.
+Institutions, education rules, fee amounts, coordinates and all assessment content are fictional prototype data—not official curriculum, admission, accreditation or fee guidance. The senior exam uses original content and is not affiliated with WAEC/NECO. Stage 4 is not a production service or the complete Nigeria simulation.
 
 ## Stage 1 — first playable slice (retained)
 
@@ -46,11 +46,19 @@ Stage 3 extends the existing Idera/Stage 2 architecture; it does not split Niger
 
 Data provenance, exact upstream commits, license treatment, attribution and coordinate caveats are recorded in [`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md). The processed assets are small; the full upstream preview and any country-scale extracts are not committed.
 
+## Stage 4 — Complete Nigerian Education System
+
+Education is a persistent progression in the existing world, not a detached menu. A student's record connects secondary enrollment, school-year and term progression, chosen subjects, timetable, classroom attendance, original assessments, results, final-secondary exam eligibility, tertiary/trade study, skill history, funding and qualifications to the existing character, clock, family/money, school/campus locations, geography, saves and online multiplayer authority.
+
+The shared fictional catalog lives at [`game/data/education/catalog.json`](game/data/education/catalog.json). It configures the six JSS/SS years, twelve subjects, fictional assessments/schools/institutions, separate ND/HND pathways, fees, scholarships and vocational/apprenticeship trades. The offline Godot UI/domain and online TypeScript server use the catalog; online education outcomes are server-owned and part of the existing character snapshot/persistence. The Godot client path has not been engine-tested in this workspace.
+
+Read [`docs/EDUCATION_PLAN.md`](docs/EDUCATION_PLAN.md) for detailed implemented scope, persistence/migration contracts, test evidence, data boundaries and remaining runtime verification. The system does not include full employment/careers, banking/economy, government education policy, official examination/admission rules, protected examination content, or automatic age progression.
+
 ## Technology
 
 - **Game client:** Godot 4.7.2 + GDScript. Offline play remains available; optional multiplayer uses Godot's `WebSocketPeer`.
 - **World API/server:** Node.js 22.x + strict TypeScript, HTTP endpoints, and the `ws` WebSocket library.
-- **Prototype persistence:** atomically replaced local JSON file, configurable with `DATA_FILE`; no database is configured. PostgreSQL remains a future candidate only.
+- **Prototype persistence:** atomically replaced single-process online JSON state file, configurable with `DATA_FILE`, plus a separate versioned local Godot save. Education records are nested in the relevant character save; the fictional catalog remains static repository data. No database is configured; PostgreSQL remains a future candidate only.
 - **Canonical logical world:** `nigeria-main`; this is not a player-selectable shard.
 
 See [`docs/TECH_STACK.md`](docs/TECH_STACK.md), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), and [`docs/MULTIPLAYER_PLAN.md`](docs/MULTIPLAYER_PLAN.md).
@@ -129,8 +137,9 @@ From the repository root:
 ```sh
 npm run build  # compile TypeScript
 npm run lint   # ESLint
-npm test       # build and run Node HTTP/WebSocket plus geography pipeline tests
-npm run check  # lint plus tests
+npm test       # build and run Node HTTP/WebSocket, education, and geography tests
+npm run check  # lint plus the complete test suite
+node --test services/world-api/test/education.test.mjs  # focused Stage 4 education tests (build first)
 npm run geography:import  # regenerate the deterministic processed geography catalog
 npm run geography:check   # verify that processed outputs match pinned source files
 ```
@@ -158,13 +167,13 @@ gdformat --check $(find game -name '*.gd' -print)
 gdlint $(find game -name '*.gd' -print)
 ```
 
-The automated tests cover retained HTTP behavior, two-client legacy and geographic presence/movement/chat/interaction, nearby-chunk filtering, geography import validation and coordinate/chunk invariants, server-side payload validation and rate limits, request-ID idempotency, identity recovery, character/session persistence through API restart, shared clock rollover, and WebSocket `Origin` rejection. They do not exercise Godot rendering/input, browser exports, local Godot save/load, or actual client reconnect UI.
+The automated tests cover the Stage 4 education lifecycle and persistence, original final-exam eligibility/outcomes, university/ND/HND/vocational/apprenticeship paths, scholarships, geography integration and online schoolyard co-presence/attendance alongside retained HTTP, legacy/geographic multiplayer, movement/chat/interaction, importer/coordinate/chunk, payload/rate-limit, identity-recovery, API-restart, clock and WebSocket-origin regressions. They do not exercise Godot rendering/input, browser exports, offline client save/load, education UI, or the actual Godot reconnect flow.
 
 ## Repository layout
 
 ```text
-game/                       Godot Stage 1/2 prototype, Stage 3 preview, geography data
-services/world-api/         HTTP API, WebSocket authority, geography catalog, tests
+game/                       Godot life prototype, Stage 3 map preview, Stage 4 education, data
+services/world-api/         HTTP/WebSocket authority, geography and education domains, tests
 tools/geography/            Deterministic bounded-feature extraction/import tools
 docs/                       Vision, plans, architecture, status, and agent guidance
 .github/workflows/          Node/TypeScript foundation checks
@@ -178,6 +187,7 @@ docs/                       Vision, plans, architecture, status, and agent guida
 - [Development status](docs/DEVELOPMENT_STATUS.md)
 - [Technology stack](docs/TECH_STACK.md)
 - [Database plan](docs/DATABASE_PLAN.md)
+- [Stage 4 education plan](docs/EDUCATION_PLAN.md)
 - [Multiplayer plan](docs/MULTIPLAYER_PLAN.md)
 - [World and time plan](docs/WORLD_PLAN.md)
 - [Geographic data sources and licenses](docs/DATA_SOURCES.md)
@@ -188,4 +198,4 @@ docs/                       Vision, plans, architecture, status, and agent guida
 
 ## Scope boundary
 
-Stage 3 adds a national administrative registry and one bounded Akure South map-data sample, not full national geography or simulation. Preserve one logical Nigeria; do not split the prototype into separately authoritative regional worlds. Stage 4 — Complete Education System has not started. Full national visual detail, accounts, production database/operations, comprehensive anti-cheat/moderation, advanced NPC simulation, transport/weather simulation, and cross-platform client exports remain future work.
+Stage 3 provides a national administrative registry and one bounded Akure South map-data sample, not full national geography or simulation. Stage 4 implements the prototype education progression described above; its Node/backend tests pass, but Godot runtime/UI/save integration remains unverified until Godot 4.7.2 is available. Preserve one logical Nigeria; do not split the prototype into separately authoritative regional worlds. **Next roadmap stage: Stage 5 — Age & Life Simulation.** It remains not started and is gated on the Stage 4 verification work. Full national visual detail, accounts, production database/operations, comprehensive anti-cheat/moderation, advanced NPC simulation, transport/weather simulation, and cross-platform client exports remain future work.

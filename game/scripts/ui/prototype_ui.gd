@@ -13,9 +13,11 @@ signal answer_requested(answer_index: int, quiz_id: String)
 signal purchase_requested(item_id: String)
 signal consume_requested(item_id: String)
 signal attend_requested
+signal education_action_requested(action: String, payload: Dictionary)
 signal modal_changed(is_open: bool)
 
 const SCHOOL_SERVICE = preload("res://scripts/domain/school_service.gd")
+const EducationServiceScript = preload("res://scripts/domain/education_service.gd")
 const SKIN_TONES: Array[Dictionary] = [
 	{"label": "Warm brown", "hex": "#9b654d"},
 	{"label": "Deep brown", "hex": "#70452f"},
@@ -44,6 +46,7 @@ var _chat_history: Array[String] = []
 var _chat_input: LineEdit
 var _showing_chat: bool = false
 var _quiz_id: String = ""
+var _quiz_mode: String = "school"
 
 
 func _ready() -> void:
@@ -169,7 +172,7 @@ func show_game(character: CharacterState, clock: WorldClock, location_name: Stri
 	content.add_child(menu_grid)
 	_add_menu_button(menu_grid, "Character", "profile")
 	_add_menu_button(menu_grid, "Inventory", "inventory")
-	_add_menu_button(menu_grid, "School", "school")
+	_add_menu_button(menu_grid, "Education", "school")
 	_add_menu_button(menu_grid, "Nearby chat", "chat")
 	_add_menu_button(menu_grid, "Save / Load", "save")
 	_add_menu_button(menu_grid, "Settings", "settings")
@@ -257,23 +260,375 @@ func show_inventory(character: CharacterState, message: String = "") -> void:
 	_add_modal_close(card)
 
 
-func show_timetable(character: CharacterState, clock: WorldClock, current_location: String) -> void:
-	var card := _open_modal("School day", "Idera Community Secondary School · Prototype timetable")
-	_add_modal_text(card, "Current time: Day %d · %s" % [clock.day, clock.time_label()])
-	for lesson in SCHOOL_SERVICE.timetable():
-		var subject := str(lesson["subject"])
-		var status := ""
-		if subject == "Break":
-			status = "  ·  break"
-		else:
-			status = (
-				"  ·  attended" if _attended(character, clock.day, subject) else "  ·  upcoming"
-			)
-		_add_modal_text(card, "%s  —  %s%s" % [str(lesson["time"]), subject, status])
-	_add_modal_text(card, "Your current academic averages:")
-	for subject in character.academic_scores.keys():
+func show_education(
+	character: CharacterState, clock: WorldClock, current_location: String, is_online: bool = false
+) -> void:
+	var record: Dictionary = character.education_record
+	var data: Dictionary = EducationServiceScript.catalog()
+	var school: Dictionary = _catalog_item(
+		data.get("institutions", []), str(record.get("school_id", ""))
+	)
+	var class_data: Dictionary = _catalog_item(
+		data.get("school_years", []), str(record.get("current_class_id", ""))
+	)
+	var attendance: Dictionary = EducationServiceScript.attendance_summary(
+		record, int(record.get("academic_year", 1)), int(record.get("term", 1))
+	)
+	var card := _open_modal(
+		"Education & pathways",
+		"Fictional, configurable learning progression in the shared Nigeria world"
+	)
+	if is_online:
 		_add_modal_text(
-			card, "%s: %d / 100" % [str(subject), int(character.academic_scores[subject])]
+			card,
+			"Online education records and clock changes are validated and saved by the shared server."
+		)
+	_add_modal_text(
+		card,
+		(
+			"%s · %s · Academic year %d, term %d/%d"
+			% [
+				str(school.get("name", "School")),
+				str(class_data.get("label", record.get("current_class_id", "SS1"))),
+				int(record.get("academic_year", 1)),
+				int(record.get("term", 1)),
+				int(data.get("calendar", {}).get("terms_per_academic_year", 3))
+			]
+		)
+	)
+	_add_modal_text(
+		card,
+		(
+			"Status: %s · Current-term attendance: %d%% (%d/%d)"
+			% [
+				str(record.get("progression_status", "active")).replace("_", " ").capitalize(),
+				int(attendance.get("percent", 0)),
+				int(attendance.get("attended", 0)),
+				int(attendance.get("scheduled", 0))
+			]
+		)
+	)
+	_add_modal_text(card, "Subjects: %s" % ", ".join(EducationServiceScript.subject_names(record)))
+	var curriculum := _catalog_item(data.get("curricula", []), str(school.get("curriculum_id", "")))
+	_add_modal_text(
+		card, "Optional subject choices · changing subjects does not erase past results"
+	)
+	for group in curriculum.get("elective_groups", []):
+		for subject_id in group.get("subject_ids", []):
+			var elective := _catalog_item(data.get("subjects", []), str(subject_id))
+			if not record.get("subject_ids", []).has(str(subject_id)):
+				_add_education_action_button(
+					card,
+					"Choose elective · %s" % str(elective.get("name", subject_id)),
+					"choose_elective",
+					{"subject_id": str(subject_id)}
+				)
+	_add_modal_text(card, "Current academic averages:")
+	for subject_name in character.academic_scores.keys():
+		_add_modal_text(
+			card, "%s: %d / 100" % [str(subject_name), int(character.academic_scores[subject_name])]
+		)
+	var schedule := SCHOOL_SERVICE.timetable(character, clock.day)
+	_add_modal_text(
+		card, "Today's configurable timetable · Day %d · %s" % [clock.day, clock.time_label()]
+	)
+	for entry in schedule:
+		var label := str(entry.get("subject", "Activity"))
+		var status := (
+			"break"
+			if str(entry.get("kind", "")) == "break"
+			else str(entry.get("assessment_type", "learning"))
+		)
+		_add_modal_text(
+			card,
+			"%s · %s · %s" % [str(entry.get("time", "--:--")), label, status.replace("_", " ")]
+		)
+	if current_location == "classroom":
+		var attend_button := _button("Attend next class / exam paper", Vector2(300.0, 40.0))
+		attend_button.pressed.connect(func(): attend_requested.emit())
+		card.add_child(attend_button)
+	elif current_location == "campus":
+		_add_education_action_button(card, "begin_course", "Attend next tertiary course", {})
+		var enrollment: Variant = record.get("tertiary_enrollment", null)
+		if (
+			enrollment is Dictionary
+			and (
+				clock.day
+				>= (
+					int(enrollment.get("semester_start_day", clock.day))
+					+ int(data.get("tertiary_calendar", {}).get("term_length_game_days", 5))
+				)
+			)
+		):
+			_add_education_action_button(
+				card, "close_tertiary_semester", "Publish semester result", {}
+			)
+	elif current_location == "training_center":
+		_add_education_action_button(
+			card, "practice_training", "Complete a practical training session", {}
+		)
+	elif current_location == "schoolyard":
+		var activity := EducationServiceScript.current_activity(
+			record, clock.day, clock.minute_of_day, current_location
+		)
+		if not activity.is_empty():
+			var activity_data := _catalog_item(
+				data.get("activities", []), str(activity.get("activity_id", ""))
+			)
+			_add_education_action_button(
+				card,
+				"attend_activity",
+				"Join %s" % str(activity_data.get("name", "school activity")),
+				{"activity_id": str(activity.get("activity_id", ""))}
+			)
+	if current_location == "home":
+		_add_education_action_button(card, "family_support", "Ask family about study support", {})
+	_add_education_action_button(
+		card, "pay_school_fees", "Pay this term's school fees / materials", {}
+	)
+	var record_status := str(record.get("progression_status", ""))
+	var term_due := (
+		clock.day
+		>= (
+			int(record.get("term_start_day", clock.day))
+			+ int(data.get("calendar", {}).get("term_length_game_days", 5))
+		)
+	)
+	if record_status == "active" and term_due:
+		_add_education_action_button(card, "close_term", "Publish term results", {})
+	if record_status == "eligible_to_promote":
+		_add_education_action_button(
+			card, "choose_progression", "Promote to next class", {"choice": "promote"}
+		)
+	if record_status in ["eligible_to_promote", "remediation_available"]:
+		_add_education_action_button(
+			card, "choose_progression", "Take a supported recovery year", {"choice": "remediate"}
+		)
+		_add_education_action_button(
+			card, "choose_progression", "Repeat this class", {"choice": "repeat"}
+		)
+		_add_education_action_button(
+			card, "choose_progression", "Leave school (history preserved)", {"choice": "leave"}
+		)
+	if record_status == "final_exam_eligible":
+		_add_education_action_button(
+			card,
+			"register_final_exam",
+			"Register for fictional senior certificate exam",
+			{"subject_ids": record.get("subject_ids", []).duplicate()}
+		)
+		if current_location == "classroom":
+			_add_education_action_button(
+				card, "begin_final_exam", "Begin next registered exam paper", {}
+			)
+	var previous_tertiary: Variant = record.get("tertiary_enrollment", null)
+	var previous_program_complete := (
+		not previous_tertiary is Dictionary
+		or str(previous_tertiary.get("status", "")) == "completed"
+	)
+	var can_apply_tertiary := (
+		record_status == "secondary_complete"
+		or (record_status == "tertiary_complete" and previous_program_complete)
+	)
+	if can_apply_tertiary:
+		_add_modal_text(
+			card,
+			"Tertiary programs · prototype entry checks use age, final-exam credits and current results."
+		)
+		for program in data.get("programs", []):
+			var institution := _catalog_item(
+				data.get("institutions", []), str(program.get("institution_id", ""))
+			)
+			_add_modal_text(
+				card,
+				(
+					"%s · %s · ₦%s/term · %s"
+					% [
+						str(institution.get("name", "Institution")),
+						str(program.get("name", "Program")),
+						_format_number(int(program.get("tuition_per_term_ngn", 0))),
+						str(program.get("award", "Award"))
+					]
+				)
+			)
+			var institution_location: Dictionary = institution.get("geographic_location", {})
+			_add_modal_text(
+				card,
+				(
+					"Map anchor: %s · %s State · %s LGA · fictional coordinate, not an address"
+					% [
+						str(institution_location.get("settlement_name", "Akure")),
+						str(institution_location.get("state_name", "Ondo")),
+						str(institution_location.get("lga_name", "Akure South"))
+					]
+				)
+			)
+			_add_education_action_button(
+				card,
+				"apply_program",
+				"Apply · %s" % str(program.get("name", "Program")),
+				{"program_id": str(program.get("id", ""))}
+			)
+	for application in record.get("admission_applications", []):
+		if str(application.get("status", "")) == "offered":
+			var program_name := str(
+				_catalog_item(data.get("programs", []), str(application.get("program_id", ""))).get(
+					"name", "program"
+				)
+			)
+			_add_modal_text(
+				card,
+				(
+					"Admission offer: %s · %s"
+					% [program_name, str(application.get("decision_reason", ""))]
+				)
+			)
+			_add_education_action_button(
+				card,
+				"respond_application",
+				"Accept · %s" % program_name,
+				{"application_id": str(application.get("application_id", "")), "accept": true}
+			)
+			_add_education_action_button(
+				card,
+				"respond_application",
+				"Decline · %s" % program_name,
+				{"application_id": str(application.get("application_id", "")), "accept": false}
+			)
+	var tertiary: Variant = record.get("tertiary_enrollment", null)
+	if tertiary is Dictionary:
+		var tertiary_program := _catalog_item(
+			data.get("programs", []), str(tertiary.get("program_id", ""))
+		)
+		_add_modal_text(
+			card,
+			(
+				"Program: %s · %s · Semester %d/%d · %s"
+				% [
+					str(tertiary_program.get("name", "Tertiary study")),
+					str(tertiary.get("award", "Award")),
+					int(tertiary.get("semester", 1)),
+					int(tertiary.get("duration_semesters", 1)),
+					str(tertiary.get("status", "active")).capitalize()
+				]
+			)
+		)
+		if current_location != "campus":
+			_add_modal_text(
+				card,
+				(
+					"Travel through the school yard's tertiary campus gate to attend "
+					+ "courses. Your record persists if you leave or transfer."
+				)
+			)
+	_add_modal_text(
+		card, "Vocational courses & mentored apprenticeships · fictional community skills centre"
+	)
+	for training in data.get("training_programs", []):
+		_add_modal_text(
+			card,
+			(
+				"%s · %d sessions · ₦%d/session · %s"
+				% [
+					str(training.get("name", "Skills course")),
+					int(training.get("duration_sessions", 1)),
+					int(training.get("session_cost_ngn", 0)),
+					str(training.get("certificate_name", "Certificate"))
+				]
+			)
+		)
+		_add_education_action_button(
+			card,
+			"enroll_training",
+			"Enroll · %s" % str(training.get("name", "Course")),
+			{"training_program_id": str(training.get("id", ""))}
+		)
+		_add_education_action_button(
+			card,
+			"enroll_apprenticeship",
+			"Apprentice · %s" % str(training.get("name", "Trade")),
+			{"training_program_id": str(training.get("id", ""))}
+		)
+	_add_modal_text(
+		card, "Study awards · prototype criteria, limited awards, not official scholarships"
+	)
+	for scholarship in data.get("scholarships", []):
+		_add_education_action_button(
+			card,
+			"apply_scholarship",
+			(
+				"Apply · %s (₦%s)"
+				% [
+					str(scholarship.get("name", "Study award")),
+					_format_number(int(scholarship.get("award_amount_ngn", 0)))
+				]
+			),
+			{"scholarship_id": str(scholarship.get("id", ""))}
+		)
+	var funding := 0
+	for award in record.get("scholarships", []):
+		if str(award.get("status", "")) == "awarded":
+			funding += int(award.get("funding_balance_ngn", 0))
+	_add_modal_text(card, "Available education scholarship funding: ₦%s" % _format_number(funding))
+	_add_modal_text(
+		card,
+		(
+			"Qualifications: %s"
+			% (
+				" · ".join(_qualification_names(record))
+				if not _qualification_names(record).is_empty()
+				else "No certificate yet"
+			)
+		)
+	)
+	_add_modal_text(card, "Recent education history:")
+	var events: Array = record.get("education_events", [])
+	for index in range(maxi(0, events.size() - 5), events.size()):
+		var event: Dictionary = events[index]
+		_add_modal_text(
+			card,
+			(
+				"Day %d · %s"
+				% [
+					int(event.get("day", 1)),
+					str(event.get("type", "education event")).replace("_", " ").capitalize()
+				]
+			)
+		)
+	var location: Dictionary = school.get("geographic_location", {})
+	_add_modal_text(
+		card,
+		(
+			"School geography: %s · %s State · %s LGA · fictional map anchor, not an address."
+			% [
+				str(location.get("settlement_name", "Akure")),
+				str(location.get("state_name", "Ondo")),
+				str(location.get("lga_name", "Akure South"))
+			]
+		)
+	)
+	_add_modal_text(
+		card,
+		(
+			"All institutions, policies and exam questions in this catalog are "
+			+ "fictional game content. No WAEC/NECO papers are reproduced; "
+			+ "no real institution is endorsed."
+		)
+	)
+	_add_modal_close(card)
+
+
+func show_timetable(character: CharacterState, clock: WorldClock, current_location: String) -> void:
+	var card := _open_modal(
+		"School timetable", "Configurable schedule · fictional school prototype"
+	)
+	_add_modal_text(card, "Current time: Day %d · %s" % [clock.day, clock.time_label()])
+	var schedule := SCHOOL_SERVICE.timetable(character, clock.day)
+	for lesson in schedule:
+		var subject := str(lesson.get("subject", "Activity"))
+		var type_label := str(lesson.get("kind", "lesson")).capitalize()
+		_add_modal_text(
+			card, "%s — %s · %s" % [str(lesson.get("time", "--:--")), subject, type_label]
 		)
 	if current_location == "classroom":
 		var attend_button := _button("Attend next class activity", Vector2(280.0, 42.0))
@@ -281,10 +636,50 @@ func show_timetable(character: CharacterState, clock: WorldClock, current_locati
 		card.add_child(attend_button)
 	else:
 		_add_modal_text(
-			card,
-			"Walk to the school in the town, enter the yard, then enter the classroom to attend."
+			card, "Walk or take the bus to the school, enter the yard, then enter your classroom."
 		)
 	_add_modal_close(card)
+
+
+func _catalog_item(entries: Array, item_id: String) -> Dictionary:
+	for entry in entries:
+		if entry is Dictionary and str(entry.get("id", "")) == item_id:
+			return entry
+	return {}
+
+
+func _qualification_names(record: Dictionary) -> Array[String]:
+	var names: Array[String] = []
+	for qualification in record.get("qualifications", []):
+		names.append(
+			(
+				"%s (%s)"
+				% [
+					str(qualification.get("name", "Certificate")),
+					str(qualification.get("award", "Award"))
+				]
+			)
+		)
+	return names
+
+
+func _add_education_action_button(
+	parent: VBoxContainer, label: String, action: String, payload: Dictionary
+) -> void:
+	var button := _button(label, Vector2(470.0, 36.0))
+	button.pressed.connect(_on_education_action.bind(action, payload))
+	parent.add_child(button)
+
+
+func _on_education_action(action: String, payload: Dictionary) -> void:
+	education_action_requested.emit(action, payload.duplicate(true))
+
+
+func show_education_result(result: Dictionary) -> void:
+	var success := bool(result.get("ok", true))
+	var title := "Education updated" if success else "Education action not completed"
+	var message := str(result.get("message", "Your education record has been refreshed."))
+	show_notice(title, message)
 
 
 func show_save_menu(has_save: bool) -> void:
@@ -373,12 +768,21 @@ func show_dialogue(speaker: String, lines: Array[String]) -> void:
 	_add_modal_close(card, "Close")
 
 
-func show_quiz(subject: String, question: Dictionary, quiz_id: String = "") -> void:
+func show_quiz(
+	subject: String, question: Dictionary, quiz_id: String = "", mode: String = "school"
+) -> void:
 	_quiz_id = quiz_id
-	var card := _open_modal(
-		"Class activity · %s" % subject,
-		"Choose one answer. Your result will update your subject record."
-	)
+	_quiz_mode = mode
+	var title := "Class activity"
+	var guidance := "Choose one answer. Your result will update your subject record."
+	match mode:
+		"final_exam":
+			title = "Fictional senior certificate exam"
+			guidance = "Original prototype content only · not an official WAEC or NECO paper."
+		"tertiary":
+			title = "Tertiary course assessment"
+			guidance = "Complete configured course assessments for your semester record."
+	var card := _open_modal("%s · %s" % [title, subject], guidance)
 	_add_modal_text(
 		card, str(question.get("question", "The teacher has not added a question yet."))
 	)
@@ -390,13 +794,35 @@ func show_quiz(subject: String, question: Dictionary, quiz_id: String = "") -> v
 	_add_modal_close(card, "Leave activity")
 
 
-func show_quiz_result(subject: String, correct: bool, score: int) -> void:
+func show_quiz_result(
+	subject: String,
+	correct: bool,
+	score: int,
+	mode: String = "school",
+	certificate_eligible: Variant = null
+) -> void:
+	var title := "Class recorded · %s" % subject
 	var result_text := (
 		"Correct — nice work." if correct else "Not quite. Learning is part of the day."
 	)
-	var card := _open_modal("Class recorded · %s" % subject, result_text)
-	_add_modal_text(card, "New academic average: %d / 100" % score)
-	_add_modal_text(card, "Attendance and your result are saved with your character.")
+	if mode == "final_exam":
+		title = "Senior exam paper recorded · %s" % subject
+		result_text = "Original prototype exam response recorded. This is not an official result."
+		if certificate_eligible is bool:
+			result_text = (
+				"Prototype certificate eligibility reached. This is not an official WAEC or NECO qualification."
+				if certificate_eligible
+				else "The configured prototype final-credit threshold is not yet met."
+			)
+	elif mode == "tertiary":
+		title = "Tertiary assessment recorded · %s" % subject
+		result_text = (
+			"The course result is saved. Complete all configured course assessments "
+			+ "before closing the semester."
+		)
+	var card := _open_modal(title, result_text)
+	_add_modal_text(card, "Current subject / course score: %d / 100" % score)
+	_add_modal_text(card, "Attendance and your education history are saved with your character.")
 	_add_modal_close(card, "Continue")
 
 

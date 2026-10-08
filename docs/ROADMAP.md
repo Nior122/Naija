@@ -1,6 +1,6 @@
 # Master Roadmap
 
-The roadmap describes intended development, not completed features. Phase 0 is complete. Phase 1 implementation is present but its Godot runtime/gameplay/save-restart verification remain pending. Phase 2 implementation and backend verification are present; Godot multiplayer runtime verification is blocked by the missing engine. Phase 3 now has a validated administrative registry, deterministic source pipeline and bounded Akure South preview/presence foundation; in-engine rendering/toggle verification is still pending. Later phases remain not started; see `DEVELOPMENT_STATUS.md` for exact results.
+The roadmap describes intended development, not completed features. Phase 0 is complete. Phases 1–3 remain in place; their Godot runtime verification is still pending. Phase 4 education implementation is present and its Node/backend, persistence, multiplayer and geography tests pass; Godot client import/runtime/UI/save verification remains blocked by the missing engine. Phase 5 and later phases have not started. See `DEVELOPMENT_STATUS.md` for exact results.
 
 | Phase | Name | Purpose | Status |
 |---:|---|---|---|
@@ -8,8 +8,8 @@ The roadmap describes intended development, not completed features. Phase 0 is c
 | 1 | First Playable Prototype | Build a deliberately small life-simulation slice: create/control a student character, explore one bounded setting, and complete a few understandable interactions. | **Implementation present; Godot/runtime verification pending** |
 | 2 | Multiplayer Foundation | Add server-authoritative identity, sessions, synchronization, and persistence for a small test population while retaining one logical world. | **Implementation present; backend verified; Godot runtime verification pending** |
 | 3 | Nigerian Geography Expansion | Introduce validated administrative geography, place data, coordinates, and a repeatable import/provenance pipeline. | **Implementation present; Node/data checks pass; Godot runtime verification pending** |
-| 4 | Complete Education System | Expand secondary school, universities, polytechnics, vocational study, apprenticeships, school years, and education records. | Not started |
-| 5 | Age & Life Simulation | Add birthdays, age progression, life stages, family events, death, inheritance, and generational continuity. | Not started |
+| 4 | Complete Education System | Integrate configurable secondary schooling, attendance/results, original final-secondary exams, fictional tertiary/ND/HND/vocational/apprenticeship pathways, scholarships, geography, multiplayer and saves. | **Implementation present; Node/backend checks pass; Godot runtime verification pending** |
+| 5 | Age & Life Simulation | Add birthdays, age progression, life stages, family events, death, inheritance, and generational continuity. | **Not started; gated on Stage 4 exit verification** |
 | 6 | Careers & Employment | Model skills, job seeking, employment, work progression, and career changes. | Not started |
 | 7 | Full Nigerian Economy | Build a balanced Naira-denominated simulation for prices, wages, banking, transactions, taxes, credit, and investment. | Not started |
 | 8 | Player Businesses | Let players establish and operate businesses with staffing, costs, stock, compliance, and customer demand. | Not started |
@@ -38,7 +38,15 @@ The roadmap describes intended development, not completed features. Phase 0 is c
 
 The implementation slice includes 36 states plus FCT and 774 canonical LGA records, 11 ward reference points, a pinned 200-feature ODbL-attributed Akure South sample, deterministic/validated processing, WGS84-to-game conversion, stable 500 m chunks, an opt-in existing-client map preview, and optional server-derived geographic presence. The viewport is not an administrative boundary; source coordinate semantics and licenses are documented in `DATA_SOURCES.md`.
 
-The Node importer, deterministic output check, backend build/lint/tests and static GDScript format/lint checks pass. The missing Godot 4.7.2 executable blocks scene import, visual review, Stage 1 offline save/load regression, and Stage 3 client/map/two-window verification. Record that limitation rather than marking client behavior engine-verified. The next phase after the Stage 3 implementation/test gate is Stage 4 — Complete Education System; Stage 4 has not begun.
+The Node importer, deterministic output check, backend build/lint/tests and GDScript formatter check pass. The missing Godot 4.7.2 executable blocks scene import, visual review, Stage 1 offline save/load regression, and Stage 3 client/map/two-window verification. Record that limitation rather than marking client behavior engine-verified. Stage 4 implementation has since extended this foundation; its tests and current runtime gate are recorded below.
+
+## Stage 4 exit gate
+
+The implementation is in place across `game/data/education/catalog.json`, the offline Godot education domain/UI/world/save path, the server-side TypeScript education catalog/rules and the existing WebSocket character/persistence path. The catalog provides six JSS/SS years, configured subjects/timetable/assessment/grading, fictional original-content final exams, university and distinct ND/HND routes, vocational/apprenticeship trades, scholarships, synthetic Stage 3 institution anchors and history. Education remains inside one `nigeria-main` world. No official institution/curriculum/exam claim, protected exam content, full jobs/careers, banking/economy, education policy or Stage 5 life simulation is included.
+
+The 26-test Node suite passes, including eight focused education tests for enrollment/progression, attendance/grades/results, final exam outcomes/persistence, tertiary and ND/HND pathways, training/apprenticeship, scholarships/history, geography, online schoolyard co-presence, attendance replication and save/restart. Geography reproducibility and GDScript formatting pass. Static GDScript lint retains four structural findings. **Godot 4.7.2 is unavailable**, so project import, offline/client UI and save/restart journeys, and Godot multiplayer/runtime regressions are not verified. Run these checks using the instructions in `DEVELOPMENT_STATUS.md` and `EDUCATION_PLAN.md`; Stage 5 must remain unstarted until this Stage 4 exit gate is complete.
+
+Next roadmap line: **Stage 5 — Age & Life Simulation**.
 
 ## Stage 1 exit gate
 

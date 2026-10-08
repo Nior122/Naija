@@ -1,98 +1,118 @@
 class_name SchoolService
 extends RefCounted
 
-const TIMETABLE: Array[Dictionary] = [
-	{"minute": 480, "time": "08:00", "subject": "Mathematics"},
-	{"minute": 540, "time": "09:00", "subject": "English"},
-	{"minute": 600, "time": "10:00", "subject": "Break"},
-	{"minute": 630, "time": "10:30", "subject": "Computer Studies"},
-	{"minute": 690, "time": "11:30", "subject": "Biology"},
-	{"minute": 750, "time": "12:30", "subject": "Civic Education"},
-]
-const QUIZZES: Dictionary = {
-	"Mathematics":
-	{
-		"question": "What is 7 × 8?",
-		"options": ["54", "56", "58"],
-		"correct_index": 1,
-	},
-	"English":
-	{
-		"question": "Which sentence is grammatically correct?",
-		"options": ["She go to school.", "She goes to school.", "She going school."],
-		"correct_index": 1,
-	},
-	"Computer Studies":
-	{
-		"question": "Which part is often called the computer's brain?",
-		"options": ["CPU", "Keyboard", "Monitor"],
-		"correct_index": 0,
-	},
-	"Biology":
-	{
-		"question": "What do green plants use to make food?",
-		"options": ["Sunlight", "Plastic", "Sand only"],
-		"correct_index": 0,
-	},
-	"Civic Education":
-	{
-		"question": "What is one responsibility of a citizen?",
-		"options": ["Respecting the law", "Ignoring neighbours", "Damaging public property"],
-		"correct_index": 0,
-	},
-}
+const EducationServiceScript = preload("res://scripts/domain/education_service.gd")
 
 
-static func timetable() -> Array[Dictionary]:
+static func timetable(character: Variant = null, day: int = 1) -> Array[Dictionary]:
+	var record: Dictionary = {}
+	if character is Dictionary:
+		record = character
+	elif character != null:
+		record = EducationServiceScript.ensure_character_record(character, day)
+	else:
+		record = EducationServiceScript.create_student_record("timetable-preview", 16, day)
 	var result: Array[Dictionary] = []
-	for lesson in TIMETABLE:
-		result.append(lesson.duplicate(true))
+	for entry in EducationServiceScript.schedule_for_day(record, day):
+		var start_minute := int(entry.get("start_minute", 0))
+		var subject_name := str(entry.get("subject_name", entry.get("label", "Activity")))
+		(
+			result
+			. append(
+				{
+					"id": str(entry.get("id", "")),
+					"minute": start_minute,
+					"time": "%02d:%02d" % [int(start_minute / 60), start_minute % 60],
+					"subject": subject_name,
+					"subject_id": entry.get("subject_id", null),
+					"kind": str(entry.get("kind", "lesson")),
+					"assessment_type": str(entry.get("assessment_type", "")),
+					"duration_minutes": int(entry.get("duration_minutes", 0)),
+				}
+			)
+		)
 	return result
 
 
 static func question_for(subject: String) -> Dictionary:
-	var question: Variant = QUIZZES.get(subject, {})
-	return question.duplicate(true) if question is Dictionary else {}
-
-
-static func next_lesson(character: CharacterState, day: int, minute_of_day: int) -> Dictionary:
-	for lesson in TIMETABLE:
-		var subject := str(lesson["subject"])
-		if subject == "Break" or _has_attended(character, day, subject):
+	var subject_id := ""
+	var questions: Array = EducationServiceScript.catalog().get("questions", [])
+	for question in questions:
+		var configured_subject := EducationServiceScript.catalog().get("subjects", []).filter(
+			func(entry: Dictionary) -> bool:
+				return str(entry.get("id", "")) == str(question.get("subject_id", ""))
+		)
+		if configured_subject.is_empty():
 			continue
-		var start_minute := int(lesson["minute"])
-		if minute_of_day <= start_minute + 45:
-			return lesson.duplicate(true)
+		var subject_data: Dictionary = configured_subject[0]
+		if (
+			subject == str(subject_data.get("name", ""))
+			or subject == str(subject_data.get("legacy_score_key", ""))
+			or subject == str(subject_data.get("id", ""))
+		):
+			subject_id = str(question.get("subject_id", ""))
+			return {
+				"question": str(question.get("prompt", "")),
+				"options": question.get("choices", []).duplicate(),
+				"correct_index": int(question.get("correct_choice_index", -1)),
+				"question_id": str(question.get("id", "")),
+				"subject_id": subject_id,
+			}
 	return {}
 
 
+static func next_lesson(character: Object, day: int, minute_of_day: int) -> Dictionary:
+	var record := EducationServiceScript.ensure_character_record(character, day)
+	var lesson := EducationServiceScript.next_lesson(record, day, minute_of_day)
+	if lesson.is_empty():
+		return {}
+	var result := lesson.duplicate(true)
+	var start_minute := int(result.get("start_minute", 0))
+	result["minute"] = start_minute
+	result["time"] = "%02d:%02d" % [int(start_minute / 60), start_minute % 60]
+	result["subject"] = str(result.get("subject_name", "Class activity"))
+	return result
+
+
 static func record_result(
-	character: CharacterState, day: int, subject: String, correct: bool, time_label: String = ""
+	character: Object, day: int, subject: String, correct: bool, time_label: String = ""
 ) -> int:
-	var previous_score := int(character.academic_scores.get(subject, 60))
-	var activity_score := 95 if correct else 45
-	var new_score := clampi(
-		int(round(float(previous_score) * 0.7 + float(activity_score) * 0.3)), 0, 100
-	)
-	character.academic_scores[subject] = new_score
-	(
-		character
-		. attendance
-		. append(
-			{
-				"day": day,
-				"subject": subject,
-				"score": new_score,
-				"attended_at": "Day %d · %s" % [day, time_label],
-			}
-		)
-	)
-	character.touch()
-	return new_score
+	return EducationServiceScript.record_result(character, day, subject, correct, time_label)
 
 
-static func _has_attended(character: CharacterState, day: int, subject: String) -> bool:
-	for record in character.attendance:
-		if int(record.get("day", 0)) == day and str(record.get("subject", "")) == subject:
-			return true
-	return false
+static func close_term(character: Object, day: int) -> Dictionary:
+	return EducationServiceScript.close_current_term(character, day)
+
+
+static func choose_progression(character: Object, choice: String, day: int) -> Dictionary:
+	return EducationServiceScript.choose_progression(character, choice, day)
+
+
+static func attend_next_class(character: Object, day: int, minute_of_day: int) -> Dictionary:
+	var record := EducationServiceScript.ensure_character_record(character, day)
+	var lesson := EducationServiceScript.next_lesson(record, day, minute_of_day)
+	if lesson.is_empty():
+		return {
+			"ok": false,
+			"code": "school_complete",
+			"message": "There is no class scheduled at this time."
+		}
+	var question := question_for(str(lesson.get("subject_id", "")))
+	if question.is_empty():
+		return {
+			"ok": false,
+			"code": "lesson_unavailable",
+			"message": "That lesson has no original game question."
+		}
+	EducationServiceScript.record_attendance(record, lesson, day, minute_of_day)
+	return {"ok": true, "lesson": lesson, "question": question}
+
+
+static func attendance_summary(character: Object) -> Dictionary:
+	var record := EducationServiceScript.ensure_character_record(character)
+	return EducationServiceScript.attendance_summary(record)
+
+
+static func history(character: Object) -> Array:
+	var record := EducationServiceScript.ensure_character_record(character)
+	return record.get("education_events", []).duplicate(true)

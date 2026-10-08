@@ -1,4 +1,5 @@
 import type { GeographicLocation } from "../geography/types.js";
+import type { StudentEducationRecord } from "../education/types.js";
 
 export const WORLD_ID = "nigeria-main" as const;
 export const MAP_WIDTH = 1600;
@@ -45,6 +46,7 @@ export interface CharacterRecord {
   inventory: InventoryItem[];
   academic_scores: Record<string, number>;
   attendance: Array<Record<string, string | number>>;
+  education_record: StudentEducationRecord;
   reputation: number;
   household: Record<string, unknown>;
   geographic_location: GeographicLocation | null;

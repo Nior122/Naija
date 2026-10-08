@@ -4,90 +4,111 @@
 
 ## Current stage and verification gate
 
-**Stage 3 — Nigerian Geography Expansion: implementation present; Node/source-data checks are available; Godot runtime verification remains blocked.** Stage 0, Stage 1 and Stage 2 code/features remain in the project. Stage 3 adds one canonical Nigerian administrative catalog and a bounded Akure South map-data/player-presence foundation; it does not create another world or a national visual build.
+**Stage 4 — Complete Nigerian Education System: implementation present; Node/backend and geography checks pass; Godot runtime verification remains blocked.** Stages 0–3 remain in the repository. Stage 4 extends the existing `nigeria-main` world rather than replacing its local life simulation, optional online authority, Stage 3 geography, or persistence contracts.
 
-Godot is not installed in this workspace. Therefore the Stage 1/2 client and Stage 3 renderer have not been imported, launched, visually reviewed or tested in-engine. Local save/load, controls, rendering, and the Godot two-client/reconnect flow remain unverified. The code preserves the prior default Idera experience, but an engine-level Stage 1/2 regression pass still needs Godot 4.7.2. Backend tests do not prove client runtime behavior.
+Godot 4.7.2 is not installed in this workspace (`godot: command not found`). GDScript formatting is checked, but project import, engine/type validation, scenes, client gameplay/UI, local save/restart, and Godot two-client/multiplayer behavior have not been run. Do not infer client-runtime success from Node tests.
 
-The next roadmap stage is **Stage 4 — Complete Education System**. It has not started.
+The next roadmap line is **Stage 5 — Age & Life Simulation**. It has not started. Follow the Stage 4 exit gate in [`ROADMAP.md`](ROADMAP.md); do not begin Stage 5 work while Godot-dependent Stage 4 runtime checks remain pending.
 
-## Stage 0/1/2 preserved
+## Stages 0–3 preserved
 
-- The Node HTTP foundation, existing `/health` and `/api/v1/world` routes and one logical world ID `nigeria-main` remain.
-- The local Godot life retains character creation, household/home, fictional Idera Quarter map, travel/interactions, NPC dialogue, school activities, money/needs/inventory, local clock and client-local JSON save/load implementation.
-- Stage 2's optional WebSocket multiplayer remains on the same Godot project and the server remains authoritative for online character actions/clock. Local Stage 1 saves remain separate.
-- `CharacterState` gained an optional geographic-location dictionary for Stage 3; Stage 2 server records without that field are migrated to `null`. Geography preview is opt-in; the default town scene stays Idera.
-- Stage 1/2 UI and server behavior were not deliberately removed. Engine regression status is **unknown/unverified**, not passed, because Godot is unavailable.
+- The Stage 0 Node HTTP API, `/health`, `/api/v1/world`, strict TypeScript service and canonical world ID `nigeria-main` remain.
+- The Stage 1 offline Godot life, Idera Quarter, character/family/home, movement, school and community actions, money/needs/inventory, local clock and client-local save remain in the project. Their current client runtime is unverified here.
+- The Stage 2 optional WebSocket service, online character snapshots, presence, movement/actions, shared clock and server JSON persistence remain separate from Stage 1 local saves. Node integration regressions pass; Godot runtime remains unverified.
+- The Stage 3 administrative geography catalog, bounded Akure South preview/source pipeline, geography opt-in and server-derived online presence remain. The preview is not a complete boundary/city map. The deterministic import check passes; rendering and Godot client integration remain unverified.
+- Older online records without `geographic_location` remain supported. Stage 4 adds education-record normalization without resetting existing online character identity, household, money, position or geography.
 
-## Stage 3 geography implementation
+For the complete Stage 3 source provenance and coordinate limitations, see [`DATA_SOURCES.md`](DATA_SOURCES.md) and the Stage 3 history in [`ROADMAP.md`](ROADMAP.md).
 
-### Administrative hierarchy and source boundary
+## Stage 4 — education implementation
 
-- One `NG` country record and one `nigeria-main` world identity.
-- 36 state records plus FCT and 774 canonical LGA records in `game/data/geography/processed/nigeria-admin.json`.
-- Optional source Wikidata identifiers with three duplicate values reported and omitted; stable IDs derive from source state code/name and normalized LGA name.
-- Eleven Akure South ward reference-point records. LGA/ward points are not mislabeled as administrative polygons, boundaries, survey-grade points or centroids.
-- Akure is a settlement name/capital record without an authoritative coordinate; its association with this sample is explicitly a prototype association.
+### Configurable fictional catalog
 
-### Bounded playable sample
+`game/data/education/catalog.json` is schema version 1 and uses `world_id: nigeria-main`. It contains:
 
-- Selected fallback region: **Akure South, Ondo State**. Port Harcourt/Rivers was preferred but no suitably bounded Port Harcourt data sample with clear provenance/terms was available for this implementation.
-- Map viewport: west 5.188°, south 7.238°, east 5.212°, north 7.262°. It is a deterministic preview selection—not an LGA, ward or settlement boundary and not a completeness claim.
-- 200 retained OSM preview features: 72 roads, 108 buildings, 13 waterways, 2 land-use features, 3 health facilities and 2 schools. Source layer, OSM source ID, available names and GeoJSON geometry are retained; original tags were not present in the upstream preview HTML.
-- The data-driven Godot preview is toggled through the existing HUD **Map data** action outdoors. It draws mapped line/polygon/point content and exposes health/school features and named buildings as generic read-only inspect markers. Default Idera layout/interactions return when preview is turned off. This feature is implemented in source but has not been observed in Godot.
-- Terrain, routing, transport schedules/traffic, full city/building/interior coverage, weather/climate and national streaming are not implemented. Processed region data reserves empty transport/environment extension IDs and stable chunk indexes.
+- Six configurable secondary years: JSS1, JSS2, JSS3, SS1, SS2 and SS3; diagnostic age mapping, curricula, compulsory/elective subjects, subject groups and a starter score set.
+- Twelve subjects; the school calendar/timetable, school days, term length, teachers, classrooms, activities, assessment categories, assessment weights, attendance grace, grade bands, promotion thresholds, exam rules, fees, training programs, scholarship amounts/capacities/terms, tertiary calendar, course/program prerequisites and NPCs.
+- Five configured secondary assessment types and original fictional questions. The sample WAEC/NECO-inspired final certificate examination is not affiliated with any examination body and contains no protected exam paper/questions.
+- Fictional secondary, university, polytechnic, college-of-education and skills-centre institution data with synthetic anchors inside the existing Akure South geographic sample. These are not real addresses, endorsements, accreditation claims, or official curriculum/admissions/fee rules.
+- Three fictional university BSc/BSc Ed routes, a distinct ND and prerequisite-based HND sequence, one NCE route and 13 vocational/apprenticeship trade programs with skills/career eligibility links.
 
-### Import, provenance and coordinates
+All values are prototype tuning. Read [`EDUCATION_PLAN.md`](EDUCATION_PLAN.md) for scope, limitations and pathway details.
 
-- Raw/pinned artifacts are in `game/data/geography/source/`; deterministic outputs and `import-manifest.json` are in `game/data/geography/processed/`.
-- `tools/geography/extract-osm-preview.mjs` reproduces the bounded feature selection from the upstream preview artifact; the large upstream preview HTML is not committed. The OSM preview selection declares OGC:CRS84 longitude/latitude, source snapshot time, layer mapping, deterministic viewport/grid caps and the no-boundary caveat.
-- `services/world-api/src/geography/importer.ts` validates pinned data and generates canonical records/features; `npm run geography:import` regenerates and `npm run geography:check` checks deterministic output. The import manifest records input/output SHA-256 hashes, pinned commits, source terms, counts and coordinate assumptions.
-- WGS84 is stored to seven decimal degrees. The Akure local equirectangular frame is centered on longitude 5.2°, latitude 7.25°, with `x` east/`y` south, 1 game unit per metre and 0.001 m metric rounding. Preview pixels use a separate linear transform of the declared 1600×900 viewport. Stable geographic chunks are 500 m on a Nigeria-wide 9° central-latitude grid; chunks organize data/interest inside one world.
-- No nationwide boundaries or OSM country dump are included. Exact source licenses/attribution/terms are in [`DATA_SOURCES.md`](DATA_SOURCES.md).
+### Offline client integration (source present; engine checks blocked)
 
-### Multiplayer foundation
+- `game/scripts/domain/education_service.gd` loads catalog data and owns the local student record rules. `school_service.gd` adapts existing timetable/class actions to the structured school/education service.
+- `game/scripts/domain/character_state.gd` persists a structured education record while maintaining compatibility fields for legacy scores/attendance.
+- `game/scripts/services/save_service.gd` keeps local saves separate from online state and migrates existing version-1 Stage 1 saves into the current record format.
+- `game/scripts/prototype_game.gd`, `game/scripts/ui/prototype_ui.gd` and `game/scripts/world/world_map.gd` integrate school, campus and skills-centre actions, student data/panels, NPCs and the existing world scenes.
+- `game/scripts/domain/education_service.gd`, `prototype_game.gd` and `prototype_ui.gd` exceed gdtoolkit's default file-length threshold; `prototype_ui.gd` also exceeds its public-method threshold. These are static lint findings; runtime behavior is unknown until Godot runs.
 
-- Online `CharacterRecord.geographic_location` is nullable and includes world/region/country/state/LGA/settlement/optional ward, WGS84 coordinates, local metric position and chunk ID.
-- `geography.enter` is outdoor-only and takes a known region ID; the server derives geography from its authoritative map position. `geography.leave` clears it. The server updates location during outdoor movement and clears it when traveling to Stage 2 indoor/school subscenes.
-- Public presence carries region/chunk identity and is filtered by same local scene, same region, neighboring 500 m chunks and a 1.5 km cap. Geographic chat/waves use metric distance. Legacy Stage 2 records/players without geography remain accepted and Stage 2-style nearby checks remain for two legacy players.
-- Automated two-WebSocket-client tests exercise same-chunk synchronization and removal from nearby interest after movement to a distant chunk. Godot's real player/map/UI synchronization has not been tested.
+### Online authority and persistence (Node-tested)
 
-## Technology and verification status
+- `services/world-api/src/education/` contains catalog validation, typed education records and server-owned lifecycle rules. `services/world-api/src/multiplayer/types.ts` attaches each `StudentEducationRecord` to the existing server-owned character.
+- `services/world-api/src/multiplayer/world-engine.ts` integrates server-validated education actions, scheduled lessons, attendance, scores/results, final-exam flow, tertiary course work, pathways, costs and funding with the existing time/location/world authority.
+- `services/world-api/src/multiplayer/persistence.ts` normalizes legacy online character education fields into the structured record while retaining Stage 2/3 character state. The existing JSON state file remains a bounded single-process prototype, not a database.
+- `services/world-api/test/education.test.mjs` verifies education lifecycle rules and a two-client school co-presence/attendance/action/save-restart integration path.
 
-| Component | Baseline / check | Status |
+### Acceptance coverage status
+
+| Requested area | Current evidence | Status |
 |---|---|---|
-| Node.js/npm | Node `v22.22.3`; npm `10.9.8` | `npm run check` passed on the current Stage 3 tree. |
-| TypeScript API | Strict build, ESLint, HTTP/WebSocket/geography tests | `npm run check` passed: build/lint and 18 Node tests. |
-| Geography import | `npm run geography:import` / `npm run geography:check` | Import succeeded; deterministic check passed for three processed files. |
-| GDScript formatting/lint | `gdtoolkit` 4.5.0 (`/tmp/naija-gdtoolkit`) | `gdformat --check` passed for 18 scripts; `gdlint` passed. Static-only; does not replace engine import. |
-| Godot | Project targets Godot 4.7.2 | Executable unavailable (`godot: command not found`); import, render, scene and client/runtime tests not run. |
-| Database | None configured | JSON single-process prototype only; Postgres/PostGIS remain future candidates. |
+| Enrollment, configured JSS/SS years, subject choices and progression | Node education lifecycle tests | **Passed** |
+| Timetable attendance, absences, idempotence, weighted grades and term results | Node education lifecycle tests; online classroom attendance assertion | **Passed** |
+| Final-secondary eligibility, original exam content, pass/fail, retained history and saved results | Node education lifecycle tests and JSON normalization round trip | **Passed** |
+| University program, course assessments, semester completion and qualification links | Node BSc route test | **Passed** |
+| Polytechnic ND followed by distinct prerequisite-based HND | Node ND/HND route test | **Passed** |
+| Vocational course/apprenticeship sessions, skill level and certificates | Node route tests | **Passed** |
+| Scholarship awards, fee funding and bounded family support | Node funding test | **Passed** |
+| Education event/history and persistent records | Node lifecycle plus online state-file restart/reconnect | **Passed** |
+| Geography/institution catalog integration and source reproducibility | Education catalog assertions plus `npm run geography:check` | **Passed** |
+| Online schoolyard co-presence, attendance/action replication | Two real WebSocket clients moved into the same school scene; server snapshot assertions | **Passed** |
+| Offline Godot play, player-facing education UI, local save/load runtime | Godot unavailable | **Not run / unverified** |
+| Godot education multiplayer client workflow | Godot unavailable | **Not run / unverified** |
+| Full Stage 1–3 Godot runtime regression | Godot unavailable | **Not run / unverified** |
 
-### Executed Stage 3 checks (2026-10-08)
+## Technology and executed checks (2026-10-08)
 
-- `npm run check` — **passed**: ESLint, strict TypeScript build, and 18 Node tests (11 HTTP/WebSocket/world tests plus 7 geography importer/coordinates/catalog tests).
-- `npm run geography:import` — **passed**: generated the national admin, Akure South region and provenance manifest from pinned source artifacts.
-- `npm run geography:check` — **passed**: all three processed files reproducibly matched the importer output.
-- `/tmp/naija-gdtoolkit/bin/gdformat --check $(find game -name '*.gd' -print)` — **passed**: 18 GDScript files unchanged by formatter.
-- `/tmp/naija-gdtoolkit/bin/gdlint $(find game -name '*.gd' -print)` — **passed**: no static lint findings.
-- Godot engine/import/client/runtime checks — **blocked/not run**: `godot` is not installed. The Node tests do not verify client rendering, input, save/load or two-window UI behavior.
+| Component | Baseline/check | Result |
+|---|---|---|
+| Node.js/npm | Node `v22.22.3`; npm `10.9.8` | Available |
+| TypeScript API | `npm run check` (ESLint, strict TypeScript build, all Node tests) | **Passed**: 26 Node tests, 0 failures |
+| Focused education suite | `npm run build --workspace=@naija/world-api && node --test services/world-api/test/education.test.mjs` | **Passed**: 8 education tests, 0 failures |
+| Geography provenance/reproducibility | `npm run geography:check` | **Passed**: all 3 processed geography files match the pinned inputs |
+| GDScript formatting | `PYTHONPATH=/tmp/naija-gdtoolkit-packages /tmp/naija-gdtoolkit/bin/gdformat --check $(find game -name '*.gd' -print)` | **Passed**: 19 files left unchanged |
+| GDScript lint | `PYTHONPATH=/tmp/naija-gdtoolkit-packages /tmp/naija-gdtoolkit/bin/gdlint $(find game -name '*.gd' -print)` | **Not clean**: 4 structural findings listed below |
+| Godot | Project targets Godot 4.7.2 | **Blocked**: executable unavailable; no import/runtime checks |
+| Database | None configured | Single-process JSON server persistence and separate local client JSON save only |
 
-## Commands and manual checks
+Exact executed results:
+
+- `npm run build --workspace=@naija/world-api && node --test services/world-api/test/education.test.mjs` — **passed**, 8 tests, 0 failures. Includes a live two-WebSocket-client school co-presence journey, server-validated classroom attendance/action and online record persistence through API restart.
+- `npm run check` — **passed**, ESLint, TypeScript build and 26 Node tests, 0 failures. Includes the retained Stage 1–3 API, multiplayer, persistence, geography, and importer regressions alongside Stage 4 coverage.
+- `npm run geography:check` — **passed**, 3 processed files reproducibly matched the pinned sources.
+- `gdformat --check` over all game GDScript files — **passed**, 19 files unchanged.
+- `gdlint` — **failed only the style/structural gate**, with four configured maximum-count warnings: `max-file-lines` for `game/scripts/domain/education_service.gd` (2,162 lines), `game/scripts/prototype_game.gd` (1,090 lines), and `game/scripts/ui/prototype_ui.gd` (1,144 lines); plus `max-public-methods` in `game/scripts/ui/prototype_ui.gd`. The earlier line-length finding was fixed and does not appear in this latest run.
+- `godot --version` — **not run successfully**: shell reports `godot: command not found`. No engine, scene, graphics, input, local save/load, education UI, or Godot client-multiplayer results are claimed.
+
+## Reproduction commands
 
 From the repository root:
 
 ```sh
-npm ci
-npm run geography:import
-npm run geography:check
 npm run check
+npm run build --workspace=@naija/world-api
+node --test services/world-api/test/education.test.mjs
+npm run geography:check
+PYTHONPATH=/tmp/naija-gdtoolkit-packages /tmp/naija-gdtoolkit/bin/gdformat --check $(find game -name '*.gd' -print)
+PYTHONPATH=/tmp/naija-gdtoolkit-packages /tmp/naija-gdtoolkit/bin/gdlint $(find game -name '*.gd' -print)
 ```
 
-When Godot 4.7.2 is available, run retained Stage 1 domain/movement/save-restart scripts from the README, launch a local offline life, and verify that default Idera creation/movement/interactions/save/load still work. Then toggle **Map data** in the outdoor map; inspect road/building/school/health features; verify attribution and viewport caveat; toggle back and check Idera interactions. Finally test two online clients in the same sample chunk, move one out of interest, test map enter/leave and verify old clients/saves without geographic identity still load.
+When Godot 4.7.2 is available, import and run the existing tests documented in [`README.md`](../README.md), verify Stage 1 creation/movement/save/restart first, then follow the offline education journeys and two-client school/campus workflow described in [`EDUCATION_PLAN.md`](EDUCATION_PLAN.md). Confirm client scene transitions preserve one world, school clock/timetable behavior, attendance, results, final-exam eligibility/outcomes, funding and local save/restart. Fix any engine import/runtime failures before marking Stage 4 client behavior verified or beginning Stage 5.
 
 ## Known limits and next gates
 
-1. Continue running the TypeScript lint/build/tests and deterministic import check after changes; the current run passed as recorded above.
-2. When Godot becomes available, run Stage 1/2 runtime regression and Stage 3 map/POI render/toggle/client integration; fix import/runtime errors before calling the client path verified.
-3. Keep official boundary sources, data terms, attribution and source coordinate semantics under review before expanding the catalog. Do not imply Akure South coverage is complete or treat reference points as boundaries.
-4. Before production multiplayer, design account security, database transactions/backups, privacy, abuse controls, distributed ownership and operations.
-5. The next roadmap stage, after this Stage 3 implementation/test gate, is **Stage 4 — Complete Education System**; no Stage 4 work is included here.
+1. Keep the shared education catalog fictional, configurable and versioned; do not present its curricula, fees, admissions, awards or progression thresholds as Nigerian government or institutional policy.
+2. Do not add protected examination papers, imply WAEC/NECO or institution endorsement, or turn career eligibility metadata into employment simulation.
+3. Maintain one canonical `nigeria-main` world; campus anchors are synthetic prototype points inside the existing geographic sample, not real addresses.
+4. Before production, replace JSON persistence with an explicit storage/migration/recovery design, authoritative writes and operational/security controls. No banking or full economy was introduced.
+5. Godot import/runtime and Stage 1–4 offline-client/regression checks remain blocked until Godot 4.7.2 is available. Node tests do not substitute for these checks.
+6. **Next stage: Stage 5 — Age & Life Simulation.** Stage 5 remains not started and is gated on completing the available Stage 4 test/runtime verification first.

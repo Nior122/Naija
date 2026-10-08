@@ -9,6 +9,24 @@ import {
   loadAkureSouthRegion,
 } from "../geography/catalog.js";
 import type { GeographicRegion } from "../geography/types.js";
+import { loadEducationCatalog } from "../education/catalog.js";
+import {
+  applyEducationAction,
+  beginTertiaryCoursePayload,
+  createStudentEducationRecord,
+  findQuestionForSubject,
+  markMissedSchoolPeriods,
+  nextFinalExamQuestion,
+  nextSchoolLesson,
+  publicSchoolQuiz,
+  recordFinalExamAnswer,
+  recordSchoolAttendance,
+  recordSchoolQuizAnswer,
+  recordTertiaryCourseAnswer,
+  syncLegacyEducation,
+  type EducationActionOptions,
+} from "../education/service.js";
+import type { EducationCatalog } from "../education/types.js";
 import { WorldStore } from "./persistence.js";
 import {
   MAP_HEIGHT,
@@ -51,6 +69,7 @@ const IDEMPOTENT_COMMANDS = new Set([
   "clinic.care",
   "character.rest",
   "school.answer",
+  "education.action",
 ]);
 
 const SKIN_TONES: Record<string, string> = {
@@ -69,45 +88,6 @@ const GUARDIAN_NAMES = [
   "Amina", "Bisi", "Chinwe", "Hauwa", "Ifeoma", "Kemi", "Ngozi", "Sadiya", "Tola", "Zainab",
 ];
 const FAMILY_NAMES = ["Adeyemi", "Bello", "Eze", "Ibrahim", "Okafor", "Olawale", "Yusuf"];
-const STARTING_SCORES: Record<string, number> = {
-  Mathematics: 72,
-  English: 68,
-  "Computer Studies": 81,
-  Biology: 64,
-  "Civic Education": 75,
-};
-const TIMETABLE = [
-  { minute: 480, subject: "Mathematics" },
-  { minute: 540, subject: "English" },
-  { minute: 600, subject: "Break" },
-  { minute: 630, subject: "Computer Studies" },
-  { minute: 690, subject: "Biology" },
-  { minute: 750, subject: "Civic Education" },
-] as const;
-const QUESTIONS: Record<string, { question: string; options: string[]; correctIndex: number }> = {
-  Mathematics: { question: "What is 7 × 8?", options: ["54", "56", "58"], correctIndex: 1 },
-  English: {
-    question: "Which sentence is grammatically correct?",
-    options: ["She go to school.", "She goes to school.", "She going school."],
-    correctIndex: 1,
-  },
-  "Computer Studies": {
-    question: "Which part is often called the computer's brain?",
-    options: ["CPU", "Keyboard", "Monitor"],
-    correctIndex: 0,
-  },
-  Biology: {
-    question: "What do green plants use to make food?",
-    options: ["Sunlight", "Plastic", "Sand only"],
-    correctIndex: 0,
-  },
-  "Civic Education": {
-    question: "What is one responsibility of a citizen?",
-    options: ["Respecting the law", "Ignoring neighbours", "Damaging public property"],
-    correctIndex: 0,
-  },
-};
-
 interface TravelTarget {
   readonly destination: string;
   readonly position: Point2D;
@@ -135,11 +115,23 @@ const TRAVEL_TARGETS: Record<string, Record<string, TravelTarget>> = {
     "classroom-door": {
       destination: "classroom", position: { x: 1120, y: 500 }, spawn: { x: 260, y: 650 },
     },
+    "tertiary-campus-gate": {
+      destination: "campus", position: { x: 1400, y: 550 }, spawn: { x: 260, y: 650 },
+    },
+    "community-skills-centre": {
+      destination: "training_center", position: { x: 1400, y: 690 }, spawn: { x: 260, y: 650 },
+    },
   },
   classroom: {
     "classroom-exit": {
       destination: "schoolyard", position: { x: 180, y: 650 }, spawn: { x: 1050, y: 560 },
     },
+  },
+  campus: {
+    "campus-exit": { destination: "schoolyard", position: { x: 180, y: 650 }, spawn: { x: 1370, y: 550 } },
+  },
+  training_center: {
+    "training-centre-exit": { destination: "schoolyard", position: { x: 180, y: 650 }, spawn: { x: 1370, y: 690 } },
   },
   market: {
     "market-exit": { destination: "town", position: { x: 180, y: 650 }, spawn: { x: 540, y: 660 } },
@@ -175,9 +167,16 @@ interface ConnectionContext {
 
 interface PendingQuiz {
   readonly quizId: string;
+  readonly mode: "school" | "final_exam" | "tertiary";
+  readonly subjectId: string;
   readonly subject: string;
   readonly correctIndex: number;
   readonly day: number;
+  readonly questionId: string;
+  readonly assessmentType: string;
+  readonly scheduleId?: string;
+  readonly registrationId?: string;
+  readonly courseId?: string;
 }
 
 interface WindowCounter {
@@ -234,6 +233,7 @@ function createCharacter(
   playerId: string,
   now: number,
   geographyRegion: GeographicRegion,
+  educationCatalog: EducationCatalog,
 ): CharacterRecord {
   const name = validName(profile.name);
   const age = profile.age;
@@ -260,9 +260,11 @@ function createCharacter(
     position = geographicLocationToMapPosition(geographicLocation, geographyRegion);
     currentLocation = "town";
   }
-  return {
+  const characterId = `character-${randomUUID()}`;
+  const educationRecord = createStudentEducationRecord(characterId, age, 1, educationCatalog);
+  const character: CharacterRecord = {
     player_id: playerId,
-    character_id: `character-${randomUUID()}`,
+    character_id: characterId,
     name,
     age,
     character_type: characterType,
@@ -278,8 +280,8 @@ function createCharacter(
     health: 100,
     energy: 90,
     hunger: 82,
-    education_level: "Secondary school (prototype)",
-    school_id: "idera_secondary_school",
+    education_level: "Secondary school · JSS 3",
+    school_id: educationRecord.school_id,
     home_id: String(household.home_id),
     current_location: currentLocation,
     position,
@@ -292,13 +294,16 @@ function createCharacter(
       { id: "meat_pie", name: "Meat pie", quantity: 1, category: "food", hunger_restore: 24 },
       { id: "uniform", name: "School uniform", quantity: 1, category: "clothing" },
     ],
-    academic_scores: { ...STARTING_SCORES },
+    academic_scores: {},
     attendance: [],
+    education_record: educationRecord,
     reputation: 0,
     household,
     created_at: timestamp,
     updated_at: timestamp,
   };
+  syncLegacyEducation(character, educationCatalog);
+  return character;
 }
 
 function sanitizeProfile(value: unknown): Record<string, unknown> | null {
@@ -344,6 +349,7 @@ export class MultiplayerWorld {
   private readonly maxConnections: number;
   private readonly connectionAttemptsPerMinute: number;
   private readonly geographyRegion: GeographicRegion;
+  private readonly educationCatalog: EducationCatalog;
   private lastTickAt: number;
   private lastBroadcastAt = 0;
   private lastPersistAt: number;
@@ -359,6 +365,7 @@ export class MultiplayerWorld {
     this.maxConnections = Math.max(1, options.maxConnections ?? 64);
     this.connectionAttemptsPerMinute = Math.max(1, options.connectionAttemptsPerMinute ?? 30);
     this.geographyRegion = loadAkureSouthRegion();
+    this.educationCatalog = loadEducationCatalog();
     this.lastTickAt = this.now();
     this.lastPersistAt = this.lastTickAt;
     for (const player of Object.values(this.store.state.players)) {
@@ -565,6 +572,7 @@ export class MultiplayerWorld {
       case "geography.leave": await this.leaveGeographicRegion(context, player, requestId); return;
       case "school.begin": this.beginLesson(context, player, requestId); return;
       case "school.answer": await this.answerLesson(context, player, message, requestId); return;
+      case "education.action": await this.educationAction(context, player, message, requestId); return;
       case "chat.send": this.handleChat(context, player, message, requestId); return;
       case "player.interact": this.handlePlayerInteraction(context, player, message, requestId); return;
       default: this.invalid(context, "unknown_message", requestId);
@@ -632,7 +640,7 @@ export class MultiplayerWorld {
     let character: CharacterRecord;
     try {
       playerId = `player-${randomUUID()}`;
-      character = createCharacter(profile, playerId, this.now(), this.geographyRegion);
+      character = createCharacter(profile, playerId, this.now(), this.geographyRegion, this.educationCatalog);
     } catch (error) {
       this.sendError(context, this.errorCode(error), "The character profile was not accepted.", requestId);
       return;
@@ -743,6 +751,18 @@ export class MultiplayerWorld {
     const target = TRAVEL_TARGETS[player.character.current_location]?.[exitId];
     if (!target || distance(player.character.position, target.position) > ENTITY_INTERACTION_RADIUS) {
       this.sendError(context, "interaction_out_of_range", "Move closer to that entrance first.", requestId);
+      return;
+    }
+    if (target.destination === "campus" &&
+      (!player.character.education_record.tertiary_enrollment ||
+        player.character.education_record.tertiary_enrollment.status === "completed")) {
+      this.sendError(context, "education_not_enrolled", "Accept a tertiary offer before entering the campus.", requestId);
+      return;
+    }
+    if (target.destination === "training_center" &&
+      !player.character.education_record.vocational_enrollments.some((entry) => entry.status === "active") &&
+      !player.character.education_record.apprenticeships.some((entry) => entry.status === "active")) {
+      this.sendError(context, "education_training_not_enrolled", "Enroll in a vocational course or apprenticeship before entering the skills centre.", requestId);
       return;
     }
     this.markRequestProcessed(player, requestId);
@@ -907,64 +927,276 @@ export class MultiplayerWorld {
     await this.flushDirty();
   }
 
-  private beginLesson(context: ConnectionContext, player: PersistentPlayer, requestId?: string): void {
-    if (player.character.current_location !== "classroom" ||
-      distance(player.character.position, { x: 820, y: 560 }) > ENTITY_INTERACTION_RADIUS) {
-      this.sendError(context, "interaction_out_of_range", "Move to your desk to begin class.", requestId);
-      return;
-    }
+  private beginLesson(context: ConnectionContext, player: PersistentPlayer, requestId?: string, preferFinalExam = false): void {
+    const character = player.character;
     if (this.pendingQuizzes.has(player.playerId)) {
       this.sendError(context, "quiz_in_progress", "Finish the current class activity first.", requestId);
       return;
     }
-    const subject = this.nextLessonSubject(player.character);
-    if (!subject) {
+    const day = this.store.state.worldClock.day;
+    const minuteOfDay = this.store.state.worldClock.minute_of_day;
+    if (character.current_location === "classroom") {
+      if (distance(character.position, { x: 820, y: 560 }) > ENTITY_INTERACTION_RADIUS) {
+        this.sendError(context, "interaction_out_of_range", "Move to your desk to begin class or your registered examination.", requestId);
+        return;
+      }
+      const lesson = preferFinalExam ? null : nextSchoolLesson(character.education_record, day, minuteOfDay, this.educationCatalog);
+      if (lesson?.subject_id) {
+        const question = findQuestionForSubject(lesson.subject_id, character.education_record.current_class_id, this.educationCatalog);
+        if (!question) {
+          this.sendError(context, "lesson_unavailable", "That lesson has no original game question configured.", requestId);
+          return;
+        }
+        const quizId = randomUUID();
+        const subject = this.educationCatalog.subjects.find((entry) => entry.id === lesson.subject_id)?.name ?? lesson.subject_id;
+        recordSchoolAttendance(character.education_record, lesson, day, minuteOfDay, undefined, this.educationCatalog);
+        this.pendingQuizzes.set(player.playerId, {
+          quizId,
+          mode: "school",
+          subjectId: lesson.subject_id,
+          subject,
+          correctIndex: question.correct_choice_index,
+          day,
+          questionId: question.id,
+          assessmentType: lesson.assessment_type ?? "continuous_assessment",
+          scheduleId: lesson.id,
+        });
+        this.touchPlayer(player);
+        this.send(context, appendOptionalRequestId({
+          type: "school.quiz",
+          quizId,
+          mode: "school",
+          ...publicSchoolQuiz(lesson, question, this.educationCatalog),
+        }, requestId));
+        void this.flushDirty();
+        return;
+      }
+      const finalQuestion = nextFinalExamQuestion(character.education_record, day, this.educationCatalog);
+      if (finalQuestion) {
+        recordSchoolAttendance(character.education_record, {
+          id: `final-${finalQuestion.registration.registration_id}-${finalQuestion.subject_id}`,
+          start_minute: minuteOfDay,
+          class_id: "SS3",
+          subject_id: finalQuestion.subject_id,
+        }, day, minuteOfDay, undefined, this.educationCatalog);
+        const quizId = randomUUID();
+        const subject = this.educationCatalog.subjects.find((entry) => entry.id === finalQuestion.subject_id)?.name ?? finalQuestion.subject_id;
+        this.pendingQuizzes.set(player.playerId, {
+          quizId,
+          mode: "final_exam",
+          subjectId: finalQuestion.subject_id,
+          subject,
+          correctIndex: finalQuestion.question.correct_choice_index,
+          day,
+          questionId: finalQuestion.question.id,
+          assessmentType: "examination",
+          registrationId: finalQuestion.registration.registration_id,
+        });
+        this.send(context, appendOptionalRequestId({
+          type: "school.quiz",
+          quizId,
+          mode: "final_exam",
+          subject,
+          question: finalQuestion.question.prompt,
+          options: [...finalQuestion.question.choices],
+          question_id: finalQuestion.question.id,
+          exam_name: this.educationCatalog.final_examination.name,
+        }, requestId));
+        return;
+      }
       this.send(context, appendOptionalRequestId({ type: "school.complete" }, requestId));
       return;
     }
-    const question = QUESTIONS[subject];
-    if (!question) {
-      this.sendError(context, "lesson_unavailable", "That lesson is not available.", requestId);
+    if (character.current_location === "campus") {
+      const course = beginTertiaryCoursePayload(character.education_record, this.educationCatalog);
+      if (!course || typeof course.question_id !== "string") {
+        this.sendError(context, "education_not_enrolled", "There is no available tertiary course assessment.", requestId);
+        return;
+      }
+      const question = this.educationCatalog.questions.find((entry) => entry.id === course.question_id);
+      if (!question || typeof course.subject_id !== "string" || typeof course.course_id !== "string") {
+        this.sendError(context, "lesson_unavailable", "That course has no valid question in the education catalog.", requestId);
+        return;
+      }
+      const enrollment = character.education_record.tertiary_enrollment;
+      recordSchoolAttendance(character.education_record, {
+        id: `tertiary-${enrollment?.program_id ?? "program"}-${enrollment?.semester ?? 1}-${course.course_id}`,
+        start_minute: minuteOfDay,
+        class_id: "TERTIARY",
+        subject_id: course.subject_id,
+      }, day, minuteOfDay, undefined, this.educationCatalog);
+      const quizId = randomUUID();
+      const subject = typeof course.course_name === "string" ? course.course_name : course.subject_id;
+      const assessmentType = typeof course.assessment_type === "string" ? course.assessment_type : "assignment";
+      this.pendingQuizzes.set(player.playerId, {
+        quizId,
+        mode: "tertiary",
+        subjectId: course.subject_id,
+        subject,
+        correctIndex: question.correct_choice_index,
+        day,
+        questionId: question.id,
+        assessmentType,
+        courseId: course.course_id,
+      });
+      this.send(context, appendOptionalRequestId({
+        type: "school.quiz",
+        quizId,
+        mode: "tertiary",
+        subject,
+        question: question.prompt,
+        options: [...question.choices],
+        question_id: question.id,
+        course_id: course.course_id,
+        assessment_type: assessmentType,
+      }, requestId));
       return;
     }
-    const quizId = randomUUID();
-    this.pendingQuizzes.set(player.playerId, {
-      quizId, subject, correctIndex: question.correctIndex, day: this.store.state.worldClock.day,
-    });
-    this.send(context, appendOptionalRequestId({
-      type: "school.quiz", quizId, subject, question: question.question, options: question.options,
-    }, requestId));
+    this.sendError(context, "invalid_location", "Go to your classroom or enrolled campus before beginning an education activity.", requestId);
   }
 
-  private async answerLesson(context: ConnectionContext, player: PersistentPlayer, message: Record<string, unknown>, requestId?: string): Promise<void> {
+  private async answerLesson(
+    context: ConnectionContext,
+    player: PersistentPlayer,
+    message: Record<string, unknown>,
+    requestId?: string,
+  ): Promise<void> {
     const pending = this.pendingQuizzes.get(player.playerId);
     const answerIndex = message.answerIndex;
-    if (!pending || message.quizId !== pending.quizId || !Number.isSafeInteger(answerIndex) ||
-      typeof answerIndex !== "number" || answerIndex < 0 || answerIndex > 2) {
-      this.sendError(context, "quiz_invalid", "The class activity response is invalid.", requestId);
+    if (!pending || message.quizId !== pending.quizId || typeof answerIndex !== "number" ||
+      !Number.isSafeInteger(answerIndex) || answerIndex < 0 || answerIndex > 20) {
+      this.sendError(context, "quiz_invalid", "The education activity response is invalid.", requestId);
       return;
     }
-    if (player.character.current_location !== "classroom") {
+    const expectedLocation = pending.mode === "tertiary" ? "campus" : "classroom";
+    if (player.character.current_location !== expectedLocation) {
       this.pendingQuizzes.delete(player.playerId);
-      this.sendError(context, "quiz_invalid", "Return to class before answering.", requestId);
+      this.sendError(context, "quiz_invalid", "Return to the correct learning location before answering.", requestId);
+      return;
+    }
+    const question = this.educationCatalog.questions.find((entry) => entry.id === pending.questionId);
+    if (!question || answerIndex >= question.choices.length) {
+      this.pendingQuizzes.delete(player.playerId);
+      this.sendError(context, "quiz_invalid", "The education question is no longer available.", requestId);
       return;
     }
     this.markRequestProcessed(player, requestId);
     const correct = answerIndex === pending.correctIndex;
-    const previousScore = player.character.academic_scores[pending.subject] ?? 60;
-    const activityScore = correct ? 95 : 45;
-    const score = clamp(Math.round(previousScore * 0.7 + activityScore * 0.3), 0, 100);
-    player.character.academic_scores[pending.subject] = score;
-    player.character.attendance.push({
-      day: pending.day, subject: pending.subject, score,
-      attended_at: `Day ${pending.day} · ${this.clockLabel()}`,
-    });
-    if (player.character.attendance.length > 10_000) player.character.attendance.shift();
+    let score: number;
+    let certificateEligible: boolean | null = null;
+    if (pending.mode === "school") {
+      const result = recordSchoolQuizAnswer(player.character, {
+        schedule_id: pending.scheduleId ?? "",
+        subject_id: pending.subjectId,
+        assessment_type: pending.assessmentType,
+        question_id: pending.questionId,
+        day: pending.day,
+        question_correct_choice_index: pending.correctIndex,
+      }, answerIndex, this.store.state.worldClock.minute_of_day, this.educationCatalog);
+      score = result.score;
+    } else if (pending.mode === "tertiary") {
+      score = recordTertiaryCourseAnswer(player.character, {
+        course_id: pending.courseId ?? "",
+        subject_id: pending.subjectId,
+        assessment_type: pending.assessmentType,
+        question_id: pending.questionId,
+      }, answerIndex, this.store.state.worldClock.day, this.educationCatalog);
+    } else {
+      const result = recordFinalExamAnswer(
+        player.character.education_record,
+        pending.registrationId ?? "",
+        pending.subjectId,
+        pending.questionId,
+        answerIndex,
+        this.store.state.worldClock.day,
+        this.educationCatalog,
+      );
+      score = result.attempt.score;
+      certificateEligible = result.certificate_eligible;
+    }
     this.pendingQuizzes.delete(player.playerId);
+    syncLegacyEducation(player.character, this.educationCatalog);
     this.touchPlayer(player);
-    this.send(context, appendOptionalRequestId({ type: "school.result", subject: pending.subject, correct, score }, requestId));
+    this.send(context, appendOptionalRequestId({
+      type: "school.result",
+      mode: pending.mode,
+      subject: pending.subject,
+      correct,
+      score,
+      ...(certificateEligible === null ? {} : { certificate_eligible: certificateEligible }),
+    }, requestId));
     this.sendCharacterSnapshot(context);
     await this.flushDirty();
+  }
+
+  private async educationAction(
+    context: ConnectionContext,
+    player: PersistentPlayer,
+    message: Record<string, unknown>,
+    requestId?: string,
+  ): Promise<void> {
+    if (typeof message.action !== "string" || message.action.length > 48) {
+      this.sendError(context, "education_action_invalid", "Select a valid education action.", requestId);
+      return;
+    }
+    if (message.action === "begin_final_exam") {
+      this.markRequestProcessed(player, requestId);
+      this.beginLesson(context, player, requestId, true);
+      void this.flushDirty();
+      return;
+    }
+    const payload = isRecord(message.payload) ? message.payload : {};
+    const options: EducationActionOptions = {
+      programSeatsUsed: this.programSeatCount(typeof payload.program_id === "string" ? payload.program_id : ""),
+      scholarshipAwardsUsed: this.scholarshipAwardCounts(),
+    };
+    const result = applyEducationAction(player.character, message.action, payload, {
+      day: this.store.state.worldClock.day,
+      minuteOfDay: this.store.state.worldClock.minute_of_day,
+      age: player.character.age,
+      money: player.character.money,
+      household: player.character.household,
+      currentLocation: player.character.current_location,
+    }, options, this.educationCatalog);
+    if (result.ok && result.changed) {
+      this.markRequestProcessed(player, requestId);
+      syncLegacyEducation(player.character, this.educationCatalog);
+      this.touchPlayer(player);
+      this.send(context, appendOptionalRequestId({ type: "education.result", ...result }, requestId));
+      this.sendCharacterSnapshot(context);
+      await this.flushDirty();
+      return;
+    }
+    this.send(context, appendOptionalRequestId({
+      type: result.ok ? "education.result" : "education.error",
+      ...result,
+    }, requestId));
+  }
+
+  private programSeatCount(programId: string): number {
+    if (!programId) return 0;
+    const occupied = new Set<string>();
+    for (const player of Object.values(this.store.state.players)) {
+      const record = player.character.education_record;
+      if (record.tertiary_enrollment?.program_id === programId && record.tertiary_enrollment.status !== "completed") {
+        occupied.add(player.playerId);
+      }
+      if (record.admission_applications.some((application) => application.program_id === programId &&
+        (application.status === "offered" || application.status === "accepted"))) {
+        occupied.add(player.playerId);
+      }
+    }
+    return occupied.size;
+  }
+
+  private scholarshipAwardCounts(): Record<string, number> {
+    const counts: Record<string, number> = {};
+    for (const player of Object.values(this.store.state.players)) {
+      for (const award of player.character.education_record.scholarships) {
+        counts[award.scholarship_id] = (counts[award.scholarship_id] ?? 0) + 1;
+      }
+    }
+    return counts;
   }
 
   private handleChat(context: ConnectionContext, player: PersistentPlayer, message: Record<string, unknown>, requestId?: string): void {
@@ -1032,6 +1264,16 @@ export class MultiplayerWorld {
       clock.minute_of_day = 0;
     } else clock.minute_of_day += 1;
     clock.updated_at = new Date(now).toISOString();
+    const attendanceDeadlinePassed = this.educationCatalog.timetable.some((entry) =>
+      entry.kind !== "break" &&
+      entry.start_minute + entry.duration_minutes + this.educationCatalog.calendar.late_grace_minutes + 1 === clock.minute_of_day);
+    if (attendanceDeadlinePassed && this.educationCatalog.calendar.school_days_of_week.includes((clock.day - 1) % 7)) {
+      for (const storedPlayer of Object.values(this.store.state.players)) {
+        if (markMissedSchoolPeriods(storedPlayer.character.education_record, clock.day, clock.minute_of_day, this.educationCatalog) > 0) {
+          syncLegacyEducation(storedPlayer.character, this.educationCatalog);
+        }
+      }
+    }
     for (const context of this.online.values()) {
       const player = this.playerFor(context);
       if (!player) continue;
@@ -1045,21 +1287,6 @@ export class MultiplayerWorld {
       this.sendCharacterSnapshot(context);
     }
     this.dirty = true;
-  }
-
-  private clockLabel(): string {
-    const minuteOfDay = this.store.state.worldClock.minute_of_day;
-    return `${String(Math.floor(minuteOfDay / 60)).padStart(2, "0")}:${String(minuteOfDay % 60).padStart(2, "0")}`;
-  }
-
-  private nextLessonSubject(character: CharacterRecord): string | null {
-    for (const lesson of TIMETABLE) {
-      if (lesson.subject === "Break") continue;
-      const attended = character.attendance.some((record) =>
-        record.day === this.store.state.worldClock.day && record.subject === lesson.subject);
-      if (!attended && this.store.state.worldClock.minute_of_day <= lesson.minute + 45) return lesson.subject;
-    }
-    return null;
   }
 
   private addInventoryItem(inventory: InventoryItem[], purchased: InventoryItem): void {

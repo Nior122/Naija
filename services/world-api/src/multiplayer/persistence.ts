@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { geographicLocationIsValid } from "../geography/catalog.js";
+import { loadEducationCatalog } from "../education/catalog.js";
+import { isEducationStudentRecord, normalizeEducationRecord, syncLegacyEducation } from "../education/service.js";
 import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { readFileSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -66,6 +68,7 @@ function isCharacter(value: unknown): value is CharacterRecord {
     ) ||
     !Array.isArray(value.attendance) ||
     !value.attendance.every(isRecord) ||
+    (value.education_record !== undefined && !isEducationStudentRecord(value.education_record)) ||
     !isFiniteNumber(value.reputation) ||
     !isRecord(value.household) ||
     (value.geographic_location !== undefined &&
@@ -122,6 +125,18 @@ function validateState(value: unknown): PersistentWorldState {
     if (player.character.geographic_location === undefined) {
       player.character.geographic_location = null;
     }
+    const character = player.character;
+    character.education_record = normalizeEducationRecord(
+      character.education_record,
+      character.character_id,
+      character.age,
+      character.school_id,
+      character.academic_scores,
+      character.attendance,
+      Math.max(1, Math.floor(value.worldClock.day)),
+      loadEducationCatalog(),
+    );
+    syncLegacyEducation(character, loadEducationCatalog());
   }
 
   return value as unknown as PersistentWorldState;

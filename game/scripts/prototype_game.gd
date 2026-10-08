@@ -5,6 +5,7 @@ const GeographyModelScript = preload("res://scripts/domain/geography_model.gd")
 const WorldClockScript = preload("res://scripts/domain/world_clock.gd")
 const HouseholdFactoryScript = preload("res://scripts/domain/household_factory.gd")
 const SchoolServiceScript = preload("res://scripts/domain/school_service.gd")
+const EducationServiceScript = preload("res://scripts/domain/education_service.gd")
 const DialogueLibraryScript = preload("res://scripts/domain/dialogue_library.gd")
 const SaveServiceScript = preload("res://scripts/services/save_service.gd")
 const WorldMapScript = preload("res://scripts/world/world_map.gd")
@@ -60,6 +61,7 @@ func _ready() -> void:
 	ui.panel_requested.connect(_open_panel)
 	ui.save_requested.connect(_on_manual_save_requested)
 	ui.load_requested.connect(_continue_game)
+	ui.education_action_requested.connect(_on_education_action_requested)
 	ui.answer_requested.connect(_on_quiz_answer)
 	ui.purchase_requested.connect(_purchase_item)
 	ui.consume_requested.connect(_consume_item)
@@ -99,6 +101,11 @@ func _process(delta: float) -> void:
 			_time_accumulator -= SECONDS_PER_GAME_MINUTE
 			clock.advance_minutes(1)
 			character.advance_time(1)
+			var missed_periods := EducationServiceScript.mark_missed_periods(
+				character.education_record, clock.day, clock.minute_of_day
+			)
+			if missed_periods > 0:
+				EducationServiceScript.sync_legacy_character(character)
 			world.update_daypart(clock.daypart())
 			if clock.minute_of_day % 15 == 0:
 				_save_game(false)
@@ -223,17 +230,26 @@ func _on_online_message(message: Dictionary) -> void:
 			ui.show_quiz(
 				str(message.get("subject", "Class activity")),
 				message,
-				str(message.get("quizId", ""))
+				str(message.get("quizId", "")),
+				str(message.get("mode", "school"))
 			)
 		"school.result":
 			ui.show_quiz_result(
 				str(message.get("subject", "Class")),
 				bool(message.get("correct", false)),
-				int(message.get("score", 0))
+				int(message.get("score", 0)),
+				str(message.get("mode", "school")),
+				message.get("certificate_eligible", null)
 			)
+		"education.result", "education.error":
+			ui.show_education_result(message)
 		"school.complete":
-			ui.show_notice(
-				"School day complete", "You have attended today's available class activities."
+			(
+				ui
+				. show_notice(
+					"School day complete",
+					"There is no class or registered exam session available at this time. Check your timetable."
+				)
 			)
 		"command.duplicate":
 			ui.notify("That action was already processed by the server.")
@@ -515,6 +531,8 @@ func _interact_with(entity: WorldEntity) -> void:
 					ui.notify("Waiting for the multiplayer server connection.")
 				return
 			var destination := str(entity.data.get("location", "town"))
+			if not _can_enter_education_location(destination):
+				return
 			var spawn_value: Variant = entity.data.get("spawn", Vector2(720.0, 540.0))
 			var spawn_position: Vector2 = (
 				spawn_value if spawn_value is Vector2 else Vector2(720.0, 540.0)
@@ -535,6 +553,14 @@ func _interact_with(entity: WorldEntity) -> void:
 			ui.show_timetable(character, clock, character.current_location)
 		"attend_class":
 			_attend_next_class()
+		"begin_course":
+			_on_education_action_requested("begin_course", {})
+		"education_panel":
+			ui.show_education(character, clock, character.current_location, _online_mode)
+		"education_activity":
+			_on_education_action_requested("attend_activity", entity.data)
+		"practice_training":
+			_on_education_action_requested("practice_training", {})
 		"bus_to_school":
 			_take_bus_to_school()
 		"clinic_care":
@@ -666,9 +692,17 @@ func _attend_next_class() -> void:
 		clock.advance_minutes(wait_minutes)
 		character.advance_time(wait_minutes)
 		_refresh_hud()
-	_active_subject = str(lesson["subject"])
-	_active_question = SchoolServiceScript.question_for(_active_subject)
-	ui.show_quiz(_active_subject, _active_question)
+	EducationServiceScript.record_attendance(
+		character.education_record, lesson, clock.day, clock.minute_of_day
+	)
+	EducationServiceScript.sync_legacy_character(character)
+	_save_game(false)
+	_active_subject = str(lesson.get("subject", "Class activity"))
+	_active_question = SchoolServiceScript.question_for(
+		str(lesson.get("subject_id", _active_subject))
+	)
+	_active_question["mode"] = "school"
+	ui.show_quiz(_active_subject, _active_question, "offline-school-quiz", "school")
 
 
 func _on_quiz_answer(answer_index: int, quiz_id: String = "") -> void:
@@ -679,22 +713,230 @@ func _on_quiz_answer(answer_index: int, quiz_id: String = "") -> void:
 				"school.answer", {"quizId": quiz_id, "answerIndex": answer_index}
 			)
 		):
-			ui.notify("The class response could not be sent to the server.")
+			ui.notify("The education response could not be sent to the server.")
 		return
 	if _active_subject.is_empty() or _active_question.is_empty():
 		return
-	var correct := answer_index == int(_active_question.get("correct_index", -1))
+	var mode := str(_active_question.get("mode", "school"))
 	var subject := _active_subject
-	var score := SchoolServiceScript.record_result(
-		character, clock.day, subject, correct, clock.time_label()
-	)
+	var correct := answer_index == int(_active_question.get("correct_index", -1))
+	var score := 0
+	var result: Dictionary = {}
+	if mode == "final_exam":
+		result = EducationServiceScript.answer_final_exam(
+			character,
+			str(_active_question.get("registration_id", "")),
+			str(_active_question.get("subject_id", "")),
+			str(_active_question.get("question_id", "")),
+			answer_index,
+			clock.day
+		)
+		score = int(result.get("attempt", {}).get("score", 0))
+		correct = score == 100
+	elif mode == "tertiary":
+		result = EducationServiceScript.record_tertiary_answer(
+			character, str(_active_question.get("course_id", "")), answer_index, clock.day
+		)
+		score = 90 if correct else 40
+	else:
+		score = SchoolServiceScript.record_result(
+			character, clock.day, subject, correct, clock.time_label()
+		)
+	if result.has("ok") and not bool(result.get("ok", false)):
+		_active_question.clear()
+		_active_subject = ""
+		ui.show_notice(
+			"Education activity not recorded", str(result.get("message", "Please try again."))
+		)
+		return
 	clock.advance_minutes(20)
 	character.advance_time(20)
 	_active_subject = ""
 	_active_question.clear()
 	_save_game(false)
 	_refresh_hud()
-	ui.show_quiz_result(subject, correct, score)
+	ui.show_quiz_result(subject, correct, score, mode, result.get("certificate_eligible", null))
+
+
+func _on_education_action_requested(action: String, payload: Dictionary = {}) -> void:
+	if action in ["begin_final_exam", "begin_course"]:
+		if _online_mode:
+			var command_sent := false
+			if action == "begin_final_exam":
+				command_sent = multiplayer_client.send_command(
+					"education.action", {"action": action, "payload": payload}
+				)
+			else:
+				command_sent = multiplayer_client.send_command("school.begin")
+			if not command_sent:
+				ui.notify("The education session could not be started on the server.")
+			return
+
+		var quiz: Dictionary = {}
+		if action == "begin_final_exam":
+			var next_exam := EducationServiceScript.next_final_exam_question(character, clock.day)
+			if next_exam.is_empty():
+				ui.show_notice(
+					"Examination not ready",
+					"Check your SS 3 eligibility, registration and the next game-day exam opening."
+				)
+				return
+			var question: Dictionary = next_exam.get("question", {})
+			quiz = {
+				"question": str(question.get("prompt", "")),
+				"options": question.get("choices", []).duplicate(),
+				"correct_index": int(question.get("correct_choice_index", -1)),
+				"question_id": str(question.get("id", "")),
+				"subject_id": str(next_exam.get("subject_id", "")),
+				"registration_id": str(next_exam.get("registration_id", "")),
+				"mode": "final_exam",
+			}
+			(
+				EducationServiceScript
+				. record_attendance(
+					character.education_record,
+					{
+						"id":
+						(
+							"final-%s-%s"
+							% [
+								str(next_exam.get("registration_id", "")),
+								str(next_exam.get("subject_id", ""))
+							]
+						),
+						"start_minute": clock.minute_of_day,
+						"class_id": "SS3",
+						"subject_id": str(next_exam.get("subject_id", "")),
+					},
+					clock.day,
+					clock.minute_of_day
+				)
+			)
+			_active_subject = EducationServiceScript.subject_name(
+				str(next_exam.get("subject_id", ""))
+			)
+		else:
+			var course_data := EducationServiceScript.begin_tertiary_course(character)
+			if course_data.is_empty():
+				ui.show_notice(
+					"No course ready", "There is no course assessment ready for this semester."
+				)
+				return
+			var course: Dictionary = course_data.get("course", {})
+			var course_question: Dictionary = course_data.get("question", {})
+			quiz = {
+				"question": str(course_question.get("prompt", "")),
+				"options": course_question.get("choices", []).duplicate(),
+				"correct_index": int(course_question.get("correct_choice_index", -1)),
+				"question_id": str(course_question.get("id", "")),
+				"subject_id": str(course_data.get("subject_id", "")),
+				"course_id": str(course.get("id", "")),
+				"mode": "tertiary",
+			}
+			var tertiary_enrollment: Dictionary = character.education_record.get(
+				"tertiary_enrollment", {}
+			)
+			(
+				EducationServiceScript
+				. record_attendance(
+					character.education_record,
+					{
+						"id":
+						(
+							"tertiary-%s-%d-%s"
+							% [
+								str(tertiary_enrollment.get("program_id", "program")),
+								int(tertiary_enrollment.get("semester", 1)),
+								str(course.get("id", "course"))
+							]
+						),
+						"start_minute": clock.minute_of_day,
+						"class_id": "TERTIARY",
+						"subject_id": str(course_data.get("subject_id", "")),
+					},
+					clock.day,
+					clock.minute_of_day
+				)
+			)
+			_active_subject = str(course.get("name", "Tertiary course"))
+
+		EducationServiceScript.sync_legacy_character(character)
+		_save_game(false)
+		_active_question = quiz
+		ui.show_quiz(
+			_active_subject,
+			_active_question,
+			"offline-education-quiz",
+			str(quiz.get("mode", "school"))
+		)
+		return
+
+	if _online_mode:
+		if not multiplayer_client.send_command(
+			"education.action", {"action": action, "payload": payload}
+		):
+			ui.notify("The education action could not be sent to the server.")
+		return
+
+	var time_cost := 0
+	var education_catalog: Dictionary = EducationServiceScript.catalog()
+	if action == "attend_activity":
+		for activity in education_catalog.get("activities", []):
+			if str(activity.get("id", "")) == str(payload.get("activity_id", "")):
+				time_cost = int(activity.get("duration_minutes", 0))
+				break
+	elif action == "practice_training":
+		time_cost = int(
+			education_catalog.get("apprenticeship_defaults", {}).get("practice_time_minutes", 30)
+		)
+	var result := EducationServiceScript.apply_action(
+		character, action, payload, clock.day, clock.minute_of_day, character.current_location
+	)
+	if not bool(result.get("ok", false)):
+		ui.show_notice(
+			"Education update not completed",
+			str(result.get("message", "Please check the education record."))
+		)
+		return
+	if time_cost > 0:
+		clock.advance_minutes(time_cost)
+		character.advance_time(time_cost)
+		EducationServiceScript.mark_missed_periods(
+			character.education_record, clock.day, clock.minute_of_day
+		)
+	world.update_daypart(clock.daypart())
+	_save_game(false)
+	_refresh_hud()
+	ui.show_education_result(result)
+
+
+func _can_enter_education_location(destination: String) -> bool:
+	if _online_mode:
+		return true
+	if destination == "campus":
+		var enrollment: Variant = character.education_record.get("tertiary_enrollment", null)
+		if not enrollment is Dictionary or str(enrollment.get("status", "")) == "completed":
+			ui.show_notice(
+				"Campus entry", "Accept an admission offer before entering the tertiary campus."
+			)
+			return false
+	if destination == "training_center":
+		var vocational: Array = character.education_record.get("vocational_enrollments", [])
+		var apprenticeships: Array = character.education_record.get("apprenticeships", [])
+		var has_active_training := false
+		for enrollment in vocational:
+			if str(enrollment.get("status", "")) == "active":
+				has_active_training = true
+		for apprenticeship in apprenticeships:
+			if str(apprenticeship.get("status", "")) == "active":
+				has_active_training = true
+		if not has_active_training:
+			ui.show_notice(
+				"Skills centre entry",
+				"Enroll in a vocational course or apprenticeship before entering the workshop."
+			)
+			return false
+	return true
 
 
 func _purchase_item(item_id: String) -> void:
@@ -748,7 +990,7 @@ func _open_panel(panel_id: String) -> void:
 		"inventory":
 			ui.show_inventory(character)
 		"school":
-			ui.show_timetable(character, clock, character.current_location)
+			ui.show_education(character, clock, character.current_location, _online_mode)
 		"chat":
 			if _online_mode:
 				ui.show_chat()
