@@ -9,6 +9,8 @@ const SaveServiceScript = preload("res://scripts/services/save_service.gd")
 const WorldMapScript = preload("res://scripts/world/world_map.gd")
 const PlayerActorScript = preload("res://scripts/player/player_actor.gd")
 const PrototypeUIScript = preload("res://scripts/ui/prototype_ui.gd")
+const MultiplayerClientScript = preload("res://scripts/services/multiplayer_client.gd")
+const RemotePlayerScript = preload("res://scripts/player/remote_player.gd")
 
 const SECONDS_PER_GAME_MINUTE: float = 0.65
 const CLINIC_VISIT_COST: int = 300
@@ -20,6 +22,10 @@ var world: StarterWorld
 var player: PlayerActor
 var ui: PrototypeUI
 var playing: bool = false
+var multiplayer_client: Node
+var _online_mode: bool = false
+var _online_input_accumulator: float = 0.0
+var _remote_players: Dictionary = {}
 var _time_accumulator: float = 0.0
 var _active_subject: String = ""
 var _active_question: Dictionary = {}
@@ -35,9 +41,18 @@ func _ready() -> void:
 	player.movement_enabled = false
 	player.travelled.connect(_on_player_travelled)
 	add_child(player)
+	multiplayer_client = MultiplayerClientScript.new()
+	multiplayer_client.name = "MultiplayerClient"
+	multiplayer_client.session_ready.connect(_on_online_session_ready)
+	multiplayer_client.message_received.connect(_on_online_message)
+	multiplayer_client.status_changed.connect(_on_online_status_changed)
+	multiplayer_client.error_received.connect(_on_online_error)
+	add_child(multiplayer_client)
 	ui = PrototypeUIScript.new()
 	ui.name = "PrototypeUI"
 	ui.create_requested.connect(_start_new_game)
+	ui.online_requested.connect(_start_online_game)
+	ui.chat_requested.connect(_send_chat_message)
 	ui.continue_requested.connect(_continue_game)
 	ui.modal_changed.connect(_on_modal_changed)
 	ui.interact_requested.connect(_interact_nearest)
@@ -49,11 +64,33 @@ func _ready() -> void:
 	ui.consume_requested.connect(_consume_item)
 	ui.attend_requested.connect(_attend_next_class)
 	add_child(ui)
-	ui.show_character_creation(SaveServiceScript.has_save())
+	ui.show_character_creation(SaveServiceScript.has_save(), multiplayer_client.has_saved_session())
 
 
 func _process(delta: float) -> void:
 	if not playing:
+		return
+	if _online_mode:
+		_online_input_accumulator += delta
+		if _online_input_accumulator >= 0.05:
+			_online_input_accumulator = 0.0
+			var direction := Vector2.ZERO
+			if not ui.is_modal_open():
+				direction = Input.get_vector("move_left", "move_right", "move_up", "move_down")
+			multiplayer_client.send_movement(
+				direction, Input.is_action_pressed("run") and direction.length_squared() > 0.0
+			)
+		var online_nearest := world.nearest_interactable(player.position)
+		world.set_focused_entity(online_nearest)
+		var remote_nearest := _nearest_remote_player()
+		if (
+			is_instance_valid(remote_nearest)
+			and player.position.distance_to(remote_nearest.position) < 82.0
+		):
+			_refresh_hud(null)
+			ui.set_interaction_prompt("Wave to %s  ·  E" % remote_nearest.character_name)
+		else:
+			_refresh_hud(online_nearest)
 		return
 	if not ui.is_modal_open():
 		_time_accumulator += delta
@@ -78,11 +115,14 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _notification(what: int) -> void:
-	if what == NOTIFICATION_WM_CLOSE_REQUEST and playing:
+	if what == NOTIFICATION_WM_CLOSE_REQUEST and playing and not _online_mode:
 		_save_game(false)
 
 
 func _start_new_game(profile: Dictionary) -> void:
+	multiplayer_client.disconnect_from_world()
+	_online_mode = false
+	player.server_controlled = false
 	character = CharacterStateScript.new()
 	var household: Dictionary = HouseholdFactoryScript.create_household()
 	character.create_new(
@@ -103,7 +143,220 @@ func _start_new_game(profile: Dictionary) -> void:
 	_save_game(false)
 
 
+func _start_online_game(profile: Dictionary) -> void:
+	_online_mode = true
+	playing = false
+	_online_input_accumulator = 0.0
+	player.movement_enabled = false
+	ui.set_online_status("Connecting to the shared prototype…")
+	multiplayer_client.connect_to_world(profile)
+
+
+func _on_online_session_ready(
+	character_data: Dictionary, world_data: Dictionary, players_data: Array
+) -> void:
+	character = CharacterStateScript.new()
+	character.load_dictionary(character_data)
+	clock = WorldClockScript.new()
+	var raw_clock: Variant = world_data.get("clock", {})
+	if raw_clock is Dictionary:
+		clock.load_dictionary(raw_clock)
+	playing = true
+	_time_accumulator = 0.0
+	_online_input_accumulator = 0.0
+	world.enter_location(character.current_location, character.household)
+	world.update_daypart(clock.daypart())
+	player.server_controlled = true
+	player.set_authoritative_position(character.position)
+	player.position = player.server_target_position
+	player.set_appearance(character.appearance)
+	player.movement_enabled = false
+	player.snap_camera()
+	ui.show_game(character, clock, WorldMapScript.location_name(character.current_location))
+	ui.set_online_status("Online · nigeria-main")
+	_sync_remote_players(players_data)
+	ui.notify("Connected to the one shared prototype world. Server state is authoritative.")
+
+
+func _on_online_message(message: Dictionary) -> void:
+	var message_type := str(message.get("type", ""))
+	match message_type:
+		"character.snapshot":
+			var character_data: Variant = message.get("character", {})
+			if character_data is Dictionary:
+				_apply_online_character_snapshot(character_data)
+		"world.snapshot":
+			var clock_data: Variant = message.get("clock", {})
+			if clock_data is Dictionary and clock != null:
+				clock.load_dictionary(clock_data)
+				world.update_daypart(clock.daypart())
+			var players_data: Variant = message.get("players", [])
+			if players_data is Array:
+				_sync_remote_players(players_data)
+			_refresh_hud()
+		"presence.joined", "presence.moved":
+			var presence: Variant = message.get("player", {})
+			if presence is Dictionary:
+				_upsert_remote_player(presence)
+		"presence.left":
+			var presence: Variant = message.get("player", {})
+			if presence is Dictionary:
+				_remove_remote_player(str(presence.get("playerId", "")))
+		"chat.message":
+			var sender := str(message.get("characterName", "Another student"))
+			var chat_text := str(message.get("text", ""))
+			ui.add_chat_message(sender, chat_text)
+			ui.notify("%s: %s" % [sender, chat_text])
+		"player.interaction":
+			ui.notify(
+				(
+					"%s waved to %s."
+					% [
+						str(message.get("characterName", "A student")),
+						str(message.get("targetCharacterName", "another student"))
+					]
+				)
+			)
+		"school.quiz":
+			ui.show_quiz(
+				str(message.get("subject", "Class activity")),
+				message,
+				str(message.get("quizId", ""))
+			)
+		"school.result":
+			ui.show_quiz_result(
+				str(message.get("subject", "Class")),
+				bool(message.get("correct", false)),
+				int(message.get("score", 0))
+			)
+		"school.complete":
+			ui.show_notice(
+				"School day complete", "You have attended today's available class activities."
+			)
+		"command.duplicate":
+			ui.notify("That action was already processed by the server.")
+
+
+func _on_online_status_changed(status: String) -> void:
+	ui.set_online_status(status.capitalize())
+	if playing and status == "reconnecting":
+		ui.notify("Connection lost. Reconnecting to the shared world…")
+
+
+func _on_online_error(code: String, description: String) -> void:
+	if playing:
+		ui.notify("%s: %s" % [code.replace("_", " ").capitalize(), description])
+	else:
+		ui.set_online_status("%s: %s" % [code.replace("_", " ").capitalize(), description])
+
+
+func _apply_online_character_snapshot(character_data: Dictionary) -> void:
+	if character == null or not _online_mode:
+		return
+	var old_location := character.current_location
+	character.load_dictionary(character_data)
+	if not WorldMapScript.is_valid_location(character.current_location):
+		character.set_location("home", Vector2(720.0, 540.0))
+	if old_location != character.current_location:
+		world.enter_location(character.current_location, character.household)
+		_remove_remote_players()
+	player.set_authoritative_position(character.position)
+	player.set_appearance(character.appearance)
+	player.movement_enabled = false
+	_refresh_hud()
+
+
+func _sync_remote_players(players_data: Array) -> void:
+	var present: Dictionary = {}
+	for entry in players_data:
+		if not entry is Dictionary:
+			continue
+		var player_id := str(entry.get("playerId", ""))
+		if player_id.is_empty():
+			continue
+		if player_id == character.player_id:
+			var own_position: Variant = entry.get("position", {})
+			if own_position is Dictionary:
+				var server_position := Vector2(
+					float(own_position.get("x", player.position.x)),
+					float(own_position.get("y", player.position.y))
+				)
+				character.position = server_position
+				player.set_authoritative_position(server_position)
+			continue
+		if str(entry.get("worldLocation", "")) != character.current_location:
+			continue
+		present[player_id] = true
+		_upsert_remote_player(entry)
+	for player_id in _remote_players.keys():
+		if not present.has(player_id):
+			_remove_remote_player(str(player_id))
+
+
+func _upsert_remote_player(presence: Dictionary) -> void:
+	var player_id := str(presence.get("playerId", ""))
+	if (
+		player_id.is_empty()
+		or character == null
+		or player_id == character.player_id
+		or str(presence.get("worldLocation", "")) != character.current_location
+	):
+		return
+	var remote: Variant = _remote_players.get(player_id)
+	if not is_instance_valid(remote):
+		remote = RemotePlayerScript.new()
+		remote.name = "Remote_%s" % player_id
+		var raw_position: Variant = presence.get("position", {})
+		if raw_position is Dictionary:
+			remote.position = Vector2(
+				float(raw_position.get("x", 720.0)), float(raw_position.get("y", 540.0))
+			)
+		remote.target_position = remote.position
+		world.add_child(remote)
+		_remote_players[player_id] = remote
+	remote.set_presence(presence)
+
+
+func _remove_remote_player(player_id: String) -> void:
+	if not _remote_players.has(player_id):
+		return
+	var remote: Variant = _remote_players[player_id]
+	if is_instance_valid(remote):
+		remote.queue_free()
+	_remote_players.erase(player_id)
+
+
+func _remove_remote_players() -> void:
+	for player_id in _remote_players.keys():
+		_remove_remote_player(str(player_id))
+
+
+func _nearest_remote_player() -> Variant:
+	var nearest: Variant = null
+	var best_distance := INF
+	for remote in _remote_players.values():
+		if not is_instance_valid(remote):
+			continue
+		var distance_to_player: float = player.position.distance_to(remote.position)
+		if distance_to_player < best_distance:
+			best_distance = distance_to_player
+			nearest = remote
+	return nearest
+
+
+func _send_chat_message(message_text: String) -> void:
+	if not _online_mode or not multiplayer_client.is_world_connected():
+		ui.notify("Connect to the shared world before chatting.")
+		return
+	if message_text.strip_edges().is_empty():
+		return
+	multiplayer_client.send_command("chat.send", {"text": message_text})
+
+
 func _continue_game() -> void:
+	multiplayer_client.disconnect_from_world()
+	_online_mode = false
+	player.server_controlled = false
 	var result: Dictionary = SaveServiceScript.load_state()
 	if not bool(result.get("ok", false)):
 		ui.show_notice(
@@ -123,6 +376,8 @@ func _continue_game() -> void:
 
 func _begin_play_session() -> void:
 	playing = true
+	_online_mode = false
+	player.server_controlled = false
 	_time_accumulator = 0.0
 	world.enter_location(character.current_location, character.household)
 	world.update_daypart(clock.daypart())
@@ -181,6 +436,17 @@ func _refresh_hud(nearest: WorldEntity = null) -> void:
 func _interact_nearest() -> void:
 	if not playing or ui.is_modal_open():
 		return
+	if _online_mode:
+		var remote_nearest: Variant = _nearest_remote_player()
+		if (
+			is_instance_valid(remote_nearest)
+			and player.position.distance_to(remote_nearest.position) <= 82.0
+		):
+			if not multiplayer_client.send_command(
+				"player.interact", {"action": "wave", "targetPlayerId": remote_nearest.player_id}
+			):
+				ui.notify("The server connection is not ready for interaction.")
+			return
 	var entity := world.nearest_interactable(player.position)
 	if not is_instance_valid(entity):
 		ui.notify("Move closer to a person, door, or object.")
@@ -191,6 +457,12 @@ func _interact_nearest() -> void:
 func _interact_with(entity: WorldEntity) -> void:
 	match entity.action_id:
 		"travel":
+			if _online_mode:
+				if not multiplayer_client.send_command(
+					"world.travel", {"exitId": entity.entity_id}
+				):
+					ui.notify("Waiting for the multiplayer server connection.")
+				return
 			var destination := str(entity.data.get("location", "town"))
 			var spawn_value: Variant = entity.data.get("spawn", Vector2(720.0, 540.0))
 			var spawn_position: Vector2 = (
@@ -241,6 +513,10 @@ func _change_location(destination: String, spawn_position: Vector2) -> void:
 
 
 func _sleep() -> void:
+	if _online_mode:
+		if not multiplayer_client.send_command("character.rest"):
+			ui.notify("Waiting for the multiplayer server connection.")
+		return
 	if character.current_location != "home":
 		ui.show_notice("Rest at home", "You can sleep in your own bedroom at home.")
 		return
@@ -259,6 +535,10 @@ func _sleep() -> void:
 
 
 func _take_bus_to_school() -> void:
+	if _online_mode:
+		if not multiplayer_client.send_command("world.bus"):
+			ui.notify("Waiting for the multiplayer server connection.")
+		return
 	if not character.try_spend(BUS_FARE):
 		ui.show_notice(
 			"Not enough money", "The bus fare is ₦%d. You can walk to school for free." % BUS_FARE
@@ -269,6 +549,10 @@ func _take_bus_to_school() -> void:
 
 
 func _visit_clinic() -> void:
+	if _online_mode:
+		if not multiplayer_client.send_command("clinic.care"):
+			ui.notify("Waiting for the multiplayer server connection.")
+		return
 	if character.health >= 99.0:
 		ui.show_notice(
 			"Community clinic",
@@ -294,6 +578,10 @@ func _visit_clinic() -> void:
 
 
 func _attend_next_class() -> void:
+	if _online_mode:
+		if not multiplayer_client.send_command("school.begin"):
+			ui.notify("Waiting for the multiplayer server connection.")
+		return
 	if character.current_location != "classroom":
 		ui.show_notice(
 			"Head to class",
@@ -319,7 +607,16 @@ func _attend_next_class() -> void:
 	ui.show_quiz(_active_subject, _active_question)
 
 
-func _on_quiz_answer(answer_index: int) -> void:
+func _on_quiz_answer(answer_index: int, quiz_id: String = "") -> void:
+	if _online_mode:
+		if (
+			quiz_id.is_empty()
+			or not multiplayer_client.send_command(
+				"school.answer", {"quizId": quiz_id, "answerIndex": answer_index}
+			)
+		):
+			ui.notify("The class response could not be sent to the server.")
+		return
 	if _active_subject.is_empty() or _active_question.is_empty():
 		return
 	var correct := answer_index == int(_active_question.get("correct_index", -1))
@@ -337,6 +634,10 @@ func _on_quiz_answer(answer_index: int) -> void:
 
 
 func _purchase_item(item_id: String) -> void:
+	if _online_mode:
+		if not multiplayer_client.send_command("shop.purchase", {"itemId": item_id}):
+			ui.notify("Waiting for the multiplayer server connection.")
+		return
 	var price := 0
 	var item_name := ""
 	var restore := 0
@@ -362,6 +663,10 @@ func _purchase_item(item_id: String) -> void:
 
 
 func _consume_item(item_id: String) -> void:
+	if _online_mode:
+		if not multiplayer_client.send_command("inventory.consume", {"itemId": item_id}):
+			ui.notify("Waiting for the multiplayer server connection.")
+		return
 	if not character.consume_item(item_id):
 		ui.show_inventory(character, "That item cannot be eaten or is no longer in your bag.")
 		return
@@ -380,8 +685,24 @@ func _open_panel(panel_id: String) -> void:
 			ui.show_inventory(character)
 		"school":
 			ui.show_timetable(character, clock, character.current_location)
+		"chat":
+			if _online_mode:
+				ui.show_chat()
+			else:
+				ui.show_notice(
+					"Nearby chat", "Choose the optional online mode to chat with connected players."
+				)
 		"save":
-			ui.show_save_menu(SaveServiceScript.has_save())
+			if _online_mode:
+				(
+					ui
+					. show_notice(
+						"Online character saved",
+						"The server stores your character and world clock. The local Stage 1 save stays separate."
+					)
+				)
+			else:
+				ui.show_save_menu(SaveServiceScript.has_save())
 		"settings":
 			var settings_message := (
 				"Move with WASD or the arrow keys, hold Shift to run, and press E or Interact. "
@@ -397,7 +718,7 @@ func _on_manual_save_requested() -> void:
 
 
 func _save_game(show_result: bool = true) -> void:
-	if not playing or character == null or clock == null:
+	if _online_mode or not playing or character == null or clock == null:
 		return
 	character.position = player.position
 	character.current_location = world.location_id

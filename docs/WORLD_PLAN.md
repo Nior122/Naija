@@ -46,7 +46,7 @@ Use a monotonic/process-safe time source for measuring elapsed server time and U
 
 ## Offline progression and catch-up
 
-For the future shared simulation, world time and selected systems must progress while an individual player is offline. The Stage 1 local prototype is an explicit exception: its simple day/minute clock advances only during active play, pauses with menus, is stored in the local save, and does not progress while the app is closed. It has no server time anchor or offline catch-up. The future server should record a canonical time anchor/configuration and process scheduled work in bounded, resumable batches.
+For the eventual shared simulation, world time and selected systems should progress while an individual player is offline. The Stage 1 local prototype is an explicit exception: its simple day/minute clock advances only during active play, pauses with menus, is stored in the local save, and does not progress while the app is closed. Stage 2 adds a bounded server-owned clock shared among online players; it continues while the single server process is running, pauses during server downtime, and does not catch up offline. Needs currently decay only for connected players. This is not the full offline-progression design. A future service should define canonical time anchors/configuration and process scheduled work in bounded, resumable batches.
 
 Do not simulate every NPC every second. Use event scheduling and aggregate/cohort updates for low-priority populations, while preserving exact rules for important player-facing deadlines and economic/legal transactions. Define idempotency, ordering, pause/maintenance behavior, maximum catch-up work, and recovery checkpoints so a long outage does not duplicate or skip irreversible events.
 
@@ -60,4 +60,4 @@ Before implementation, specify and test:
 - Which updates are exact events versus aggregate approximations, and which require player notification.
 - Clock ownership, failover, snapshots, ordering, and acceptable drift between physical workers.
 
-Stage 1 implements only a local prototype clock and procedural fictional locations. It has no full calendar, weather, real geography, shared/authoritative time, or offline progression. Those remain future systems.
+Stage 1 implements a local prototype clock and procedural fictional locations. Stage 2 adds one shared server clock for the bounded multiplayer prototype. There is no full calendar, weather, real geography, or offline catch-up/progression; those remain future systems.

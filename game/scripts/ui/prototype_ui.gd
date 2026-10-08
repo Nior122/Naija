@@ -2,12 +2,14 @@ class_name PrototypeUI
 extends CanvasLayer
 
 signal create_requested(profile: Dictionary)
+signal online_requested(profile: Dictionary)
+signal chat_requested(message: String)
 signal continue_requested
 signal interact_requested
 signal panel_requested(panel_id: String)
 signal save_requested
 signal load_requested
-signal answer_requested(answer_index: int)
+signal answer_requested(answer_index: int, quiz_id: String)
 signal purchase_requested(item_id: String)
 signal consume_requested(item_id: String)
 signal attend_requested
@@ -37,6 +39,11 @@ var _type_option: OptionButton
 var _skin_option: OptionButton
 var _hair_option: OptionButton
 var _shirt_option: OptionButton
+var _online_status_label: Label
+var _chat_history: Array[String] = []
+var _chat_input: LineEdit
+var _showing_chat: bool = false
+var _quiz_id: String = ""
 
 
 func _ready() -> void:
@@ -45,7 +52,7 @@ func _ready() -> void:
 	add_child(_root)
 
 
-func show_character_creation(has_save: bool) -> void:
+func show_character_creation(has_save: bool, has_online_session: bool = false) -> void:
 	_clear_screen()
 	_add_background(Color("#15251e"))
 	var card := _create_center_card(Vector2(720.0, 650.0))
@@ -79,7 +86,10 @@ func show_character_creation(has_save: bool) -> void:
 	_add_form_row(card, "Clothing", _shirt_option)
 	_add_label(
 		card,
-		"All art is drawn for this prototype. No account or online service is required.",
+		(
+			"All art is drawn for this prototype. Offline play needs no account; "
+			+ "online play uses a prototype server."
+		),
 		13,
 		Color("#aab9ab"),
 		HORIZONTAL_ALIGNMENT_CENTER
@@ -95,6 +105,23 @@ func show_character_creation(has_save: bool) -> void:
 		var continue_button := _button("Continue saved life", Vector2(210.0, 48.0))
 		continue_button.pressed.connect(_on_continue_pressed)
 		actions.add_child(continue_button)
+	var online_actions := HBoxContainer.new()
+	online_actions.alignment = BoxContainer.ALIGNMENT_CENTER
+	online_actions.add_theme_constant_override("separation", 10)
+	card.add_child(online_actions)
+	var online_button_label := (
+		"Continue online life" if has_online_session else "Create online life"
+	)
+	var online_button := _button(online_button_label, Vector2(260.0, 44.0))
+	online_button.pressed.connect(_on_online_pressed)
+	online_actions.add_child(online_button)
+	_online_status_label = _add_label(
+		card,
+		"Online play is optional. Connect to your local Stage 2 server.",
+		12,
+		Color("#aab9ab"),
+		HORIZONTAL_ALIGNMENT_CENTER
+	)
 	_hud.clear()
 
 
@@ -116,6 +143,9 @@ func show_game(character: CharacterState, clock: WorldClock, location_name: Stri
 	_hud["time"] = _add_label(content, "", 15, Color("#425346"), HORIZONTAL_ALIGNMENT_LEFT)
 	_hud["location"] = _add_label(content, "", 13, Color("#596558"), HORIZONTAL_ALIGNMENT_LEFT)
 	_hud["location"].autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_hud["connection"] = _add_label(
+		content, "Offline · local prototype", 12, Color("#69766b"), HORIZONTAL_ALIGNMENT_LEFT
+	)
 	_add_need_bar(content, "Health", "health")
 	_add_need_bar(content, "Energy", "energy")
 	_add_need_bar(content, "Hunger", "hunger")
@@ -140,6 +170,7 @@ func show_game(character: CharacterState, clock: WorldClock, location_name: Stri
 	_add_menu_button(menu_grid, "Character", "profile")
 	_add_menu_button(menu_grid, "Inventory", "inventory")
 	_add_menu_button(menu_grid, "School", "school")
+	_add_menu_button(menu_grid, "Nearby chat", "chat")
 	_add_menu_button(menu_grid, "Save / Load", "save")
 	_add_menu_button(menu_grid, "Settings", "settings")
 	_hud["message"] = _add_label(content, "", 12, Color("#386546"), HORIZONTAL_ALIGNMENT_LEFT)
@@ -292,6 +323,48 @@ func show_shop(balance: int, message: String = "") -> void:
 	_add_modal_close(card)
 
 
+func show_chat() -> void:
+	var card := _open_modal(
+		"Nearby player chat", "Messages are relayed by the server to nearby players."
+	)
+	_showing_chat = true
+	if _chat_history.is_empty():
+		_add_modal_text(card, "No recent messages. Walk near another player to chat with them.")
+	else:
+		for line in _chat_history:
+			_add_modal_text(card, line)
+	var input_row := HBoxContainer.new()
+	input_row.add_theme_constant_override("separation", 8)
+	card.add_child(input_row)
+	_chat_input = LineEdit.new()
+	_chat_input.placeholder_text = "Write a short message…"
+	_chat_input.max_length = 200
+	_chat_input.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_chat_input.text_submitted.connect(_submit_chat_message)
+	input_row.add_child(_chat_input)
+	var send_button := _button("Send", Vector2(90.0, 36.0))
+	send_button.pressed.connect(_submit_chat_message.bind(""))
+	input_row.add_child(send_button)
+	_add_modal_close(card)
+
+
+func add_chat_message(sender: String, message: String) -> void:
+	_chat_history.append("%s: %s" % [sender, message])
+	if _chat_history.size() > 30:
+		_chat_history.pop_front()
+
+
+func _submit_chat_message(submitted_text: String = "") -> void:
+	if not is_instance_valid(_chat_input):
+		return
+	var message_text := submitted_text if not submitted_text.is_empty() else _chat_input.text
+	message_text = message_text.strip_edges()
+	if message_text.is_empty():
+		return
+	chat_requested.emit(message_text)
+	_chat_input.clear()
+
+
 func show_dialogue(speaker: String, lines: Array[String]) -> void:
 	var card := _open_modal(speaker, "Conversation")
 	for line in lines:
@@ -299,7 +372,8 @@ func show_dialogue(speaker: String, lines: Array[String]) -> void:
 	_add_modal_close(card, "Close")
 
 
-func show_quiz(subject: String, question: Dictionary) -> void:
+func show_quiz(subject: String, question: Dictionary, quiz_id: String = "") -> void:
+	_quiz_id = quiz_id
 	var card := _open_modal(
 		"Class activity · %s" % subject,
 		"Choose one answer. Your result will update your subject record."
@@ -335,8 +409,22 @@ func show_shop_result(balance: int, message: String) -> void:
 
 
 func notify(message: String) -> void:
-	if not _hud.is_empty():
+	if not _hud.is_empty() and is_instance_valid(_hud.get("message")):
 		_hud["message"].text = message
+	elif is_instance_valid(_online_status_label):
+		_online_status_label.text = message
+
+
+func set_online_status(status: String) -> void:
+	if is_instance_valid(_online_status_label):
+		_online_status_label.text = status
+	if _hud.has("connection") and is_instance_valid(_hud["connection"]):
+		_hud["connection"].text = status
+
+
+func set_interaction_prompt(prompt: String) -> void:
+	if _hud.has("prompt") and is_instance_valid(_hud["prompt"]):
+		_hud["prompt"].text = prompt
 
 
 func is_modal_open() -> bool:
@@ -344,35 +432,41 @@ func is_modal_open() -> bool:
 
 
 func _on_create_pressed() -> void:
+	var profile := _profile_from_form()
+	if not profile.is_empty():
+		create_requested.emit(profile)
+
+
+func _on_online_pressed() -> void:
+	var profile := _profile_from_form()
+	if not profile.is_empty():
+		online_requested.emit(profile)
+
+
+func _profile_from_form() -> Dictionary:
 	var character_name := _name_input.text.strip_edges()
 	if character_name.is_empty():
 		_name_input.grab_focus()
-		return
+		return {}
 	var skin_index := clampi(_skin_option.get_selected_id(), 0, SKIN_TONES.size() - 1)
 	var shirt_index := clampi(_shirt_option.get_selected_id(), 0, SHIRT_COLORS.size() - 1)
 	var hair_index := clampi(_hair_option.get_selected_id(), 0, HAIR_STYLES.size() - 1)
-	var character_type := ["girl", "boy", "androgynous"][clampi(
-		_type_option.get_selected_id(), 0, 2
-	)]
-	(
-		create_requested
-		. emit(
-			{
-				"name": character_name,
-				"age": 16 if _age_option.get_selected_id() == 1 else 15,
-				"character_type": character_type,
-				"appearance":
-				{
-					"skin_tone": SKIN_TONES[skin_index]["hex"],
-					"skin_tone_name": SKIN_TONES[skin_index]["label"],
-					"hairstyle": HAIR_STYLES[hair_index],
-					"hair_color": "#2c211d",
-					"clothing": SHIRT_COLORS[shirt_index]["label"],
-					"clothing_color": SHIRT_COLORS[shirt_index]["hex"],
-				}
-			}
-		)
-	)
+	var character_types: Array[String] = ["girl", "boy", "androgynous"]
+	var character_type: String = character_types[clampi(_type_option.get_selected_id(), 0, 2)]
+	return {
+		"name": character_name,
+		"age": 16 if _age_option.get_selected_id() == 1 else 15,
+		"character_type": character_type,
+		"appearance":
+		{
+			"skin_tone": SKIN_TONES[skin_index]["hex"],
+			"skin_tone_name": SKIN_TONES[skin_index]["label"],
+			"hairstyle": HAIR_STYLES[hair_index],
+			"hair_color": "#2c211d",
+			"clothing": SHIRT_COLORS[shirt_index]["label"],
+			"clothing_color": SHIRT_COLORS[shirt_index]["hex"],
+		}
+	}
 
 
 func _on_continue_pressed() -> void:
@@ -380,7 +474,8 @@ func _on_continue_pressed() -> void:
 
 
 func _on_answer_pressed(answer_index: int) -> void:
-	answer_requested.emit(answer_index)
+	answer_requested.emit(answer_index, _quiz_id)
+	_quiz_id = ""
 
 
 func _on_consume_pressed(item_id: String) -> void:
@@ -551,6 +646,7 @@ func _close_modal() -> void:
 		_modal_layer.queue_free()
 	_modal_layer = null
 	_modal_open = false
+	_showing_chat = false
 	modal_changed.emit(false)
 
 
@@ -560,6 +656,10 @@ func _clear_screen() -> void:
 	for child in _root.get_children():
 		child.queue_free()
 	_hud.clear()
+	_online_status_label = null
+	_chat_input = null
+	_showing_chat = false
+	_quiz_id = ""
 
 
 func _add_label(parent: Node, text_value: String, size: int, color: Color, alignment: int) -> Label:

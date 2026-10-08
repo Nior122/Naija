@@ -6,6 +6,8 @@ signal travelled(distance: float, running: bool)
 const MAP_SIZE: Vector2 = Vector2(1600.0, 900.0)
 
 var movement_enabled: bool = false
+var server_controlled: bool = false
+var server_target_position: Vector2 = Vector2.ZERO
 var walk_speed: float = 205.0
 var run_speed: float = 320.0
 var appearance: Dictionary = {}
@@ -48,7 +50,17 @@ func snap_camera() -> void:
 		camera.reset_smoothing()
 
 
-func _physics_process(_delta: float) -> void:
+func set_authoritative_position(value: Vector2) -> void:
+	server_target_position = value.clamp(Vector2(28.0, 28.0), MAP_SIZE - Vector2(28.0, 28.0))
+	if not server_controlled:
+		position = server_target_position
+
+
+func _physics_process(delta: float) -> void:
+	if server_controlled:
+		var blend := 1.0 - exp(-14.0 * delta)
+		position = position.lerp(server_target_position, blend)
+		return
 	if not movement_enabled:
 		velocity = Vector2.ZERO
 		return

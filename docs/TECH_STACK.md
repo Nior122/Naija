@@ -4,61 +4,60 @@
 
 | Layer | Selected direction | Current use |
 |---|---|---|
-| Game client | **Godot 4.7.2 stable + GDScript** | Stage 1 local single-player prototype; engine import/runtime verification is pending. |
-| Backend foundation | **Node.js 22.x + TypeScript 5.9** | Small read-only HTTP API; Node's built-in `http` module avoids a framework commitment. |
+| Game client | **Godot 4.7.2 stable + GDScript** | Preserved Stage 1 offline prototype plus optional Stage 2 WebSocket client; engine/runtime verification is pending. |
+| Backend/API | **Node.js 22.x + TypeScript 5.9** | HTTP health/world metadata and server-authoritative prototype multiplayer service. |
+| Multiplayer transport | **JSON over WebSocket** (`ws` server, Godot `WebSocketPeer`) | Cross-platform prototype at `/ws`; browser WSS proxy/export is not tested. |
 | Package management | **npm workspaces + lockfile** | Root scripts for build, test, lint, and development. |
-| Testing | **Node.js built-in test runner + `fetch`** | Integration checks for the API routes. |
+| Testing | **Node built-in test runner, `fetch`, and `ws` clients** | Integration tests include two simultaneous real WebSocket clients and state-file restart/reconnect. |
 | Linting | **ESLint 10 + typescript-eslint 8** | TypeScript service source. |
-| Source control / automation | **Git + GitHub Actions** | A CI workflow runs Node build/lint/tests. |
-| Future persistence candidate | **PostgreSQL** | Planned only; no database is created or connected in Stage 1. The client prototype uses local JSON. |
+| Source control / automation | **Git + GitHub Actions** | CI runs Node build, lint, and tests (`npm run check`). |
+| Prototype persistence | **Versioned local JSON file** | One-process server snapshot for the shared clock and player records; no DB or multi-process coordination. |
+| Future persistence candidate | **PostgreSQL** | Not configured or connected; evaluate before production persistence. |
 
-Versions above are the project baseline, not a claim that every platform export has been validated. Godot 4.7.2 was the stable release selected for this work; the engine binary is unavailable in the current workspace, so the Stage 1 client and its local save/load have not been runtime-tested here. Node 22.22.3 is the available/tested runtime baseline.
+Versions above are project baselines, not proof every platform export has been validated. Godot 4.7.2 is the project target, but the engine binary is unavailable in the current workspace; neither Stage 1 nor the Stage 2 Godot client has been runtime-tested here. Node 22.22.3 is the available/tested runtime baseline.
 
 ## Requirements assessment
 
 | Requirement | Assessment and decision |
 |---|---|
-| Free/open source and low cost | Godot is MIT-licensed; Node.js, TypeScript, npm tooling, and the planned PostgreSQL option are open-source. Self-hosting is possible. Hosting, app-store fees, and operations will still have real costs. |
-| Cross-platform, mobile, and PC | Godot provides a single client project with desktop and Android/iOS export paths. Platform-specific packaging/signing still needs each platform's toolchain and testing. |
-| Browser where practical | Godot web export is available, but browser memory, threading, graphics, and networking differ from native. Treat web as an optional validated target, not a guaranteed equal client; the Stage 1 prototype has not been exported. |
-| Multiplayer and persistence | Neither a client engine nor an engine's multiplayer helper is sufficient for a shared persistent world. A separate server-authoritative API/domain layer and durable storage are required; the current Node service is only a testable starting boundary. |
-| Small prototype that can evolve toward 3D | Godot supports quick GDScript iteration and both 2D/3D in the same project, avoiding an early engine migration if the prototype grows into stylized 3D. |
-| Maintainability and AI-agent compatibility | GDScript is the native client language; TypeScript gives explicit backend contracts. Both use standard editor/test tooling and are easy to inspect in a small repository. Keep boundaries small to manage the two-language cost. |
-| Scalability | No stack choice guarantees millions of concurrent lives. Start with one modular backend and a single logical world; measure workload and correctness before adding workers, partitions, replicas, or more languages. |
+| Free/open source and low cost | Godot is MIT-licensed; Node.js, TypeScript, npm tooling, and the future PostgreSQL option are open source. Self-hosting is possible. Hosting, app-store fees, and operations still have real costs. |
+| Cross-platform, mobile, and PC | Godot provides desktop and Android/iOS export paths. The standard WebSocket protocol is intended to work with native clients and a browser WSS proxy, but exports and deployment paths need separate testing. |
+| Browser where practical | Godot web export is an optional target, not guaranteed parity. Browser memory, threading, graphics, origin checks, TLS, and proxy/networking need validation. No web export is included or tested. |
+| Multiplayer and persistence | Stage 2 now has a bounded server-authoritative prototype over JSON WebSocket, with a single local JSON state file. It is not a production identity system, database, or distributed server architecture. |
+| Small prototype that can evolve toward 3D | Godot supports quick GDScript iteration and both 2D/3D in the same project, avoiding an early engine migration if the prototype grows. |
+| Maintainability and AI-agent compatibility | GDScript is the native client language; TypeScript gives explicit backend contracts and strict checks. Keep boundaries small to manage the two-language cost. |
+| Scalability | No stack choice guarantees millions of concurrent lives. Start with one modular backend and one logical world; measure workloads and correctness before adding workers, partitions, replicas, or more languages. |
 
 ## Why Godot for the client
 
-The project needs to begin with a small game and retain a credible path to stylized 3D on desktop and mobile. Godot is open source under the MIT license, has integrated 2D/3D tooling, supports GDScript with a short edit/test loop, and has export paths for desktop, Android, iOS, and web. Its editor and project format are relatively approachable for future contributors and coding agents.
+Godot is open source under the MIT license, has integrated 2D/3D tooling, supports GDScript with a short edit/test loop, and has export paths for desktop, Android, iOS, and web. The existing project keeps Stage 1 offline play while providing an optional Stage 2 client that sends intent to the backend and renders server presence/state.
 
-The client is not the authoritative simulation host. Game state and player commands must ultimately be validated by server-side services. This keeps the game client replaceable and prevents a rendering engine's networking model from defining the logical world.
+The client is not the online simulation authority. Online position, money, inventory, needs, school outcomes, and world time come from server snapshots. The client transport uses Godot's `WebSocketPeer`; server rules and JSON contracts live in the separate TypeScript service.
 
 ### Trade-offs to keep visible
 
-- Godot web exports have different performance, browser, threading, and networking constraints from native builds. Browser support must be tested as a separate target; it is not promised by the Stage 1 prototype.
-- iOS builds/signing require Apple tooling and a suitable macOS environment. They cannot be fully produced or verified in this Linux workspace.
-- Native Godot multiplayer transports and browser-compatible transports differ. The future game protocol should be transport-independent and use an appropriate WebSocket/WebRTC path for web clients where needed.
-- A very large online simulation is not delivered by choosing an engine. Backend authority, data consistency, content pipelines, operations, and measured scaling remain separate engineering work.
+- Godot web exports have different performance, browser, threading, and networking constraints from native builds; browser hosting must proxy `/ws` to the backend and configure allowed origins.
+- iOS builds/signing require Apple tooling and a suitable macOS environment; they cannot be fully produced or verified in this Linux workspace.
+- The current online identity is an anonymous prototype recovery key plus bearer token stored in a local `ConfigFile`, not a user account or encrypted credential system.
+- A very large online simulation is not delivered by choosing an engine. Backend authority, durable data, safety, operations, and measured scaling remain separate work.
 
-## Why Node.js and TypeScript for the initial backend boundary
+## Why Node.js and TypeScript for the backend
 
-Node.js is available in the environment, can be self-hosted cheaply, and has a broad ecosystem and strong AI-agent familiarity. TypeScript's types make API contracts and domain boundaries easier to inspect and refactor. Node is effective for an initial network/API layer, while the Stage 0 service deliberately uses the built-in HTTP server to keep dependencies and framework decisions small.
+Node.js is available in the environment, can be self-hosted cheaply, and has a broad ecosystem. TypeScript's types make contracts and domain boundaries easier to inspect. The built-in HTTP server retains the small Stage 0 API surface; the `ws` dependency handles the Stage 2 WebSocket endpoint. The `ws` transport works with Godot's standard WebSocket client and can be proxied as WSS for browser clients.
 
-This is an initial service boundary, not a guarantee that every future CPU-intensive simulation will run in one Node process. Start with a modular backend and split workloads only when profiling, load tests, and ownership boundaries justify it. If later simulation workers need another language, introduce them behind explicit, versioned contracts.
-
-## Alternatives considered
-
-- **Unity:** broad platform reach and mature tooling, but proprietary licensing/terms and cost exposure are less aligned with the open, low-cost preference. It remains an alternative only if a later, evidence-based evaluation changes the requirements.
-- **Unreal Engine:** strong high-end 3D capabilities, but heavier hardware/build workflows and a less suitable starting cost/complexity profile for a small mobile-first prototype.
-- **Browser-first engines/frameworks:** convenient web delivery, but packaging and performance trade-offs for native mobile/PC 3D are less attractive than a game-engine client for this vision.
-- **Godot C#:** viable for teams preferring C#, but GDScript gives the smallest engine setup and avoids tying the client to a runtime that is not supported on every Godot export target in the same way. Backend code is separately typed in TypeScript.
+This is an initial service boundary, not a guarantee that every future CPU-intensive simulation should run in one Node process. Stage 2 assumes a single process owns one state file. Split workloads only when profiling, load tests, durability, and ownership boundaries justify it; any workers must still preserve one canonical logical Nigeria.
 
 ## Future persistence and operations direction
 
-PostgreSQL is the leading open-source candidate for durable shared state and relational constraints. Geographic support (for example, a spatial extension) should be selected only after source datasets, query patterns, hosting cost, and portability are evaluated. Caches, queues, analytics stores, and separate simulation workers are future decisions; none are required or installed for Stage 1. The prototype's local JSON save is temporary single-player state, not a production persistence design.
+PostgreSQL is the leading candidate for durable shared state and relational constraints, but no production DB is configured. The current `world-state.json` file is versioned, size-bounded, and atomically replaced for a single server process. It stores prototype personal character records and one shared clock; it has no transaction log, multi-writer coordination, migrations, backups, or encryption. It is not a production persistence design.
+
+Geographic support (for example, a spatial extension) should be selected only after source datasets, query patterns, hosting cost, and portability are evaluated. Caches, queues, analytics stores, and separate simulation workers are later decisions.
 
 ## Environment variables and secrets
 
-The API reads `PORT` (default `3000`). The root `.env.example` is a safe local template; `.env` is ignored by Git and loaded by the Node start/dev scripts. Do not put production credentials, tokens, private keys, or personal secrets in the repository. Future credentials should be provided through a managed secret store or the deployment environment.
+The Node API reads `PORT` (default `3000`), `DATA_FILE`, `WS_PATH` (default `/ws`), and `ALLOWED_ORIGINS` (comma-separated exact HTTP(S) origins for browser clients). The root `.env.example` is a safe template; `.env` is ignored by Git. `DATA_FILE` relative paths resolve from the `services/world-api/` workspace.
+
+The native Godot client reads `NAIJA_WS_URL` (default `ws://127.0.0.1:3000/ws`). `NAIJA_MULTIPLAYER_SESSION_PATH` optionally selects a separate local session config, primarily for two-client testing. Do not put production credentials, tokens, private keys, or personal data in the repository. Future credentials should use a managed secret store or deployment environment.
 
 ## Primary references
 

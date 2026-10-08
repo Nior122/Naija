@@ -10,6 +10,7 @@
 # Node.js / TypeScript
 node_modules/
 dist/
+services/world-api/data/
 coverage/
 *.tsbuildinfo
 npm-debug.log*

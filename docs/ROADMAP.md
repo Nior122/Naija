@@ -1,12 +1,12 @@
 # Master Roadmap
 
-The roadmap describes intended development, not completed features. Phase 0 is complete. Phase 1 has an implementation in the repository but remains in progress until Godot runtime, gameplay, and save/restart verification are recorded in `DEVELOPMENT_STATUS.md`. Later phases remain not started.
+The roadmap describes intended development, not completed features. Phase 0 is complete. Phase 1 implementation is present but its Godot runtime, gameplay, and save/restart verification remain pending. Phase 2 implementation is present and its Node backend checks pass, while Godot multiplayer runtime verification is blocked by the missing engine. Later phases remain not started; see `DEVELOPMENT_STATUS.md` for exact results.
 
 | Phase | Name | Purpose | Status |
 |---:|---|---|---|
 | 0 | Game Foundation & Architecture | Establish the repository, chosen stack, modular boundaries, plans, minimal client/API shells, and development checks. | **Complete** |
 | 1 | First Playable Prototype | Build a deliberately small life-simulation slice: create/control a student character, explore one bounded setting, and complete a few understandable interactions. | **Implementation present; Godot/runtime verification pending** |
-| 2 | Multiplayer Foundation | Add server-authoritative identity, sessions, synchronization, and persistence for a small test population while retaining one logical world. | Not started |
+| 2 | Multiplayer Foundation | Add server-authoritative identity, sessions, synchronization, and persistence for a small test population while retaining one logical world. | **Implementation present; backend verified; Godot runtime verification pending** |
 | 3 | Nigerian Geography Expansion | Introduce validated administrative geography, place data, coordinates, and a repeatable import/provenance pipeline. | Not started |
 | 4 | Complete Education System | Expand secondary school, universities, polytechnics, vocational study, apprenticeships, school years, and education records. | Not started |
 | 5 | Age & Life Simulation | Add birthdays, age progression, life stages, family events, death, inheritance, and generational continuity. | Not started |
@@ -38,4 +38,4 @@ The roadmap describes intended development, not completed features. Phase 0 is c
 
 The Stage 1 scope is a local, single-player 2D life-simulation slice in fictional Idera Quarter: create a 15–16-year-old student, begin in a generated family home, move and interact with NPCs/objects, visit school and complete class activities, manage basic needs/money/inventory, and save locally. The code is present; implementation alone does not complete the phase.
 
-Before marking Phase 1 complete, import and launch the project with Godot 4.7.2, run the domain and movement scripts, run both `save_restart.gd` phases in separate processes, and manually verify the creation-to-school-to-save loop. Record exact results and fix any engine/runtime failures in `DEVELOPMENT_STATUS.md`. Keep multiplayer, full Nigeria geography, accounts, and production persistence out of scope.
+Before marking Phase 1 complete, import and launch the project with Godot 4.7.2, run the domain and movement scripts, run both `save_restart.gd` phases in separate processes, and manually verify the creation-to-school-to-save loop. This gate remains blocked until the engine is available. Phase 2's implementation was added under the explicit follow-on request despite the blocked Stage 1 runtime check; it does not make Phase 1 runtime-verified. Record exact results and fix any engine/runtime failures in `DEVELOPMENT_STATUS.md`. Full Nigeria geography, production accounts, and production persistence remain out of scope here.

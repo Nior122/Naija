@@ -2,110 +2,88 @@
 
 ## Current shape
 
-Stage 0 remains a deliberately small TypeScript/Node backend boundary. Stage 1 adds a local, single-player Godot slice without replacing Stage 0 or claiming server authority.
+Stage 0's Node/TypeScript API foundation and Stage 1's local Godot prototype remain in place. Stage 2 adds an optional WebSocket multiplayer path to the same game; online character state does not reuse or overwrite the local Stage 1 save.
 
 ```text
-Godot client (game/)                           Node world API (services/world-api/)
-┌─────────────────────────────┐                ┌─────────────────────────────┐
-│ Prototype UI / player/world │                │ GET /health                 │
-│ domain services             │                │ GET /api/v1/world            │
-│      │                      │                │                             │
-│      └── local JSON save    │                │ static nigeria-main metadata│
-│          user:// (v1)       │                └─────────────────────────────┘
-└─────────────────────────────┘
-            No client/API connection or shared gameplay state yet
-
-Future: server-authoritative gameplay services + durable storage (not implemented)
+Godot client (game/)                                  Node world API (services/world-api/)
+┌──────────────────────────────────┐                  ┌────────────────────────────────┐
+│ Stage 1 local/offline life       │                  │ HTTP: /health                  │
+│   └── user:// v1 local JSON save │                  │       /api/v1/world            │
+│                                  │                  │                                │
+│ Optional Stage 2 WebSocket client│◄──── JSON ──────►│ /ws: identity, commands, events│
+│   ├── server-controlled self     │                  │ Server-authoritative rules     │
+│   ├── interpolated remote players│                  │ Shared nigeria-main clock     │
+│   └── local token/recovery config│                  │ One process + one JSON file   │
+└──────────────────────────────────┘                  └────────────────────────────────┘
+        Offline save is separate                     No database/distributed ownership
 ```
 
-**Implemented today:**
+The single logical world is still `nigeria-main`. The current prototype does not create world shards, a second Nigeria, or full national geography.
 
-- `game/` is a Godot 4.7 project that launches a first-playable-prototype scene. The earlier Stage 0 scene remains in the repository.
-- GDScript is separated into character/clock/household/school/dialogue domain scripts, a save service, procedural world entities/map, player controller, UI, and a scene coordinator.
-- The prototype is a local 2D student life slice in fictional Idera Quarter. It has no networking or authentication and does not connect to the backend.
-- `game/scripts/services/save_service.gd` contains a versioned JSON local save/load implementation at `user://naija-stage1-save.json`. Autosave/manual save/load hooks and restart test code are present, but Godot runtime/persistence checks have **not** been run in the current workspace.
-- `services/world-api/` exposes a health check and an immutable descriptor for the one logical Nigeria. It accepts no gameplay commands and stores no state.
-- The API uses TypeScript/Node.js, strict compiler checks, ESLint, and Node integration tests. The API test suite passes; it is independent from the unverified Godot client.
-- There is no database, account system, client-to-server gameplay connection, server simulation clock, or multiplayer transport.
+## Implemented boundaries
 
-## Stage 1 client boundaries
+### Godot client
 
-The prototype keeps simple responsibilities separate rather than putting simulation and dialogue into one movement script:
+- `game/scripts/domain/`: retained Stage 1 character, household, school, dialogue, and local clock models.
+- `game/scripts/services/save_service.gd`: Stage 1 client-local, versioned save; not authoritative online storage.
+- `game/scripts/services/multiplayer_client.gd`: WebSocket connection, session resume/create, reconnect attempts, JSON messages, and a local identity/session config.
+- `game/scripts/player/player_actor.gd`: local keyboard movement offline; in online mode it interpolates toward server-computed position and does not simulate its own movement.
+- `game/scripts/player/remote_player.gd`: draws/interpolates public presence from server snapshots.
+- `game/scripts/prototype_game.gd` and `game/scripts/ui/prototype_ui.gd`: preserve offline flows and route online intent/messages through the multiplayer client.
 
-- `game/scripts/domain/`: character data and rules, household generation, school records/timetable, dialogue, and world clock.
-- `game/scripts/services/`: local save/load boundary. This is a prototype-local implementation, not a future server persistence interface guarantee.
-- `game/scripts/world/`: fictional starter locations, procedural drawing, entities, focus/interaction targeting, and simple NPC roaming.
-- `game/scripts/player/`: movement, camera, and drawn avatar.
-- `game/scripts/ui/`: creation form, HUD, menus, dialogue, school activities, and emitted intents.
-- `game/scripts/prototype_game.gd`: connects UI intent to prototype domain/world actions.
+The client may hold a local copy to render UI, but online money, inventory, needs, education records, location, position, and clock are replaced from server snapshots. It cannot write online character state to the Stage 1 save.
 
-The `CharacterState` model is local client state in this phase. It includes a basic reputation field but not a reputation simulation. The local balance is prototype currency, not an authoritative ledger. The household and neighbourhood are generated/fixed prototype data, not persisted world entities in the backend.
+### Node server
 
-## Principles
+- `services/world-api/src/app.ts` retains `GET /health` and `GET /api/v1/world`, adds the bounded WebSocket endpoint (`/ws` by default), enforces upgrade path/origin, and configures a WebSocket message-size cap.
+- `services/world-api/src/multiplayer/world-engine.ts` owns anonymous identity creation/recovery, session validation, presence, server-tick movement, the shared world clock, prototype actions, chat/waves, payload/rate validation, and structured events/errors.
+- `services/world-api/src/multiplayer/persistence.ts` validates and loads the state schema and writes snapshots by temporary file plus rename.
+- `services/world-api/src/multiplayer/types.ts` defines separate shared-world, per-player, character, and public-presence records.
+- `services/world-api/src/config.ts` reads the optional root `.env`, data path, port, WebSocket path, and browser-origin allowlist.
 
-1. **One logical world, many possible processes.** Nigeria has one canonical logical identity and one authoritative state. Regions, servers, workers, shards, or replicas are infrastructure allocations, not separate countries/worlds. The Idera Quarter prototype is one small fictional setting; it is not a second world or a shard.
-2. **Server authority for online play.** Clients send intent; trusted server-side code validates authorization, rules, and state changes. A client never decides money, inventory, election outcomes, legal outcomes, or other authoritative shared-world state. Stage 1's offline demo state is intentionally local and is not evidence of multiplayer authority.
-3. **Modular monolith first.** Keep domain boundaries explicit inside a small deployable backend until measured load, team ownership, or reliability needs justify extraction. Do not create microservices merely because a future system is listed.
-4. **Contracts before coupling.** API and event contracts should be versioned, validated, documented, and independent of Godot scene structure.
-5. **Durable facts and derived views.** Preserve important world/player history and auditable transactions; treat caches, client scenes, and non-authoritative prototype saves as rebuildable/untrusted.
-6. **Small vertical slices.** Each roadmap phase should introduce only the code, data, tests, and operational burden needed for its feature.
-7. **No premature scale claims.** Capacity, consistency, and latency targets require workload assumptions and tests before they become promises.
+The transport is JSON over standard WebSocket (`ws` server, Godot `WebSocketPeer` client), chosen as a low-cost cross-platform prototype that also has a browser-compatible WSS path. Browser hosting must proxy `/ws` to the backend and configure its exact HTTP(S) `Origin`; the native Godot client uses `NAIJA_WS_URL` or defaults to local `ws://127.0.0.1:3000/ws`. The game export and browser runtime have not been tested in this workspace.
 
-## Planned domain boundaries
+## State ownership and data separation
 
-These are future areas, not all Stage 1 modules. Add a boundary when a roadmap phase begins and define its owner, inputs/outputs, invariants, persistence, and tests.
+The JSON file's versioned top-level state has:
 
-- **Identity and account:** authentication, authorization, player profile, account safety.
-- **Character and life:** player characters, skills, age, needs, relationships, family, legacy.
-- **World and geography:** administrative places, coordinates, buildings, interiors, travel, world clock, weather, events.
-- **Education and work:** institutions, education records, jobs, careers, training.
-- **Economy:** Naira ledger, accounts, transactions, taxes, loans, investments, business finance.
-- **Property and transport:** ownership, housing, vehicles, road/transit networks.
-- **Civic and justice:** institutions, elections, law, courts, policing, security, justice records.
-- **Culture and media:** religion, community, entertainment, journalism, content, social features, moderation.
-- **Society simulation:** NPC cohorts, schedules, events, and derived population activity.
-- **Platform services:** persistence, networking, analytics, operations, backups, moderation, anti-cheat.
+- `worldId: nigeria-main` and one `worldClock`, shared by every connected online player;
+- `players`, a map of server-issued player IDs to identity hashes, bounded recent request IDs, and a server-owned `CharacterRecord`.
 
-Avoid a universal `GameManager`, a giant shared mutable state object, or direct cross-module database writes. Prefer explicit application services and domain-owned rules; choose a more formal domain-driven design only as real complexity warrants it.
+A character record contains personal prototype data (profile, household, balance, needs, inventory, school records, location, and authoritative position). A connected public-presence view exposes only selected profile/appearance, position, location, connection status, and last-seen values. A character snapshot is returned to that player's session. The data groups are logically distinct even though the prototype stores them in one file.
 
-As the project grows, these boundaries should be able to separate into focused modules for player, character, world, geography, education, careers, economy, businesses, property, vehicles, transportation, family, relationships, government, elections, laws, courts, police, military, crime, religion, culture, entertainment, social media, NPC simulation, events, weather, time, multiplayer, authentication, persistence, analytics, moderation, and anti-cheat. These are planning labels, not commitments to pre-create empty directories.
+The session token and random identity-recovery key are not stored in plaintext by the server; their SHA-256 hashes are. The client stores the bearer token and recovery key in a Godot `ConfigFile` under `user://naija-multiplayer.cfg` by default; this is local plaintext configuration, not secure credential storage. `NAIJA_MULTIPLAYER_SESSION_PATH` can choose a separate config file for each local test client. This identity scheme is not account authentication, and there is no external account recovery.
 
-## Suggested repository growth
+The local Stage 1 `user://naija-stage1-save.json` remains separate and is only used in offline mode. A user can have an offline character and an online character; they are distinct records.
 
-```text
-game/                         Godot scenes, scripts, and client assets
-services/world-api/           HTTP/API boundary (currently metadata-only)
-packages/                      Optional shared protocol/schema packages when justified
-docs/                          Plans, decisions, status, agent guidance
-```
+## Online command flow
 
-Future modules should be added in small slices with tests and docs, not pre-created as empty directories. The client must not connect directly to the database or own shared-world state.
+1. An untrusted client connects to the configured WebSocket path and uses a client-generated identity recovery key to request a server-issued player identity, or presents its saved session token.
+2. The server stores only token/key hashes, validates the selected profile, rejects duplicate live sessions, and sends that player's character, shared clock, and connected presence list.
+3. The client sends intents. For movement, that is a sequenced normalized direction plus walk/run intent—not a position. Other commands include selected travel entrance, purchase item ID, consume item ID, quiz answer, chat text, or a nearby wave target.
+4. Server rules decide bounds/speed, accepted locations and spawns, prices, balances, inventory changes, care/rest effects, quiz correctness, chat recipients, and interaction range. Changed characters are returned as snapshots and presence/world views are broadcast to clients.
+5. Successful state-changing commands require request IDs and the server keeps a capped per-player deduplication history. Validated character/clock changes are persisted to the JSON store.
 
-## One-world deployment model
+The current server ticks at 20 Hz by default; client movement input is sent about 20 times per second and presence/clock snapshots are broadcast about 10 times per second. Movement is clamped to a 1600×900 prototype map at server-owned walk/run speeds; there is no authoritative wall-collision/pathfinding simulation yet. The server validates message size/shape, movement input and sequence/rate, action range, chat length/rate, global command rate, connection attempts, and configured browser origins.
 
-- Keep a stable canonical world key (`nigeria-main` in the Stage 0 descriptor). It identifies the logical Nigeria, not a physical server.
-- Use separate deployment/region/process identifiers for routing and operations. Never expose those identifiers as selectable national world copies.
-- Define ownership and consistency boundaries for state. A player's local character data can be owned/routed independently from national state, but shared invariants (for example, one national office holder or one election result) need a single coordinated authoritative write path.
-- Scale read traffic with replicas/caches where safe. Replicas are not writable alternate histories; define freshness and conflict behavior explicitly.
-- Partition geographic or simulation workloads only behind shared IDs, versioned contracts, and global event/state coordination. A partition cannot invent its own election, laws, or economy.
-- Define recovery and failover so a replacement owner resumes the same logical state from durable records/snapshots, rather than starting a new Nigeria.
+## Persistence and clock limits
 
-This is the intended future model; the Node API currently serves static metadata and no distributed services exist.
+The server state file defaults to `services/world-api/data/world-state.json` (ignored by Git) and is configurable with `DATA_FILE`. Relative `DATA_FILE` paths resolve from the `services/world-api/` workspace. The store validates version `1`, refuses malformed state instead of silently resetting, rejects files above 16 MiB, and atomically replaces the snapshot through a temp file and rename. Character/action changes flush immediately or through the tick's bounded persistence loop; shutdown requests a final save.
 
-## Time and offline progression
+This is a single-process, single-writer local JSON prototype. It has no database transaction, journal/event log, distributed lock, migration framework, encryption, backup/restore job, or multiple-writer coordination. Do not point multiple server processes at the same file. Replacing it with a designed durable database is a future task, not part of this slice.
 
-The Stage 1 `WorldClock` is a local prototype clock. It advances during active play, pauses while a modal is open, and is stored in the local save. The clock does not progress while the app is closed. It is not a shared or authoritative world clock. The future clock should be a world service with a canonical time anchor and bounded offline catch-up. Further planning is in [`WORLD_PLAN.md`](WORLD_PLAN.md).
+The shared clock starts at Day 1, 07:50 in a new world file and advances server-side at one game minute per 650 ms by default. It continues while the server is running with zero online players; it pauses while the server process is down and does not catch up after restart. Hunger/energy/health tick only for connected players. These are prototype rules, not a production offline-life simulation.
 
-## Security boundary
+## What is not implemented
 
-Treat all client payloads, local saves, and network timing as untrusted. Validate identity, permissions, state transitions, limits, and economic transactions server-side before online use. The Stage 1 save is local JSON, is not encrypted or authoritative, and is not an account credential. Authentication, rate limits, anti-cheat, moderation, backups, and incident recovery are planned—not implemented. See [`SECURITY_PLAN.md`](SECURITY_PLAN.md).
+- Production account/authentication provider, fine-grained roles, encrypted client credential storage, or account recovery.
+- PostgreSQL or another database, transactional ledger/event log, distributed process ownership, backups, high availability, or horizontal scaling.
+- TLS termination, production WSS deployment, distributed abuse controls, moderation/reporting, or privacy settings.
+- Comprehensive anti-cheat, collision/obstacle validation, server-side pathfinding, or exhaustive commands for all Stage 1 domains.
+- Full Nigerian geography, large-scale NPC/civic/economic simulation, browser/mobile/desktop exports, or Stage 3.
 
-## Architecture decision record (Stage 0, retained)
+Do not describe configured prototype limits as production capacity. See [`MULTIPLAYER_PLAN.md`](MULTIPLAYER_PLAN.md) and [`SECURITY_PLAN.md`](SECURITY_PLAN.md).
 
-**Decision:** use Godot/GDScript for the cross-platform game client, with a separately testable TypeScript/Node backend boundary; begin the backend as a modular service and plan PostgreSQL as a future persistence candidate.
+## Verification boundary
 
-**Reason:** balances open-source tooling, prototype speed, 3D evolution, desktop/mobile export, web as a constrained option, low operating cost, typed API work, and straightforward testing in the available environment.
-
-**Stage 1 adaptation:** implement a small local single-player slice in the existing Godot project and preserve the Node API untouched as a separate read-only boundary. This local client state is for prototyping only; it does not replace the future server-authority rule.
-
-**Revisit when:** a playable slice reveals rendering/platform needs; multiplayer prototypes define real consistency and latency requirements; load tests reveal Node bottlenecks; or a researched data/provider decision requires a different persistence or geography stack. Record any change in the docs and status file rather than silently replacing the architecture.
+The Node build/lint and automated HTTP/WebSocket tests are executable in this environment; the backend suite exercises real two-client coexistence, server-authoritative movement, chat/wave, identity recovery, deduplication, persistence across API restart, clock rollover, payload validation, and origin rejection. GDScript formatting/lint checks are static only. Godot is unavailable here, so project import, scene loading, retained Stage 1 runtime tests/save-restart, multiplayer Godot client behavior, and exports remain unverified. Exact results are recorded in [`DEVELOPMENT_STATUS.md`](DEVELOPMENT_STATUS.md).

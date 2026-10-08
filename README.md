@@ -6,86 +6,122 @@ Naija: One World is a long-term Nigerian life-simulation game project. The inten
 
 ## Current status
 
-The repository now contains a **Stage 1 first-playable-prototype implementation** in Godot, alongside the preserved Stage 0 Node.js/TypeScript world API foundation. The playable slice is deliberately small and single-player. It is not the full country, an online world, multiplayer, or production persistence.
+The repository preserves the Stage 0 Node/TypeScript API foundation and the Stage 1 Godot offline prototype, and now includes an optional **Stage 2 multiplayer foundation**. The Stage 1 local life remains available; online mode connects to a small, server-authoritative prototype world with the canonical ID `nigeria-main`.
 
-**Verification caveat:** Godot is not installed in the current development workspace. GDScript formatting/lint checks and the Node API suite have run, but the Godot project has not been imported, launched, or runtime-tested here. In particular, the Godot domain tests and the two-process save/restart test are present but **have not been run**. See [`docs/DEVELOPMENT_STATUS.md`](docs/DEVELOPMENT_STATUS.md) for exact checks and limitations.
+The backend TypeScript build, lint, and nine Node integration tests pass. Static GDScript formatting/lint checks pass. **Godot is not installed in the current workspace**, so the game has not been imported, launched, or tested in-engine. The Godot two-client UI, reconnect flow, and browser export therefore remain unverified. Backend WebSocket tests do exercise two real simultaneous clients and server restart/reconnect behavior. See [`docs/DEVELOPMENT_STATUS.md`](docs/DEVELOPMENT_STATUS.md) for exact results and limitations.
 
-Before changing the project, read [`docs/AI_AGENT_GUIDE.md`](docs/AI_AGENT_GUIDE.md) and [`docs/DEVELOPMENT_STATUS.md`](docs/DEVELOPMENT_STATUS.md). The status file is the source of truth for verified behavior and outstanding work.
+This is not the complete Nigeria simulation, production online service, account system, or Stage 3 geography build. Stage 1/2 data and features are prototype scope.
 
-## Stage 1 prototype slice
+## Stage 1 — first playable slice (retained)
 
-The implementation is designed around a new 15–16-year-old secondary-school student:
+The local, offline Godot prototype lets a player:
 
-- Create a named character with age, character-type, skin-tone, hairstyle, and clothing choices; start in a procedurally generated family/guardian household and home.
-- Explore a small, fictional Nigerian neighbourhood called **Idera Quarter**, drawn from original procedural shapes. Travel between the home, streets, school yard, classroom, market, clinic, police station, and community hall.
-- Move with **WASD** or **arrow keys**, hold **Shift** to run, and press **E** or use the HUD button to interact with nearby people and objects.
-- Talk with family, neighbours, students, teachers, and service NPCs; use a small neighbourhood shop, school timetable, bus stop, clinic, bed, and other reusable interaction targets.
-- Track Naira, hunger, energy, health, inventory, school attendance, subject averages, household/home, and current location; a basic reputation field is present but has no progression rules.
-- Attend short class activities for Mathematics, English, Computer Studies, Biology, and Civic Education. Answers update academic averages and attendance records.
-- Advance a morning/afternoon/evening/night clock. Menus pause the clock. Rest, food, bus travel, movement, and clinic visits affect selected needs or money.
-- Save and load one local character through a versioned JSON save in Godot's `user://` data folder. The implementation also includes autosave hooks and a separate-process restart test harness; **runtime persistence is not yet verified**.
+- Create a named 15–16-year-old secondary-school student, choose a character type and appearance, and receive a generated family/guardian household and home.
+- Explore the fictional **Idera Quarter** and travel between a home, streets, school yard/classroom, market, clinic, police station, and community hall.
+- Walk/run with **WASD** or **arrow keys**, hold **Shift** to run, and press **E** or the HUD button to interact.
+- Talk to family, neighbours, students, teachers, and service NPCs; visit the small shop, school, bus stop, clinic, and bed.
+- Track Naira, hunger, energy, health, inventory, attendance, academic averages, household/home, and location. Reputation is a placeholder field without progression rules.
+- Attend short activities for Mathematics, English, Computer Studies, Biology, and Civic Education; use a local day/time clock.
+- Save/load a local versioned JSON character through Godot's `user://` storage. The save/restart harness exists but is **not engine-verified here**.
 
-This is a 2D prototype with simple procedural placeholder drawings, not a final art style. It does not use real map data or third-party assets. See [`docs/ASSETS.md`](docs/ASSETS.md).
+The 2D prototype uses original procedural placeholder drawings. It has no real map data or third-party game art; see [`docs/ASSETS.md`](docs/ASSETS.md).
+
+## Stage 2 — multiplayer foundation
+
+Online play is optional and uses the same Godot project. It connects to one shared prototype world over JSON WebSocket (`/ws`); the server assigns identity and owns the saved online character, position, actions, and world clock. The client sends movement intent rather than coordinates, renders other connected characters from server presence, and exposes nearby chat and a wave interaction.
+
+The current server also validates and applies the prototype's location travel, bus fare, purchases, item consumption, clinic care, rest, and classroom answers. State-changing requests use bounded request-ID deduplication. The server checks message size, schemas/ranges, interaction distance, connection/command/chat rates, and browser `Origin` configuration.
+
+Player records and the shared clock are separate logical fields in one local JSON file (`world-state.json`), written through a temporary file and rename. The Stage 1 local save remains separate from online character state. The session token and identity-recovery key are kept on the client in a Godot `user://` config file; this is **not** account authentication or encrypted credential storage. The JSON file is a single-process prototype persistence mechanism, not a database or a multi-server coordination layer.
 
 ## Technology
 
-- **Game client:** Godot 4.7.2 + GDScript. The Stage 1 code is local/offline and does not yet call the backend.
-- **Backend foundation:** Node.js 22.22.3 baseline, TypeScript 5.9, Node's built-in HTTP server. It remains read-only and does not own or persist gameplay state.
-- **Future persistence direction:** PostgreSQL is the leading candidate, but there is no database or production schema.
+- **Game client:** Godot 4.7.2 + GDScript. Offline play remains available; optional multiplayer uses Godot's `WebSocketPeer`.
+- **World API/server:** Node.js 22.x + strict TypeScript, HTTP endpoints, and the `ws` WebSocket library.
+- **Prototype persistence:** atomically replaced local JSON file, configurable with `DATA_FILE`; no database is configured. PostgreSQL remains a future candidate only.
+- **Canonical logical world:** `nigeria-main`; this is not a player-selectable shard.
 
-See [`docs/TECH_STACK.md`](docs/TECH_STACK.md) and [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+See [`docs/TECH_STACK.md`](docs/TECH_STACK.md), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), and [`docs/MULTIPLAYER_PLAN.md`](docs/MULTIPLAYER_PLAN.md).
 
 ## Requirements
 
-- Node.js **22.13 or newer in the 22.x line** and npm for the API checks.
-- Godot **4.7.2 stable** to import, run, or test the game. The binary is not bundled in this repository.
-- Optional: `gdtoolkit` for GDScript formatting/parser/lint checks (`gdformat` and `gdlint`). These checks do not replace Godot engine validation.
+- Node.js **22.13 or newer in the 22.x line** and npm for the API.
+- Godot **4.7.2 stable** to import, run, or test the game; it is not bundled.
+- Optional `gdtoolkit` for `gdformat`/`gdlint` checks. These static tools do not replace Godot engine validation.
 
-## Run the backend foundation
+## Run the server
 
 From the repository root:
 
 ```sh
 npm ci
+cp .env.example .env   # optional; edit only the settings you need
 npm run dev
 ```
 
-The service listens on `0.0.0.0:3000` by default. You can optionally copy `.env.example` to `.env` and change `PORT`.
+The server listens on `0.0.0.0:3000` by default. Its default state file is `services/world-api/data/world-state.json` (ignored by Git). If you set `DATA_FILE` in the root `.env`, a relative path is resolved from `services/world-api/`; for example, `DATA_FILE=data/world-state.json`.
 
-Available read-only endpoints:
+HTTP endpoints:
 
-- `GET /health` — process health check.
-- `GET /api/v1/world` — static descriptor for the single logical Nigeria world. This is metadata, not a simulated or persisted world state.
+- `GET /health` — process health.
+- `GET /api/v1/world` — canonical world descriptor and bounded-prototype status.
+- `GET /ws` — returns `426`; upgrade this path to a WebSocket connection for multiplayer.
 
-For a production-style compiled start:
+Desktop Godot clients normally omit the browser `Origin` header. Browser WebSocket connections require an exact HTTP(S) origin in the comma-separated `ALLOWED_ORIGINS` setting; leaving it empty rejects browser-origin connections. For a production browser deployment, serve the game over HTTPS, use WSS, and proxy the same-origin `/ws` route to this server.
+
+For a compiled start:
 
 ```sh
 npm run build
 npm run start
 ```
 
+Protect the state file and client session config as personal data/credentials. The prototype does not provide TLS termination, a user account provider, backups, moderation, or production operations.
+
 ## Run the game
 
-Open `game/project.godot` with Godot 4.7.2, or run it from the repository root:
+Open `game/project.godot` with Godot 4.7.2, or start the local/offline prototype from the repository root:
 
 ```sh
 godot --path game
 ```
 
-The first screen offers character creation and, when a local save exists, a continue option. The prototype uses generated procedural art and local state only. Engine/runtime behaviour has not yet been verified in this workspace.
+For desktop online play, run the server first. The default native URL is `ws://127.0.0.1:3000/ws`; override it when needed:
+
+```sh
+NAIJA_WS_URL=ws://127.0.0.1:3000/ws godot --path game
+```
+
+In the character-creation screen, select **Create online life**. The server creates an online character separate from the local Stage 1 save. Reuse that client identity by launching with the same session config and selecting **Continue online life**. Native clients on another host should use that server's reachable address. Do not expose the prototype over an untrusted network without a TLS-terminating proxy and additional security controls.
+
+## Local two-client and reconnect test
+
+1. Start the server with `npm run dev` in one terminal.
+2. Start two Godot clients in separate terminals with different session-config paths (this avoids both windows sharing one identity). On macOS/Linux:
+
+   ```sh
+   NAIJA_MULTIPLAYER_SESSION_PATH=user://naija-client-a.cfg godot --path game
+   NAIJA_MULTIPLAYER_SESSION_PATH=user://naija-client-b.cfg godot --path game
+   ```
+
+   In PowerShell, set the variable separately in each terminal before launching: `$env:NAIJA_MULTIPLAYER_SESSION_PATH = 'user://naija-client-a.cfg'` (use `naija-client-b.cfg` for the other client).
+3. Create a different online character in each window. Move them around; use **Nearby chat** and move close enough to use **E** to wave.
+4. Close one client and launch it again with the same session-config path. Choose **Continue online life**. The server should restore the same character from the same `DATA_FILE`.
+
+These are manual client instructions, **not a claim that Godot's two-window flow was run in this workspace**. The automated Node integration suite independently opens two real WebSocket clients, checks coexistence, server movement, chat/wave, and persisted reconnect after API restart.
 
 ## Development checks
 
-Run the backend checks from the repository root:
+From the repository root:
 
 ```sh
-npm run build  # compile the TypeScript API
-npm run test   # build and run API integration tests
-npm run lint   # lint the TypeScript source
-npm run check  # lint and test
+npm run build  # compile TypeScript
+npm run lint   # ESLint
+npm test       # build and run Node HTTP/WebSocket integration tests
+npm run check  # lint plus tests
 ```
 
-When Godot is installed, run the project import smoke check and Stage 1 tests from the repository root:
+When Godot is installed, run its import smoke check and retained Stage 1 tests:
 
 ```sh
 godot --headless --editor --path game --quit
@@ -94,29 +130,29 @@ godot --headless --path game --script res://tests/domain_smoke.gd
 godot --headless --path game --script res://tests/player_movement.gd
 ```
 
-The save/restart check must use **two separate Godot processes**; allow the first to exit before starting the second:
+The local-save persistence check requires two separate Godot processes, with the writer exiting before the reader starts:
 
 ```sh
 godot --headless --path game --script res://tests/save_restart.gd -- write
 godot --headless --path game --script res://tests/save_restart.gd -- read
 ```
 
-The Godot tests cover character/household creation, age limits, needs, money, inventory, school attendance/performance, interaction targeting, clock progression, domain save/load, movement, bounds, disabled-movement behaviour, and persistence across process restart. They are test scripts, not automated CI jobs, and are not claimed as passing until run with the engine.
-
-If `gdtoolkit` is installed, GDScript static checks are:
+If `gdtoolkit` is installed, run static GDScript checks:
 
 ```sh
 gdformat --check $(find game -name '*.gd' -print)
 gdlint $(find game -name '*.gd' -print)
 ```
 
+The automated backend tests cover retained HTTP behavior, two-client presence/movement/chat/interaction, server-side payload validation and rate limits, request-ID idempotency, identity recovery, character and session persistence through API restart, shared clock rollover, and WebSocket `Origin` rejection. They do not exercise Godot rendering/input, browser exports, or actual client reconnect UI.
+
 ## Repository layout
 
 ```text
-game/                       Godot client, prototype scripts, and GDScript test harnesses
-services/world-api/         Minimal read-only TypeScript API foundation
+game/                       Godot Stage 1 prototype and optional Stage 2 client
+services/world-api/         HTTP API, WebSocket authority, JSON persistence, tests
 docs/                       Vision, plans, architecture, status, and agent guidance
-.github/workflows/          Automated Node foundation checks
+.github/workflows/          Node/TypeScript foundation checks
 ```
 
 ## Project documents
@@ -136,4 +172,4 @@ docs/                       Vision, plans, architecture, status, and agent guida
 
 ## Scope boundary
 
-Stage 1 introduces only the first small life-simulation slice. The single logical Nigeria architecture remains unchanged, but no full-country geography, account/authentication flow, multiplayer, backend gameplay integration, production persistence, or large-scale NPC simulation has been added. The next step is to run and verify the Godot project and all of its tests before extending the prototype toward Stage 2.
+Stage 2 is a bounded multiplayer foundation, not Stage 3 geography. Preserve one logical Nigeria; do not split the prototype into separately authoritative regional worlds. Full national geography/simulation, accounts, production database and operations, comprehensive anti-cheat/moderation, advanced NPC simulation, and cross-platform client exports remain future work.

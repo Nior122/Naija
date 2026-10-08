@@ -2,7 +2,7 @@
 
 ## Status
 
-No production database, migration framework, schema, credentials, or database connection is part of Stage 1. The Godot prototype stores local single-player state in a JSON file; that file is unverified and is not shared or authoritative. PostgreSQL remains the leading future candidate because it is open source, relational constraints fit many authoritative records, and it can evolve toward geospatial needs. Confirm version, hosting, extensions, retention, and backup design before adopting it.
+No production database, migration framework, or database connection is part of the current Stage 2 foundation. The Node server stores the bounded multiplayer prototype's shared clock and player records in one versioned local JSON file; it is server-authoritative within one process but has no transactions, multi-writer coordination, encryption, backup, or production recovery. The separate Godot Stage 1 local save remains client-local and is not online authority. PostgreSQL remains the leading future candidate because it is open source, relational constraints fit many authoritative records, and it can evolve toward geospatial needs. Confirm version, hosting, extensions, retention, and backup design before adopting it.
 
 Do not create hundreds of tables from this plan. Add a small schema slice only when a roadmap feature needs it, with migrations, constraints, tests, ownership, and rollback/recovery notes.
 
@@ -56,4 +56,4 @@ Physical partitioning must preserve one logical world. Any regional/partition ke
 
 ## Current reality check
 
-The Node API serves a static descriptor from source code. It does not create users, characters, bank accounts, transactions, maps, NPCs, or persisted world state. Its tests verify only HTTP response behavior. Separately, the Stage 1 client has a local JSON character save implementation and a restart-test harness, but neither has been runtime-tested; they are not a database or production persistence.
+The Node API serves a static world descriptor over HTTP and a Stage 2 WebSocket prototype that creates anonymous player identities, persists character records, and advances one shared clock in a local JSON file. Nine Node integration tests cover HTTP regressions and selected WebSocket authority, coexistence, validation, reconnect/persistence, chat, rate limits, and clock behavior. The JSON store is not a production database. Separately, the Stage 1 client has a local JSON save implementation and restart-test harness, but neither has been runtime-tested in Godot.
