@@ -1,0 +1,12 @@
+{
+  "name": "@naija/world-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --import tsx --watch src/index.ts",
+    "build": "tsc --project tsconfig.json",
+    "start": "node dist/index.js",
+    "test": "npm run build && node --test test/app.test.mjs"
+  }
+}
