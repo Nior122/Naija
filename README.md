@@ -6,11 +6,11 @@ Naija: One World is a long-term Nigerian life-simulation game project. The inten
 
 ## Current status
 
-The repository preserves the Stage 0 Node/TypeScript API foundation and the Stage 1 Godot offline prototype, and now includes an optional **Stage 2 multiplayer foundation**. The Stage 1 local life remains available; online mode connects to a small, server-authoritative prototype world with the canonical ID `nigeria-main`.
+The repository preserves the Stage 0 Node/TypeScript API, the Stage 1 offline Godot prototype, and the Stage 2 multiplayer foundation; **Stage 3 geography expansion is now implemented as a bounded, license-aware foundation**. The single logical world keeps the canonical ID `nigeria-main`. Stage 1 local play and saves remain separate from optional online play.
 
-The backend TypeScript build, lint, and nine Node integration tests pass. Static GDScript formatting/lint checks pass. **Godot is not installed in the current workspace**, so the game has not been imported, launched, or tested in-engine. The Godot two-client UI, reconnect flow, and browser export therefore remain unverified. Backend WebSocket tests do exercise two real simultaneous clients and server restart/reconnect behavior. See [`docs/DEVELOPMENT_STATUS.md`](docs/DEVELOPMENT_STATUS.md) for exact results and limitations.
+Stage 3 includes a canonical registry for 36 states plus FCT and 774 LGAs, a reproducible geographic import pipeline, and a small 200-feature OpenStreetMap preview sample for Akure South, Ondo State. The sample can be toggled in the existing outdoor prototype; it is not full city, LGA, state, or national coverage. On the current tree, the backend TypeScript build/lint and all 18 Node tests pass, as do the deterministic geography import checks. **Godot is not installed in the current workspace**, so rendering, input, local save/load, and the Godot client integration remain unverified in-engine. See [`docs/DEVELOPMENT_STATUS.md`](docs/DEVELOPMENT_STATUS.md) for exact results and limitations.
 
-This is not the complete Nigeria simulation, production online service, account system, or Stage 3 geography build. Stage 1/2 data and features are prototype scope.
+This is not the complete Nigeria simulation, production online service, account system, national visual build, or Stage 4 education system. Stage 1/2 game content remains prototype scope.
 
 ## Stage 1 — first playable slice (retained)
 
@@ -33,6 +33,18 @@ Online play is optional and uses the same Godot project. It connects to one shar
 The current server also validates and applies the prototype's location travel, bus fare, purchases, item consumption, clinic care, rest, and classroom answers. State-changing requests use bounded request-ID deduplication. The server checks message size, schemas/ranges, interaction distance, connection/command/chat rates, and browser `Origin` configuration.
 
 Player records and the shared clock are separate logical fields in one local JSON file (`world-state.json`), written through a temporary file and rename. The Stage 1 local save remains separate from online character state. The session token and identity-recovery key are kept on the client in a Godot `user://` config file; this is **not** account authentication or encrypted credential storage. The JSON file is a single-process prototype persistence mechanism, not a database or a multi-server coordination layer.
+
+## Stage 3 — Nigerian geography expansion
+
+Stage 3 extends the existing Idera/Stage 2 architecture; it does not split Nigeria into shards or replace the playable prototype.
+
+- **One world/admin catalog:** `NG` → 36 states plus FCT → 774 canonical LGA records. Source IDs are preserved for provenance; stable game IDs derive from state code and normalized names. Three duplicated optional Wikidata IDs are reported and omitted. LGA and ward coordinates remain reference points—not claimed boundaries or centroids.
+- **Playable sample:** press **Map data** while outside in Idera Quarter to toggle a small Akure South, Ondo sample preview. It draws roads, building footprints, waterways, land use, schools and health points; named buildings and mapped education/health features can be inspected. Turning it off restores the original Idera map and interactions. This is a viewport sample, **not an LGA/settlement boundary or a complete Akure map**. Port Harcourt was preferred but no suitable bounded sample with verified terms/provenance was available during this pass.
+- **Data pipeline:** raw pinned-source artifacts live in `game/data/geography/source/`; validated, normalized client data and provenance live separately in `game/data/geography/processed/`. Run `npm run geography:import` to regenerate, and `npm run geography:check` to verify that outputs match pinned inputs. Both commands validate the source CRS, country ranges, administrative hierarchy, feature IDs/geometries, and chunk metadata. Do not treat the embedded OSM preview as a complete or live extract.
+- **Coordinates/chunks:** input/storage uses WGS84 decimal latitude/longitude (GeoJSON coordinates are `[longitude, latitude]`, CRS84). The Akure regional frame uses origin `(longitude 5.2°, latitude 7.25°)`, local equirectangular projection, `x` east/`y` south, 1 game unit/metre for metric local coordinates, millimetre local precision, and `1e-7°` stored geographic precision. The 1600×900 preview separately maps the selected viewport bounds to pixels. Stable Nigeria-wide 500 m chunks use the documented 9° central-latitude grid; chunks are loading/interest identifiers inside the same world, not separate worlds.
+- **Online presence:** optional geographic identity is derived by the server from the existing outdoor map position or validated sample coordinate. Presence carries region/chunk/admin IDs; geographic players are filtered to the same local scene and neighboring chunks (plus a 1.5 km distance cap), and chat/waves use geographic distance. Legacy Stage 2 players without geography remain supported. No national streaming service, routing simulation, transport, weather, or regional environment simulation is added; extension fields are placeholders.
+
+Data provenance, exact upstream commits, license treatment, attribution and coordinate caveats are recorded in [`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md). The processed assets are small; the full upstream preview and any country-scale extracts are not committed.
 
 ## Technology
 
@@ -117,8 +129,10 @@ From the repository root:
 ```sh
 npm run build  # compile TypeScript
 npm run lint   # ESLint
-npm test       # build and run Node HTTP/WebSocket integration tests
+npm test       # build and run Node HTTP/WebSocket plus geography pipeline tests
 npm run check  # lint plus tests
+npm run geography:import  # regenerate the deterministic processed geography catalog
+npm run geography:check   # verify that processed outputs match pinned source files
 ```
 
 When Godot is installed, run its import smoke check and retained Stage 1 tests:
@@ -144,13 +158,14 @@ gdformat --check $(find game -name '*.gd' -print)
 gdlint $(find game -name '*.gd' -print)
 ```
 
-The automated backend tests cover retained HTTP behavior, two-client presence/movement/chat/interaction, server-side payload validation and rate limits, request-ID idempotency, identity recovery, character and session persistence through API restart, shared clock rollover, and WebSocket `Origin` rejection. They do not exercise Godot rendering/input, browser exports, or actual client reconnect UI.
+The automated tests cover retained HTTP behavior, two-client legacy and geographic presence/movement/chat/interaction, nearby-chunk filtering, geography import validation and coordinate/chunk invariants, server-side payload validation and rate limits, request-ID idempotency, identity recovery, character/session persistence through API restart, shared clock rollover, and WebSocket `Origin` rejection. They do not exercise Godot rendering/input, browser exports, local Godot save/load, or actual client reconnect UI.
 
 ## Repository layout
 
 ```text
-game/                       Godot Stage 1 prototype and optional Stage 2 client
-services/world-api/         HTTP API, WebSocket authority, JSON persistence, tests
+game/                       Godot Stage 1/2 prototype, Stage 3 preview, geography data
+services/world-api/         HTTP API, WebSocket authority, geography catalog, tests
+tools/geography/            Deterministic bounded-feature extraction/import tools
 docs/                       Vision, plans, architecture, status, and agent guidance
 .github/workflows/          Node/TypeScript foundation checks
 ```
@@ -165,6 +180,7 @@ docs/                       Vision, plans, architecture, status, and agent guida
 - [Database plan](docs/DATABASE_PLAN.md)
 - [Multiplayer plan](docs/MULTIPLAYER_PLAN.md)
 - [World and time plan](docs/WORLD_PLAN.md)
+- [Geographic data sources and licenses](docs/DATA_SOURCES.md)
 - [Asset and licensing notes](docs/ASSETS.md)
 - [Security plan](docs/SECURITY_PLAN.md)
 - [Contributing](docs/CONTRIBUTING.md)
@@ -172,4 +188,4 @@ docs/                       Vision, plans, architecture, status, and agent guida
 
 ## Scope boundary
 
-Stage 2 is a bounded multiplayer foundation, not Stage 3 geography. Preserve one logical Nigeria; do not split the prototype into separately authoritative regional worlds. Full national geography/simulation, accounts, production database and operations, comprehensive anti-cheat/moderation, advanced NPC simulation, and cross-platform client exports remain future work.
+Stage 3 adds a national administrative registry and one bounded Akure South map-data sample, not full national geography or simulation. Preserve one logical Nigeria; do not split the prototype into separately authoritative regional worlds. Stage 4 — Complete Education System has not started. Full national visual detail, accounts, production database/operations, comprehensive anti-cheat/moderation, advanced NPC simulation, transport/weather simulation, and cross-platform client exports remain future work.

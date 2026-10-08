@@ -7,8 +7,11 @@ export const worldDescriptor = Object.freeze({
   name: "Nigeria",
   projectName: "Naija: One World",
   topology: "single-logical-world",
-  implementationStage: 2,
+  implementationStage: 3,
   simulationImplemented: true,
   simulationScope: "bounded-multiplayer-prototype",
+  geographyImplemented: true,
+  geographicCoverage: "national-admin-registry-plus-bounded-akure-south-sample",
+  fullNationalGeography: false,
   fullNationalSimulation: false,
 } as const);

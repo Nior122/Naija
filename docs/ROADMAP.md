@@ -1,13 +1,13 @@
 # Master Roadmap
 
-The roadmap describes intended development, not completed features. Phase 0 is complete. Phase 1 implementation is present but its Godot runtime, gameplay, and save/restart verification remain pending. Phase 2 implementation is present and its Node backend checks pass, while Godot multiplayer runtime verification is blocked by the missing engine. Later phases remain not started; see `DEVELOPMENT_STATUS.md` for exact results.
+The roadmap describes intended development, not completed features. Phase 0 is complete. Phase 1 implementation is present but its Godot runtime/gameplay/save-restart verification remain pending. Phase 2 implementation and backend verification are present; Godot multiplayer runtime verification is blocked by the missing engine. Phase 3 now has a validated administrative registry, deterministic source pipeline and bounded Akure South preview/presence foundation; in-engine rendering/toggle verification is still pending. Later phases remain not started; see `DEVELOPMENT_STATUS.md` for exact results.
 
 | Phase | Name | Purpose | Status |
 |---:|---|---|---|
 | 0 | Game Foundation & Architecture | Establish the repository, chosen stack, modular boundaries, plans, minimal client/API shells, and development checks. | **Complete** |
 | 1 | First Playable Prototype | Build a deliberately small life-simulation slice: create/control a student character, explore one bounded setting, and complete a few understandable interactions. | **Implementation present; Godot/runtime verification pending** |
 | 2 | Multiplayer Foundation | Add server-authoritative identity, sessions, synchronization, and persistence for a small test population while retaining one logical world. | **Implementation present; backend verified; Godot runtime verification pending** |
-| 3 | Nigerian Geography Expansion | Introduce validated administrative geography, place data, coordinates, and a repeatable import/provenance pipeline. | Not started |
+| 3 | Nigerian Geography Expansion | Introduce validated administrative geography, place data, coordinates, and a repeatable import/provenance pipeline. | **Implementation present; Node/data checks pass; Godot runtime verification pending** |
 | 4 | Complete Education System | Expand secondary school, universities, polytechnics, vocational study, apprenticeships, school years, and education records. | Not started |
 | 5 | Age & Life Simulation | Add birthdays, age progression, life stages, family events, death, inheritance, and generational continuity. | Not started |
 | 6 | Careers & Employment | Model skills, job seeking, employment, work progression, and career changes. | Not started |
@@ -33,6 +33,12 @@ The roadmap describes intended development, not completed features. Phase 0 is c
 | 26 | Testing & World Simulation | Add long-duration simulations, load/chaos testing, balance validation, migration testing, and disaster exercises. | Not started |
 | 27 | Launch Preparation | Complete operational readiness, privacy/safety review, support, release pipelines, localization, and platform compliance. | Not started |
 | 28 | Full Game | Deliver and operate the integrated life-simulation experience, then continue evolving it responsibly. | Not started |
+
+## Stage 3 exit gate
+
+The implementation slice includes 36 states plus FCT and 774 canonical LGA records, 11 ward reference points, a pinned 200-feature ODbL-attributed Akure South sample, deterministic/validated processing, WGS84-to-game conversion, stable 500 m chunks, an opt-in existing-client map preview, and optional server-derived geographic presence. The viewport is not an administrative boundary; source coordinate semantics and licenses are documented in `DATA_SOURCES.md`.
+
+The Node importer, deterministic output check, backend build/lint/tests and static GDScript format/lint checks pass. The missing Godot 4.7.2 executable blocks scene import, visual review, Stage 1 offline save/load regression, and Stage 3 client/map/two-window verification. Record that limitation rather than marking client behavior engine-verified. The next phase after the Stage 3 implementation/test gate is Stage 4 — Complete Education System; Stage 4 has not begun.
 
 ## Stage 1 exit gate
 

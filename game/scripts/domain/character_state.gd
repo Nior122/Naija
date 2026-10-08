@@ -30,6 +30,7 @@ var academic_scores: Dictionary = {}
 var attendance: Array[Dictionary] = []
 var reputation: int = 0
 var household: Dictionary = {}
+var geographic_location: Dictionary = {}
 var created_at: String = ""
 var updated_at: String = ""
 
@@ -60,6 +61,7 @@ func create_new(
 	home_id = str(household.get("home_id", ""))
 	current_location = "home"
 	position = Vector2(720.0, 540.0)
+	geographic_location.clear()
 	inventory.clear()
 	add_item("school_bag", "School bag", 1, "school")
 	add_item("notebook", "Exercise book", 1, "school")
@@ -154,6 +156,11 @@ func set_location(location_id: String, world_position: Vector2) -> void:
 	touch()
 
 
+func set_geographic_location(value: Dictionary) -> void:
+	geographic_location = value.duplicate(true)
+	touch()
+
+
 func touch() -> void:
 	updated_at = _timestamp()
 
@@ -180,6 +187,7 @@ func to_dictionary() -> Dictionary:
 		"attendance": attendance.duplicate(true),
 		"reputation": reputation,
 		"household": household.duplicate(true),
+		"geographic_location": geographic_location.duplicate(true),
 		"created_at": created_at,
 		"updated_at": updated_at,
 	}
@@ -227,6 +235,10 @@ func load_dictionary(data: Dictionary) -> void:
 	reputation = int(data.get("reputation", 0))
 	var raw_household: Variant = data.get("household", {})
 	household = raw_household.duplicate(true) if raw_household is Dictionary else {}
+	var raw_geographic_location: Variant = data.get("geographic_location", {})
+	geographic_location = (
+		raw_geographic_location.duplicate(true) if raw_geographic_location is Dictionary else {}
+	)
 	created_at = str(data.get("created_at", _timestamp()))
 	updated_at = str(data.get("updated_at", _timestamp()))
 

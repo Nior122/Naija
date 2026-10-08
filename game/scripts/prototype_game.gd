@@ -1,6 +1,7 @@
 extends Node2D
 
 const CharacterStateScript = preload("res://scripts/domain/character_state.gd")
+const GeographyModelScript = preload("res://scripts/domain/geography_model.gd")
 const WorldClockScript = preload("res://scripts/domain/world_clock.gd")
 const HouseholdFactoryScript = preload("res://scripts/domain/household_factory.gd")
 const SchoolServiceScript = preload("res://scripts/domain/school_service.gd")
@@ -165,6 +166,7 @@ func _on_online_session_ready(
 	_time_accumulator = 0.0
 	_online_input_accumulator = 0.0
 	world.enter_location(character.current_location, character.household)
+	_restore_geographic_preview_if_present()
 	world.update_daypart(clock.daypart())
 	player.server_controlled = true
 	player.set_authoritative_position(character.position)
@@ -244,6 +246,8 @@ func _on_online_status_changed(status: String) -> void:
 
 
 func _on_online_error(code: String, description: String) -> void:
+	if code.begins_with("geography_") and world.geography_preview_enabled:
+		world.set_geographic_preview(false)
 	if playing:
 		ui.notify("%s: %s" % [code.replace("_", " ").capitalize(), description])
 	else:
@@ -259,6 +263,7 @@ func _apply_online_character_snapshot(character_data: Dictionary) -> void:
 		character.set_location("home", Vector2(720.0, 540.0))
 	if old_location != character.current_location:
 		world.enter_location(character.current_location, character.household)
+		_restore_geographic_preview_if_present()
 		_remove_remote_players()
 	player.set_authoritative_position(character.position)
 	player.set_appearance(character.appearance)
@@ -286,6 +291,8 @@ func _sync_remote_players(players_data: Array) -> void:
 			continue
 		if str(entry.get("worldLocation", "")) != character.current_location:
 			continue
+		if not _is_geographically_interested(entry):
+			continue
 		present[player_id] = true
 		_upsert_remote_player(entry)
 	for player_id in _remote_players.keys():
@@ -300,6 +307,7 @@ func _upsert_remote_player(presence: Dictionary) -> void:
 		or character == null
 		or player_id == character.player_id
 		or str(presence.get("worldLocation", "")) != character.current_location
+		or not _is_geographically_interested(presence)
 	):
 		return
 	var remote: Variant = _remote_players.get(player_id)
@@ -315,6 +323,33 @@ func _upsert_remote_player(presence: Dictionary) -> void:
 		world.add_child(remote)
 		_remote_players[player_id] = remote
 	remote.set_presence(presence)
+
+
+func _is_geographically_interested(presence: Dictionary) -> bool:
+	if character == null:
+		return false
+	var own_location: Dictionary = character.geographic_location
+	var raw_location: Variant = presence.get("geographicLocation", null)
+	var other_location: Dictionary = raw_location if raw_location is Dictionary else {}
+	if own_location.is_empty() and other_location.is_empty():
+		return true
+	if own_location.is_empty() or other_location.is_empty():
+		return false
+	if str(own_location.get("region_id", "")) != str(other_location.get("region_id", "")):
+		return false
+	var own_chunk := str(own_location.get("chunk_id", ""))
+	var other_chunk := str(other_location.get("chunk_id", ""))
+	if not GeographyModelScript.chunks_are_within_radius(own_chunk, other_chunk, 1):
+		return false
+	return (
+		GeographyModelScript.geographic_distance_meters(
+			float(own_location.get("latitude", 0.0)),
+			float(own_location.get("longitude", 0.0)),
+			float(other_location.get("latitude", 0.0)),
+			float(other_location.get("longitude", 0.0))
+		)
+		<= 1500.0
+	)
 
 
 func _remove_remote_player(player_id: String) -> void:
@@ -380,6 +415,7 @@ func _begin_play_session() -> void:
 	player.server_controlled = false
 	_time_accumulator = 0.0
 	world.enter_location(character.current_location, character.household)
+	_restore_geographic_preview_if_present()
 	world.update_daypart(clock.daypart())
 	player.position = character.position.clamp(
 		Vector2(28.0, 28.0), PlayerActorScript.MAP_SIZE - Vector2(28.0, 28.0)
@@ -388,6 +424,17 @@ func _begin_play_session() -> void:
 	player.movement_enabled = true
 	player.snap_camera()
 	ui.show_game(character, clock, WorldMapScript.location_name(character.current_location))
+
+
+func _restore_geographic_preview_if_present() -> void:
+	if (
+		character.current_location == "town"
+		and (
+			str(character.geographic_location.get("region_id", ""))
+			== "ng:region:ondo:akure-south-core"
+		)
+	):
+		world.set_geographic_preview(true)
 
 
 func _setup_input_actions() -> void:
@@ -420,6 +467,10 @@ func _on_player_travelled(distance: float, running: bool) -> void:
 		return
 	character.spend_energy(distance * (0.0030 if running else 0.0017))
 	character.position = player.position
+	if world.geography_preview_enabled:
+		var geographic_location := world.geographic_location_for_position(player.position)
+		if not geographic_location.is_empty():
+			character.set_geographic_location(geographic_location)
 
 
 func _refresh_hud(nearest: WorldEntity = null) -> void:
@@ -492,6 +543,17 @@ func _interact_with(entity: WorldEntity) -> void:
 			ui.show_dialogue(
 				"Community notice", DialogueLibraryScript.lines_for("community", character.name)
 			)
+		"inspect_geographic_feature":
+			var feature_name := str(entity.data.get("name", entity.display_name))
+			var feature_kind := str(entity.data.get("kind", "geographic feature")).replace("_", " ")
+			var feature_source := str(
+				entity.data.get("attribution", "© OpenStreetMap contributors · ODbL 1.0")
+			)
+			var feature_details := (
+				"%s · OpenStreetMap feature ID %s. %s"
+				% [feature_kind.capitalize(), str(entity.data.get("osm_id", "")), feature_source]
+			)
+			ui.show_notice(feature_name, feature_details)
 		_:
 			ui.show_notice("Nothing to do yet", "This prototype object has no action assigned.")
 
@@ -500,6 +562,8 @@ func _change_location(destination: String, spawn_position: Vector2) -> void:
 	if not WorldMapScript.is_valid_location(destination):
 		ui.show_notice("Unknown location", "That prototype location is not available yet.")
 		return
+	if destination != "town":
+		character.set_geographic_location({})
 	character.set_location(destination, spawn_position)
 	world.enter_location(destination, character.household)
 	player.position = spawn_position.clamp(
@@ -709,8 +773,53 @@ func _open_panel(panel_id: String) -> void:
 				+ "The clock pauses while a menu is open. Graphics/audio settings are not included."
 			)
 			ui.show_notice("Prototype settings", settings_message)
+		"geography":
+			_toggle_geographic_preview()
 		_:
 			ui.show_notice("Prototype menu", "This menu is reserved for a later development stage.")
+
+
+func _toggle_geographic_preview() -> void:
+	if world.location_id != "town":
+		ui.show_notice(
+			"Geographic sample",
+			"Return to the outdoor neighbourhood before opening the Akure South map data."
+		)
+		return
+	var enable_preview := not world.geography_preview_enabled
+	if not world.set_geographic_preview(enable_preview):
+		var detail := (
+			"The processed sample could not be loaded. Run npm run geography:import "
+			+ "and restart the game."
+		)
+		ui.show_notice("Geographic sample unavailable", detail)
+		return
+	if _online_mode:
+		var command := "geography.enter" if enable_preview else "geography.leave"
+		var payload := {"regionId": world.geographic_region_id()} if enable_preview else {}
+		if not multiplayer_client.send_command(command, payload):
+			world.set_geographic_preview(not enable_preview)
+			ui.notify("The geography command could not be sent. Please try again.")
+			return
+	else:
+		var geographic_location := (
+			world.geographic_location_for_position(player.position) if enable_preview else {}
+		)
+		if enable_preview and geographic_location.is_empty():
+			world.set_geographic_preview(false)
+			ui.notify("The sample location could not be resolved.")
+			return
+		character.set_geographic_location(geographic_location)
+		_save_game(false)
+	if enable_preview:
+		var preview_message := (
+			"Akure South sample preview: OSM roads, buildings, schools and health points. "
+			+ "This is a bounded viewport sample, not an LGA boundary. "
+			+ "Turn Map data off to return to Idera."
+		)
+		ui.notify(preview_message)
+	else:
+		ui.notify("Returned to the fictional Idera Quarter map.")
 
 
 func _on_manual_save_requested() -> void:

@@ -4,130 +4,90 @@
 
 ## Current stage and verification gate
 
-**Stage 2 — Multiplayer Foundation: implementation is present and the Node backend checks pass. The Godot runtime gate remains blocked.** Stage 0 and Stage 1 code are preserved. Godot is not installed in the current workspace, so the Stage 1 game was not imported/launched or tested in-engine, and the new Stage 2 Godot client was not run. Therefore neither Stage 1 runtime behavior nor the Godot multiplayer/reconnect UI is claimed as verified.
+**Stage 3 — Nigerian Geography Expansion: implementation present; Node/source-data checks are available; Godot runtime verification remains blocked.** Stage 0, Stage 1 and Stage 2 code/features remain in the project. Stage 3 adds one canonical Nigerian administrative catalog and a bounded Akure South map-data/player-presence foundation; it does not create another world or a national visual build.
 
-The requested Stage 1 verification-before-Stage 2 gate could not be completed because the engine is unavailable. The Stage 2 implementation was continued as far as possible under the explicit request; the missing Stage 1/runtime verification remains a known limitation and should be completed when Godot 4.7.2 is available. No Stage 3 geography has been started.
+Godot is not installed in this workspace. Therefore the Stage 1/2 client and Stage 3 renderer have not been imported, launched, visually reviewed or tested in-engine. Local save/load, controls, rendering, and the Godot two-client/reconnect flow remain unverified. The code preserves the prior default Idera experience, but an engine-level Stage 1/2 regression pass still needs Godot 4.7.2. Backend tests do not prove client runtime behavior.
 
-## Stage 0 foundation retained
+The next roadmap stage is **Stage 4 — Complete Education System**. It has not started.
 
-- `services/world-api/` preserves the original Node.js/TypeScript HTTP foundation and `nigeria-main` logical world identity.
-- `GET /health` and `GET /api/v1/world` remain available. The world descriptor now reports Stage 2's bounded prototype state; it does not claim a complete national simulation.
-- HTTP write methods remain rejected. The backend adds a separate WebSocket multiplayer route without moving game authority into the HTTP metadata endpoint.
+## Stage 0/1/2 preserved
 
-## Stage 1 implementation retained (runtime verification pending)
+- The Node HTTP foundation, existing `/health` and `/api/v1/world` routes and one logical world ID `nigeria-main` remain.
+- The local Godot life retains character creation, household/home, fictional Idera Quarter map, travel/interactions, NPC dialogue, school activities, money/needs/inventory, local clock and client-local JSON save/load implementation.
+- Stage 2's optional WebSocket multiplayer remains on the same Godot project and the server remains authoritative for online character actions/clock. Local Stage 1 saves remain separate.
+- `CharacterState` gained an optional geographic-location dictionary for Stage 3; Stage 2 server records without that field are migrated to `null`. Geography preview is opt-in; the default town scene stays Idera.
+- Stage 1/2 UI and server behavior were not deliberately removed. Engine regression status is **unknown/unverified**, not passed, because Godot is unavailable.
 
-- `game/project.godot` starts the existing Godot 4.7.2-targeted first-playable scene; the earlier Stage 0 scene remains in the project.
-- The offline prototype still supports character creation, generated family/household and home, fictional Idera Quarter locations, keyboard movement/interactions, NPC dialogue, school timetable/activities, money, needs, inventory, local clock, and local versioned JSON save/load.
-- Local Stage 1 data remains separate from the online server character and world file.
-- `game/tests/` includes domain, movement, and two-process local-save/restart harnesses. They have not run in Godot in this workspace.
+## Stage 3 geography implementation
 
-## Stage 2 implementation present
+### Administrative hierarchy and source boundary
 
-### Backend (`services/world-api/`)
+- One `NG` country record and one `nigeria-main` world identity.
+- 36 state records plus FCT and 774 canonical LGA records in `game/data/geography/processed/nigeria-admin.json`.
+- Optional source Wikidata identifiers with three duplicate values reported and omitted; stable IDs derive from source state code/name and normalized LGA name.
+- Eleven Akure South ward reference-point records. LGA/ward points are not mislabeled as administrative polygons, boundaries, survey-grade points or centroids.
+- Akure is a settlement name/capital record without an authoritative coordinate; its association with this sample is explicitly a prototype association.
 
-- Optional JSON WebSocket transport at `/ws` using Node's `ws` library; the existing HTTP routes remain intact.
-- A single in-memory server process owns canonical world ID `nigeria-main`, one shared ticking clock, connected presence, and per-player server-authoritative character records.
-- Anonymous prototype identity creation/recovery with server-issued player IDs, random bearer session tokens, a client-held recovery key, and server-side hashes of both secrets. Duplicate live sessions are rejected. This is not an external account/authentication system.
-- The server accepts sequenced movement direction/run intent rather than client coordinates, computes position/speed, and clamps movement to the bounded prototype map.
-- The server validates and resolves prototype travel/spawns, bus fare, shop purchases, consumption, clinic care, rest, school quiz answers/attendance/scores, nearby chat, and wave interactions. Online values are not taken from the client as outcomes.
-- Payload-size/schema/range checks, connection and command rate limits, chat limits, request-ID deduplication, WebSocket heartbeat handling, structured errors, and useful connection/persistence logs are implemented.
-- Versioned JSON persistence stores `worldClock` and player records in logically separate fields, validates loaded data, rejects state files above 16 MiB, writes via a temporary file plus rename, and flushes on commands/shutdown. The default data file is Git-ignored. This is a single-process local persistence prototype, not a database or a safe multi-writer design.
+### Bounded playable sample
 
-### Godot client (implementation present, not engine-verified)
+- Selected fallback region: **Akure South, Ondo State**. Port Harcourt/Rivers was preferred but no suitably bounded Port Harcourt data sample with clear provenance/terms was available for this implementation.
+- Map viewport: west 5.188°, south 7.238°, east 5.212°, north 7.262°. It is a deterministic preview selection—not an LGA, ward or settlement boundary and not a completeness claim.
+- 200 retained OSM preview features: 72 roads, 108 buildings, 13 waterways, 2 land-use features, 3 health facilities and 2 schools. Source layer, OSM source ID, available names and GeoJSON geometry are retained; original tags were not present in the upstream preview HTML.
+- The data-driven Godot preview is toggled through the existing HUD **Map data** action outdoors. It draws mapped line/polygon/point content and exposes health/school features and named buildings as generic read-only inspect markers. Default Idera layout/interactions return when preview is turned off. This feature is implemented in source but has not been observed in Godot.
+- Terrain, routing, transport schedules/traffic, full city/building/interior coverage, weather/climate and national streaming are not implemented. Processed region data reserves empty transport/environment extension IDs and stable chunk indexes.
 
-- Optional online mode preserves the offline game; `WebSocketPeer` connects to the backend and client profile data is initialized/updated from server responses.
-- Local session token/recovery key persistence and retry/backoff reconnection are implemented. The config defaults to `user://naija-multiplayer.cfg`; `NAIJA_MULTIPLAYER_SESSION_PATH` permits independent local test identities.
-- Online local movement is disabled; the local player follows authoritative server positions. Remote characters are interpolated from public presence.
-- Online nearby chat, server wave interaction, server-backed travel/education/shop/needs actions, and the shared clock/character snapshots are connected to the prototype UI.
-- The client session config contains bearer/recovery secrets as local plaintext configuration; it is not encrypted and must not be treated as account security.
+### Import, provenance and coordinates
 
-## Persistence, world, and current limits
+- Raw/pinned artifacts are in `game/data/geography/source/`; deterministic outputs and `import-manifest.json` are in `game/data/geography/processed/`.
+- `tools/geography/extract-osm-preview.mjs` reproduces the bounded feature selection from the upstream preview artifact; the large upstream preview HTML is not committed. The OSM preview selection declares OGC:CRS84 longitude/latitude, source snapshot time, layer mapping, deterministic viewport/grid caps and the no-boundary caveat.
+- `services/world-api/src/geography/importer.ts` validates pinned data and generates canonical records/features; `npm run geography:import` regenerates and `npm run geography:check` checks deterministic output. The import manifest records input/output SHA-256 hashes, pinned commits, source terms, counts and coordinate assumptions.
+- WGS84 is stored to seven decimal degrees. The Akure local equirectangular frame is centered on longitude 5.2°, latitude 7.25°, with `x` east/`y` south, 1 game unit per metre and 0.001 m metric rounding. Preview pixels use a separate linear transform of the declared 1600×900 viewport. Stable geographic chunks are 500 m on a Nigeria-wide 9° central-latitude grid; chunks organize data/interest inside one world.
+- No nationwide boundaries or OSM country dump are included. Exact source licenses/attribution/terms are in [`DATA_SOURCES.md`](DATA_SOURCES.md).
 
-- One `nigeria-main` identity is shared. The world clock and each personal character are distinct state aggregates in the file; presence is a public view of connected players. The Stage 1 `user://` save does not sync online.
-- The clock starts at Day 1, 07:50 for a new file and advances at one game minute per 650 ms by default while the server is running. It pauses during server downtime; there is no offline catch-up. Needs decay for connected players during clock ticks.
-- The JSON store has no database transaction log, encryption, backups, migration framework, distributed lock, or multi-process coordination. Do not run multiple server writers against one state file.
-- Movement currently enforces direction/speed/input limits/map bounds but does not simulate server-side wall collisions or pathfinding. Presence location/position and basic profile fields are visible to connected prototype players.
-- There are no production accounts, TLS termination, durable database, moderation/reporting, profanity filtering, comprehensive anti-cheat, detailed privacy controls, or operational recovery. Configure an exact browser `ALLOWED_ORIGINS` list; Origin checks are not authentication. Use TLS/WSS before any non-loopback exposure.
-- No real Nigerian geography or Stage 3 content is present.
+### Multiplayer foundation
 
-## Technology baseline
+- Online `CharacterRecord.geographic_location` is nullable and includes world/region/country/state/LGA/settlement/optional ward, WGS84 coordinates, local metric position and chunk ID.
+- `geography.enter` is outdoor-only and takes a known region ID; the server derives geography from its authoritative map position. `geography.leave` clears it. The server updates location during outdoor movement and clears it when traveling to Stage 2 indoor/school subscenes.
+- Public presence carries region/chunk identity and is filtered by same local scene, same region, neighboring 500 m chunks and a 1.5 km cap. Geographic chat/waves use metric distance. Legacy Stage 2 records/players without geography remain accepted and Stage 2-style nearby checks remain for two legacy players.
+- Automated two-WebSocket-client tests exercise same-chunk synchronization and removal from nearby interest after movement to a distant chunk. Godot's real player/map/UI synchronization has not been tested.
 
-| Component | Baseline | Verification state |
+## Technology and verification status
+
+| Component | Baseline / check | Status |
 |---|---|---|
-| Node.js | 22.22.3 workspace runtime; declared `>=22.13 <23` | `npm run check` passed. |
-| npm | 10.9.8 | Root workspace commands used. |
-| TypeScript | 5.9.x | Strict project build passed as part of `npm run check`. |
-| ESLint | Configured for `services/world-api/src` | Passed as part of `npm run check`. |
-| WebSocket | `ws` 8.22.x | Two-client WebSocket integration tests passed. |
-| Godot | 4.7.2 stable project target | Engine unavailable; import, launch, scene, and runtime tests not run. |
-| GDScript tools | `gdtoolkit` 4.5.0 in `/tmp/naija-gdtoolkit` | Formatter and linter passed for 16 scripts; static checks only. |
-| Database | None configured; PostgreSQL is a future candidate | No database connectivity or schema. |
+| Node.js/npm | Node `v22.22.3`; npm `10.9.8` | `npm run check` passed on the current Stage 3 tree. |
+| TypeScript API | Strict build, ESLint, HTTP/WebSocket/geography tests | `npm run check` passed: build/lint and 18 Node tests. |
+| Geography import | `npm run geography:import` / `npm run geography:check` | Import succeeded; deterministic check passed for three processed files. |
+| GDScript formatting/lint | `gdtoolkit` 4.5.0 (`/tmp/naija-gdtoolkit`) | `gdformat --check` passed for 18 scripts; `gdlint` passed. Static-only; does not replace engine import. |
+| Godot | Project targets Godot 4.7.2 | Executable unavailable (`godot: command not found`); import, render, scene and client/runtime tests not run. |
+| Database | None configured | JSON single-process prototype only; Postgres/PostGIS remain future candidates. |
 
-## Run server and clients
+### Executed Stage 3 checks (2026-10-08)
 
-From the repository root, with Node.js 22.13+ and npm:
+- `npm run check` — **passed**: ESLint, strict TypeScript build, and 18 Node tests (11 HTTP/WebSocket/world tests plus 7 geography importer/coordinates/catalog tests).
+- `npm run geography:import` — **passed**: generated the national admin, Akure South region and provenance manifest from pinned source artifacts.
+- `npm run geography:check` — **passed**: all three processed files reproducibly matched the importer output.
+- `/tmp/naija-gdtoolkit/bin/gdformat --check $(find game -name '*.gd' -print)` — **passed**: 18 GDScript files unchanged by formatter.
+- `/tmp/naija-gdtoolkit/bin/gdlint $(find game -name '*.gd' -print)` — **passed**: no static lint findings.
+- Godot engine/import/client/runtime checks — **blocked/not run**: `godot` is not installed. The Node tests do not verify client rendering, input, save/load or two-window UI behavior.
 
-```sh
-npm ci
-cp .env.example .env   # optional local configuration
-npm run dev
-```
-
-The process listens on `0.0.0.0:3000`. The default data file is `services/world-api/data/world-state.json`, ignored by Git. `DATA_FILE` paths in `.env` are resolved from the `services/world-api/` workspace; `WS_PATH` defaults to `/ws`. Browser origins must be listed exactly in `ALLOWED_ORIGINS`; the empty default accepts clients without an Origin header but rejects browser-origin WebSocket upgrades.
-
-To launch the offline Godot client when Godot is installed:
-
-```sh
-godot --path game
-```
-
-For a desktop online client, start the server and use its native WebSocket address (default `ws://127.0.0.1:3000/ws`; override with `NAIJA_WS_URL`). To run two Godot instances under one OS account, use different session files, such as `NAIJA_MULTIPLAYER_SESSION_PATH=user://naija-client-a.cfg` and `...-b.cfg`. Create a different online life in each. Relaunch one with its same session file to exercise its UI reconnect path. This manual Godot flow is documented but not run here.
-
-For browser clients, host the Godot web export behind HTTPS/WSS and proxy same-origin `/ws` to the server. No browser export/proxy is bundled or verified.
-
-## Verification performed for Stage 2 changes
-
-- `npm run check` — **passed**: ESLint, TypeScript compilation, and all 9 Node HTTP/WebSocket integration tests.
-- `npm run dev` — **started successfully** on `0.0.0.0:3000`; live `GET /health` and `GET /api/v1/world` returned the expected JSON, and `GET /ws` returned `426 websocket_upgrade_required`.
-- Backend test 1 — **passed**: retained health/world metadata, 404, and read-only method behavior.
-- Backend test 2 — **passed**: two actual WebSocket clients share presence; server-computed movement is observed by the other client; nearby chat and wave work; invalid movement is rejected.
-- Backend test 3 — **passed**: untrusted creation fields do not override server-owned money, health, inventory, or location; malformed chat/unknown writes are rejected.
-- Backend test 4 — **passed**: unauthenticated command rate limits apply, and one connection cannot create a second identity.
-- Backend test 5 — **passed**: state-changing travel requires a request ID and a successful duplicate is not applied twice.
-- Backend test 6 — **passed**: retrying identity creation with the same recovery key returns the same player without duplicating records.
-- Backend test 7 — **passed**: character/session state survives disconnect and API process restart; stored file contains no plaintext session token.
-- Backend test 8 — **passed**: clients observe one shared clock and midnight rollover.
-- Backend test 9 — **passed**: WebSocket upgrades reject an unconfigured browser `Origin`.
-- `gdformat --check $(find game -name '*.gd' -print)` — **passed**: all 16 scripts unchanged by formatter.
-- `gdlint $(find game -name '*.gd' -print)` — **passed**: no GDScript lint findings.
-- `git diff --check` — **passed** on the final source and documentation changes.
-- Secret-pattern scan — **passed** for private-key headers, GitHub token patterns, and AWS access-key patterns; local state and `.env` remain ignored, and no credentials were added.
-- `godot --version` / launch checks — **blocked**: no Godot executable is installed (`godot` unavailable). No engine import, scene launch, Stage 1 GDScript test, local save/restart, Godot two-client test, or manual play was run.
-- Browser/desktop/mobile exports and deployment checks — **not run**.
-
-## Stage 1 tests to run when Godot is available
+## Commands and manual checks
 
 From the repository root:
 
 ```sh
-godot --headless --editor --path game --quit
-godot --headless --path game --quit
-godot --headless --path game --script res://tests/domain_smoke.gd
-godot --headless --path game --script res://tests/player_movement.gd
+npm ci
+npm run geography:import
+npm run geography:check
+npm run check
 ```
 
-Then run the local save test in two separate processes, waiting for the writer to exit:
+When Godot 4.7.2 is available, run retained Stage 1 domain/movement/save-restart scripts from the README, launch a local offline life, and verify that default Idera creation/movement/interactions/save/load still work. Then toggle **Map data** in the outdoor map; inspect road/building/school/health features; verify attribution and viewport caveat; toggle back and check Idera interactions. Finally test two online clients in the same sample chunk, move one out of interest, test map enter/leave and verify old clients/saves without geographic identity still load.
 
-```sh
-godot --headless --path game --script res://tests/save_restart.gd -- write
-godot --headless --path game --script res://tests/save_restart.gd -- read
-```
+## Known limits and next gates
 
-After these checks, manually review offline character creation, movement, interactions, school records, needs, menus, local persistence, and the opening layout. Then launch two Godot clients using separate session-config files and verify online identity creation, movement synchronization, nearby chat/wave, server restart, and character reconnect. Update this document only with observed results.
-
-## Next steps and release gates
-
-1. Re-run the Stage 1 Godot import/launch, domain, movement, and two-process save/restart checks; fix any engine issues before treating Stage 1 as verified.
-2. Run and visually review the Stage 2 Godot two-client/reconnect flow when Godot is available; validate the web URL bridge/proxy if browser play is pursued.
-3. Before public exposure, design authentication, TLS/WSS deployment, data protection, database transactions/backups, abuse controls/moderation, privacy, rate-limit operations, and recovery.
-4. Keep the one-logical-Nigeria invariant. Do not start Stage 3 geography in this change.
+1. Continue running the TypeScript lint/build/tests and deterministic import check after changes; the current run passed as recorded above.
+2. When Godot becomes available, run Stage 1/2 runtime regression and Stage 3 map/POI render/toggle/client integration; fix import/runtime errors before calling the client path verified.
+3. Keep official boundary sources, data terms, attribution and source coordinate semantics under review before expanding the catalog. Do not imply Akure South coverage is complete or treat reference points as boundaries.
+4. Before production multiplayer, design account security, database transactions/backups, privacy, abuse controls, distributed ownership and operations.
+5. The next roadmap stage, after this Stage 3 implementation/test gate, is **Stage 4 — Complete Education System**; no Stage 4 work is included here.

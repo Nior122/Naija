@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { geographicLocationIsValid } from "../geography/catalog.js";
 import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { readFileSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -67,6 +68,9 @@ function isCharacter(value: unknown): value is CharacterRecord {
     !value.attendance.every(isRecord) ||
     !isFiniteNumber(value.reputation) ||
     !isRecord(value.household) ||
+    (value.geographic_location !== undefined &&
+      value.geographic_location !== null &&
+      !geographicLocationIsValid(value.geographic_location)) ||
     typeof value.created_at !== "string" ||
     typeof value.updated_at !== "string"
   ) {
@@ -113,6 +117,10 @@ function validateState(value: unknown): PersistentWorldState {
   for (const [playerId, player] of Object.entries(value.players)) {
     if (!isPersistentPlayer(player, playerId)) {
       throw new Error(`World data contains an invalid player record (${playerId}).`);
+    }
+    // Stage 2 world files predate geographic identity; preserve them by assigning no location.
+    if (player.character.geographic_location === undefined) {
+      player.character.geographic_location = null;
     }
   }
 

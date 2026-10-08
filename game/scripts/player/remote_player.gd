@@ -3,6 +3,9 @@ extends Node2D
 var player_id: String = ""
 var character_name: String = "Another student"
 var appearance: Dictionary = {}
+var geographic_location: Dictionary = {}
+var region_id: String = ""
+var chunk_id: String = ""
 var facing: Vector2 = Vector2.DOWN
 var target_position: Vector2 = Vector2.ZERO
 var interpolation_speed: float = 13.0
@@ -14,6 +17,12 @@ func set_presence(presence: Dictionary) -> void:
 	var raw_appearance: Variant = presence.get("appearance", {})
 	if raw_appearance is Dictionary:
 		appearance = raw_appearance.duplicate(true)
+	var raw_geographic_location: Variant = presence.get("geographicLocation", {})
+	geographic_location = (
+		raw_geographic_location.duplicate(true) if raw_geographic_location is Dictionary else {}
+	)
+	region_id = str(presence.get("regionId", ""))
+	chunk_id = str(presence.get("chunkId", ""))
 	var raw_position: Variant = presence.get("position", {})
 	if raw_position is Dictionary:
 		target_position = Vector2(

@@ -146,6 +146,9 @@ async function createCharacter(peer, name, overrides = {}) {
   return { ...created, ready, creationKey };
 }
 
+const AKURE_REGION_ID = "ng:region:ondo:akure-south-core";
+const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+
 afterEach(async () => {
   for (const server of [...activeServers]) await stopServer(server);
   for (const directory of activeDirectories) await rm(directory, { recursive: true, force: true });
@@ -166,9 +169,12 @@ test("HTTP health, world metadata, 404, and read-only method checks remain intac
       name: "Nigeria",
       projectName: "Naija: One World",
       topology: "single-logical-world",
-      implementationStage: 2,
+      implementationStage: 3,
       simulationImplemented: true,
       simulationScope: "bounded-multiplayer-prototype",
+      geographyImplemented: true,
+      geographicCoverage: "national-admin-registry-plus-bounded-akure-south-sample",
+      fullNationalGeography: false,
       fullNationalSimulation: false,
     });
 
@@ -196,6 +202,7 @@ test("two real WebSocket clients share presence, validated movement, nearby chat
       assert.equal(firstIdentity.ready.character.money, 5000);
       assert.deepEqual(firstIdentity.ready.character.position, { x: 720, y: 540 });
       assert.equal(firstIdentity.ready.character.current_location, "home");
+      assert.equal(firstIdentity.ready.character.geographic_location, null);
       assert.equal(firstIdentity.ready.world.id, "nigeria-main");
       assert.notEqual(firstIdentity.playerId, secondIdentity.playerId);
 
@@ -216,7 +223,7 @@ test("two real WebSocket clients share presence, validated movement, nearby chat
       const movingPlayer = snapshot.players.find((player) => player.playerId === firstIdentity.playerId);
       assert.ok(movingPlayer.position.x > 725);
 
-      await new Promise((resolve) => setTimeout(resolve, 70));
+      await delay(70);
       first.send({
         type: "movement.input",
         sequence: 2,
@@ -248,12 +255,136 @@ test("two real WebSocket clients share presence, validated movement, nearby chat
       assert.equal(wave.playerId, firstIdentity.playerId);
       assert.equal(wave.targetPlayerId, secondIdentity.playerId);
 
-      await new Promise((resolve) => setTimeout(resolve, 60));
+      await delay(60);
       const error = first.waitForType("error");
       first.send({ type: "movement.input", sequence: 3, direction: { x: 3, y: 0 }, running: false });
       assert.equal((await error).code, "invalid_movement");
     } finally {
       await Promise.all([first.close(), second.close()]);
+    }
+  }, { gameMinuteMs: 10_000, broadcastIntervalMs: 25, tickIntervalMs: 10 });
+});
+
+test("two geographic clients synchronize in one chunk then filter a player outside nearby interest", async () => {
+  await withServer(async ({ websocketUrl }) => {
+    const first = await openPeer(websocketUrl);
+    const second = await openPeer(websocketUrl);
+    try {
+      const firstIdentity = await createCharacter(first, "Ayo", {
+        geographic_location: { region_id: AKURE_REGION_ID, latitude: 7.25, longitude: 5.2 },
+      });
+      assert.equal(firstIdentity.ready.character.current_location, "town");
+      const firstLocation = firstIdentity.ready.character.geographic_location;
+      assert.equal(firstLocation.region_id, AKURE_REGION_ID);
+      assert.equal(firstLocation.chunk_id, "ng:500m:1142:1612");
+
+      const secondIdentity = await createCharacter(second, "Dara", {
+        geographic_location: { region_id: AKURE_REGION_ID, latitude: 7.2501, longitude: 5.2002 },
+      });
+      const firstPresence = secondIdentity.ready.players.find(
+        (presence) => presence.playerId === firstIdentity.playerId,
+      );
+      assert.ok(firstPresence, "same-chunk player should be present in session.ready");
+      assert.equal(firstPresence.regionId, AKURE_REGION_ID);
+      assert.equal(firstPresence.chunkId, firstLocation.chunk_id);
+      assert.equal(firstPresence.geographicLocation.chunk_id, firstLocation.chunk_id);
+      const joined = await first.waitFor(
+        (message) => message.type === "presence.joined" && message.player.playerId === secondIdentity.playerId,
+      );
+      assert.equal(joined.player.geographicLocation.region_id, AKURE_REGION_ID);
+
+      await first.waitFor(
+        (message) =>
+          message.type === "world.snapshot" &&
+          message.players.some((presence) => presence.playerId === secondIdentity.playerId),
+      );
+      const nearbyRemoval = first.waitFor(
+        (message) =>
+          message.type === "world.snapshot" &&
+          !message.players.some((presence) => presence.playerId === secondIdentity.playerId),
+        5000,
+      );
+      const movedToDifferentChunk = second.waitFor(
+        (message) =>
+          message.type === "world.snapshot" &&
+          message.players.some((presence) =>
+            presence.playerId === secondIdentity.playerId && presence.chunkId !== firstLocation.chunk_id,
+          ),
+        5000,
+      );
+      const stopAt = Date.now() + 2500;
+      let sequence = 0;
+      while (Date.now() < stopAt) {
+        sequence += 1;
+        second.send({
+          type: "movement.input",
+          sequence,
+          direction: { x: 1, y: 0 },
+          running: true,
+        });
+        await delay(50);
+      }
+      second.send({
+        type: "movement.input",
+        sequence: sequence + 1,
+        direction: { x: 0, y: 0 },
+        running: false,
+      });
+      const [removed, moved] = await Promise.all([nearbyRemoval, movedToDifferentChunk]);
+      const secondPresence = moved.players.find((presence) => presence.playerId === secondIdentity.playerId);
+      assert.notEqual(secondPresence.chunkId, firstLocation.chunk_id);
+      assert.equal(removed.players.some((presence) => presence.playerId === secondIdentity.playerId), false);
+    } finally {
+      await Promise.all([first.close(), second.close()]);
+    }
+  }, { gameMinuteMs: 10_000, broadcastIntervalMs: 25, tickIntervalMs: 10 });
+});
+
+test("geographic entry is server-derived, outdoor-only, and can be cleared", async () => {
+  await withServer(async ({ websocketUrl }) => {
+    const peer = await openPeer(websocketUrl);
+    try {
+      const invalidPeer = await openPeer(websocketUrl);
+      try {
+        const invalid = invalidPeer.waitForType("error");
+        invalidPeer.send({
+          type: "identity.create",
+          creationKey: randomBytes(32).toString("hex"),
+          profile: {
+            name: "Out of bounds",
+            age: 15,
+            character_type: "girl",
+            geographic_location: { region_id: AKURE_REGION_ID, latitude: 7.3, longitude: 5.2 },
+          },
+        });
+        assert.equal((await invalid).code, "invalid_geographic_location");
+      } finally {
+        await invalidPeer.close();
+      }
+
+      const identity = await createCharacter(peer, "Bisi", {
+        geographic_location: { region_id: AKURE_REGION_ID, latitude: 7.25, longitude: 5.2 },
+      });
+      const left = peer.waitFor(
+        (message) => message.type === "character.snapshot" && message.character.geographic_location === null,
+      );
+      peer.send({ type: "geography.leave" });
+      assert.equal((await left).character.geographic_location, null);
+
+      const refused = peer.waitFor((message) => message.type === "error" && message.code === "geography_region_unavailable");
+      peer.send({ type: "geography.enter", regionId: "ng:region:not-available" });
+      assert.equal((await refused).code, "geography_region_unavailable");
+
+      const rejoined = peer.waitFor(
+        (message) => message.type === "character.snapshot" && message.character.geographic_location !== null,
+      );
+      peer.send({ type: "geography.enter", regionId: AKURE_REGION_ID });
+      const snapshot = await rejoined;
+      assert.equal(snapshot.character.current_location, "town");
+      assert.equal(snapshot.character.geographic_location.region_id, AKURE_REGION_ID);
+      assert.equal(snapshot.character.geographic_location.chunk_id, identity.ready.character.geographic_location.chunk_id);
+    } finally {
+      await peer.close();
     }
   }, { gameMinuteMs: 10_000, broadcastIntervalMs: 25, tickIntervalMs: 10 });
 });
@@ -276,6 +407,7 @@ test("malformed and untrusted payloads are rejected without changing server-owne
       assert.equal(identity.ready.character.money, 5000);
       assert.equal(identity.ready.character.health, 100);
       assert.equal(identity.ready.character.current_location, "home");
+      assert.equal(identity.ready.character.geographic_location, null);
       assert.equal(identity.ready.character.inventory.length, 5);
       assert.equal(identity.ready.character.appearance.skin_tone, "#9b654d");
       assert.equal(identity.ready.character.appearance.hairstyle, "Short curls");
@@ -385,7 +517,8 @@ test("state-changing requests require IDs and do not replay a successful travel"
     const peer = await openPeer(websocketUrl);
     try {
       peer.send({ type: "session.resume", sessionToken: token });
-      await peer.waitForType("session.ready");
+      const ready = await peer.waitForType("session.ready");
+      assert.equal(ready.character.geographic_location, null);
 
       const missingId = peer.waitForType("error");
       peer.send({ type: "world.travel", exitId: "home-front-door" });
@@ -402,9 +535,10 @@ test("state-changing requests require IDs and do not replay a successful travel"
       const duplicate = peer.waitForType("command.duplicate");
       peer.send({ type: "world.travel", exitId: "home-front-door", requestId });
       assert.equal((await duplicate).requestId, requestId);
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await delay(50);
       const saved = JSON.parse(await readFile(stateFile, "utf8"));
       assert.equal(saved.players[playerId].character.current_location, "town");
+      assert.equal(saved.players[playerId].character.geographic_location, null);
       assert.deepEqual(saved.players[playerId].recentRequestIds, [requestId]);
     } finally {
       await peer.close();
@@ -463,7 +597,7 @@ test("session and character state persist through disconnect and API restart", a
       running: false,
     });
     await moved;
-    await new Promise((resolve) => setTimeout(resolve, 120));
+    await delay(120);
   } finally {
     await firstPeer.close();
   }
@@ -487,6 +621,7 @@ test("session and character state persist through disconnect and API restart", a
     assert.equal(ready.playerId, identity.playerId);
     assert.equal(ready.character.name, "Sade");
     assert.deepEqual(ready.character.position, savedPosition);
+    assert.equal(ready.character.geographic_location, null);
     assert.equal(ready.character.money, 5000);
   } finally {
     await secondPeer.close();

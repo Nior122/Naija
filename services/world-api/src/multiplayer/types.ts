@@ -1,3 +1,5 @@
+import type { GeographicLocation } from "../geography/types.js";
+
 export const WORLD_ID = "nigeria-main" as const;
 export const MAP_WIDTH = 1600;
 export const MAP_HEIGHT = 900;
@@ -45,6 +47,7 @@ export interface CharacterRecord {
   attendance: Array<Record<string, string | number>>;
   reputation: number;
   household: Record<string, unknown>;
+  geographic_location: GeographicLocation | null;
   created_at: string;
   updated_at: string;
 }
@@ -76,6 +79,9 @@ export interface PublicPresence {
   connectionStatus: "connected" | "disconnected";
   lastSeen: string;
   appearance: Record<string, string>;
+  geographicLocation: GeographicLocation | null;
+  regionId: string | null;
+  chunkId: string | null;
 }
 
 export interface ServerOptions {

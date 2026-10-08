@@ -1,6 +1,14 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 import { WebSocket, type RawData } from "ws";
+import { chunksAreWithinRadius, geographicDistanceMeters } from "../geography/coordinates.js";
+import {
+  geographicLocationForMapPosition,
+  geographicLocationFromProfile,
+  geographicLocationToMapPosition,
+  loadAkureSouthRegion,
+} from "../geography/catalog.js";
+import type { GeographicRegion } from "../geography/types.js";
 import { WorldStore } from "./persistence.js";
 import {
   MAP_HEIGHT,
@@ -31,6 +39,8 @@ const COMMAND_WINDOW_MS = 10_000;
 const GENERAL_COMMANDS_PER_WINDOW = 20;
 const INTERACTION_RADIUS = 92;
 const ENTITY_INTERACTION_RADIUS = 100;
+const GEOGRAPHIC_INTEREST_RADIUS_CHUNKS = 1;
+const GEOGRAPHIC_INTEREST_RADIUS_METERS = 1500;
 const MINUTES_PER_DAY = 1440;
 const STARTING_MONEY = 5000;
 const IDEMPOTENT_COMMANDS = new Set([
@@ -219,7 +229,12 @@ function makeHousehold(now: number): Record<string, unknown> {
   };
 }
 
-function createCharacter(profile: Record<string, unknown>, playerId: string, now: number): CharacterRecord {
+function createCharacter(
+  profile: Record<string, unknown>,
+  playerId: string,
+  now: number,
+  geographyRegion: GeographicRegion,
+): CharacterRecord {
   const name = validName(profile.name);
   const age = profile.age;
   const characterType = profile.character_type ?? profile.characterType;
@@ -237,6 +252,14 @@ function createCharacter(profile: Record<string, unknown>, playerId: string, now
     ? rawAppearance.clothing_color : "#27734a";
   const household = makeHousehold(now);
   const timestamp = new Date(now).toISOString();
+  let geographicLocation: CharacterRecord["geographic_location"] = null;
+  let currentLocation = "home";
+  let position: Point2D = { ...STARTING_POSITION };
+  if (profile.geographic_location !== undefined && profile.geographic_location !== null) {
+    geographicLocation = geographicLocationFromProfile(profile.geographic_location, geographyRegion);
+    position = geographicLocationToMapPosition(geographicLocation, geographyRegion);
+    currentLocation = "town";
+  }
   return {
     player_id: playerId,
     character_id: `character-${randomUUID()}`,
@@ -258,9 +281,10 @@ function createCharacter(profile: Record<string, unknown>, playerId: string, now
     education_level: "Secondary school (prototype)",
     school_id: "idera_secondary_school",
     home_id: String(household.home_id),
-    current_location: "home",
-    position: { ...STARTING_POSITION },
+    current_location: currentLocation,
+    position,
     direction: { x: 0, y: 1 },
+    geographic_location: geographicLocation,
     inventory: [
       { id: "school_bag", name: "School bag", quantity: 1, category: "school" },
       { id: "notebook", name: "Exercise book", quantity: 1, category: "school" },
@@ -319,6 +343,7 @@ export class MultiplayerWorld {
   private readonly broadcastIntervalMs: number;
   private readonly maxConnections: number;
   private readonly connectionAttemptsPerMinute: number;
+  private readonly geographyRegion: GeographicRegion;
   private lastTickAt: number;
   private lastBroadcastAt = 0;
   private lastPersistAt: number;
@@ -333,6 +358,7 @@ export class MultiplayerWorld {
     this.broadcastIntervalMs = Math.max(50, options.broadcastIntervalMs ?? 100);
     this.maxConnections = Math.max(1, options.maxConnections ?? 64);
     this.connectionAttemptsPerMinute = Math.max(1, options.connectionAttemptsPerMinute ?? 30);
+    this.geographyRegion = loadAkureSouthRegion();
     this.lastTickAt = this.now();
     this.lastPersistAt = this.lastTickAt;
     for (const player of Object.values(this.store.state.players)) {
@@ -411,6 +437,9 @@ export class MultiplayerWorld {
         if (actualDistance > 0.01) {
           player.character.position = next;
           player.character.direction = { ...direction };
+          if (player.character.geographic_location !== null && player.character.current_location === "town") {
+            player.character.geographic_location = geographicLocationForMapPosition(next, this.geographyRegion);
+          }
           player.character.energy = clamp(player.character.energy - actualDistance * (context.running ? 0.003 : 0.0017), 0, 100);
           player.character.updated_at = new Date(now).toISOString();
           player.lastSeen = player.character.updated_at;
@@ -532,6 +561,8 @@ export class MultiplayerWorld {
       case "inventory.consume": await this.consumeItem(context, player, message, requestId); return;
       case "clinic.care": await this.visitClinic(context, player, requestId); return;
       case "character.rest": await this.rest(context, player, requestId); return;
+      case "geography.enter": await this.enterGeographicRegion(context, player, message, requestId); return;
+      case "geography.leave": await this.leaveGeographicRegion(context, player, requestId); return;
       case "school.begin": this.beginLesson(context, player, requestId); return;
       case "school.answer": await this.answerLesson(context, player, message, requestId); return;
       case "chat.send": this.handleChat(context, player, message, requestId); return;
@@ -601,7 +632,7 @@ export class MultiplayerWorld {
     let character: CharacterRecord;
     try {
       playerId = `player-${randomUUID()}`;
-      character = createCharacter(profile, playerId, this.now());
+      character = createCharacter(profile, playerId, this.now(), this.geographyRegion);
     } catch (error) {
       this.sendError(context, this.errorCode(error), "The character profile was not accepted.", requestId);
       return;
@@ -667,7 +698,7 @@ export class MultiplayerWorld {
     this.send(context, appendOptionalRequestId({
       type: "session.ready", playerId, character: safeClone(player.character),
       world: { id: WORLD_ID, clock: safeClone(this.store.state.worldClock) },
-      players: this.publicPresenceList(),
+      players: this.publicPresenceList(playerId),
     }, requestId));
     this.broadcastPresence({ type: "presence.joined", player: this.toPresence(player, "connected") });
     console.info("multiplayer player connected", playerId);
@@ -717,6 +748,7 @@ export class MultiplayerWorld {
     this.markRequestProcessed(player, requestId);
     player.character.current_location = target.destination;
     player.character.position = { ...target.spawn };
+    if (target.destination !== "town") player.character.geographic_location = null;
     context.inputDirection = vectorZero();
     context.running = false;
     this.touchPlayer(player);
@@ -739,8 +771,49 @@ export class MultiplayerWorld {
     player.character.money -= 150;
     player.character.current_location = "schoolyard";
     player.character.position = { x: 240, y: 650 };
+    player.character.geographic_location = null;
     context.inputDirection = vectorZero();
     context.running = false;
+    this.touchPlayer(player);
+    this.sendCharacterSnapshot(context, requestId);
+    this.broadcastPresence({ type: "presence.moved", player: this.toPresence(player, "connected") });
+    await this.flushDirty();
+  }
+
+  private async enterGeographicRegion(
+    context: ConnectionContext,
+    player: PersistentPlayer,
+    message: Record<string, unknown>,
+    requestId?: string,
+  ): Promise<void> {
+    if (message.regionId !== this.geographyRegion.id) {
+      this.sendError(context, "geography_region_unavailable", "That geographic sample is not available.", requestId);
+      return;
+    }
+    if (player.character.current_location !== "town") {
+      this.sendError(context, "geography_requires_town", "Enter the outdoor neighbourhood before opening geographic data.", requestId);
+      return;
+    }
+    player.character.geographic_location = geographicLocationForMapPosition(
+      player.character.position,
+      this.geographyRegion,
+    );
+    this.touchPlayer(player);
+    this.sendCharacterSnapshot(context, requestId);
+    this.broadcastPresence({ type: "presence.moved", player: this.toPresence(player, "connected") });
+    await this.flushDirty();
+  }
+
+  private async leaveGeographicRegion(
+    context: ConnectionContext,
+    player: PersistentPlayer,
+    requestId?: string,
+  ): Promise<void> {
+    if (player.character.geographic_location === null) {
+      this.sendCharacterSnapshot(context, requestId);
+      return;
+    }
+    player.character.geographic_location = null;
     this.touchPlayer(player);
     this.sendCharacterSnapshot(context, requestId);
     this.broadcastPresence({ type: "presence.moved", player: this.toPresence(player, "connected") });
@@ -919,8 +992,9 @@ export class MultiplayerWorld {
     };
     for (const recipient of this.online.values()) {
       const recipientPlayer = this.playerFor(recipient);
-      if (recipientPlayer && recipientPlayer.character.current_location === player.character.current_location &&
-        distance(recipientPlayer.character.position, player.character.position) <= CHAT_RADIUS) this.send(recipient, payload);
+      if (recipientPlayer && this.arePlayersNearby(player, recipientPlayer, CHAT_RADIUS)) {
+        this.send(recipient, payload);
+      }
     }
   }
 
@@ -937,8 +1011,7 @@ export class MultiplayerWorld {
     }
     const targetContext = this.online.get(targetId);
     const target = targetContext ? this.playerFor(targetContext) : undefined;
-    if (!targetContext || !target || target.character.current_location !== player.character.current_location ||
-      distance(target.character.position, player.character.position) > INTERACTION_RADIUS) {
+    if (!targetContext || !target || !this.arePlayersNearby(player, target, INTERACTION_RADIUS)) {
       this.sendError(context, "player_out_of_range", "Move closer to another connected player.", requestId);
       return;
     }
@@ -1019,27 +1092,89 @@ export class MultiplayerWorld {
       connectionStatus,
       lastSeen: player.lastSeen,
       appearance: { ...player.character.appearance },
+      geographicLocation:
+        player.character.geographic_location === null
+          ? null
+          : safeClone(player.character.geographic_location),
+      regionId: player.character.geographic_location?.region_id ?? null,
+      chunkId: player.character.geographic_location?.chunk_id ?? null,
     };
   }
 
-  private publicPresenceList(): PublicPresence[] {
+  private publicPresenceList(viewerId: string): PublicPresence[] {
+    const viewer = this.store.state.players[viewerId];
+    if (!viewer) return [];
     const list: PublicPresence[] = [];
     for (const context of this.online.values()) {
       const player = this.playerFor(context);
-      if (player) list.push(this.toPresence(player, "connected"));
+      if (player && (player.playerId === viewerId || this.sharesGeographicInterest(viewer, player))) {
+        list.push(this.toPresence(player, "connected"));
+      }
     }
     return list;
   }
 
+  private sharesGeographicInterest(viewer: PersistentPlayer, subject: PersistentPlayer): boolean {
+    if (viewer.character.current_location !== subject.character.current_location) return false;
+    const viewerLocation = viewer.character.geographic_location;
+    const subjectLocation = subject.character.geographic_location;
+    if (viewerLocation === null && subjectLocation === null) return true;
+    if (viewerLocation === null || subjectLocation === null) return false;
+    return (
+      viewerLocation.region_id === subjectLocation.region_id &&
+      chunksAreWithinRadius(
+        viewerLocation.chunk_id,
+        subjectLocation.chunk_id,
+        GEOGRAPHIC_INTEREST_RADIUS_CHUNKS,
+      ) &&
+      geographicDistanceMeters(viewerLocation, subjectLocation) <= GEOGRAPHIC_INTEREST_RADIUS_METERS
+    );
+  }
+
+  private arePlayersNearby(left: PersistentPlayer, right: PersistentPlayer, radiusMeters: number): boolean {
+    if (left.character.current_location !== right.character.current_location) return false;
+    const leftLocation = left.character.geographic_location;
+    const rightLocation = right.character.geographic_location;
+    if (leftLocation === null && rightLocation === null) {
+      return distance(left.character.position, right.character.position) <= radiusMeters;
+    }
+    if (leftLocation === null || rightLocation === null || leftLocation.region_id !== rightLocation.region_id) {
+      return false;
+    }
+    return (
+      chunksAreWithinRadius(leftLocation.chunk_id, rightLocation.chunk_id, GEOGRAPHIC_INTEREST_RADIUS_CHUNKS) &&
+      geographicDistanceMeters(leftLocation, rightLocation) <= radiusMeters
+    );
+  }
+
   private broadcastPresence(message: Record<string, unknown>): void {
-    for (const context of this.online.values()) this.send(context, message);
+    const payload = isRecord(message.player) ? message.player : null;
+    const subjectId = payload && typeof payload.playerId === "string" ? payload.playerId : null;
+    const subject = subjectId === null ? undefined : this.store.state.players[subjectId];
+    for (const context of this.online.values()) {
+      const viewer = this.playerFor(context);
+      if (
+        subject === undefined ||
+        viewer === undefined ||
+        viewer.playerId === subject.playerId ||
+        this.sharesGeographicInterest(viewer, subject)
+      ) {
+        this.send(context, message);
+      }
+    }
   }
 
   private broadcastWorldSnapshot(): void {
-    this.broadcastPresence({
-      type: "world.snapshot", worldId: WORLD_ID,
-      clock: safeClone(this.store.state.worldClock), players: this.publicPresenceList(),
-    });
+    for (const context of this.online.values()) {
+      const player = this.playerFor(context);
+      if (!player) continue;
+      this.send(context, {
+        type: "world.snapshot",
+        worldId: WORLD_ID,
+        clock: safeClone(this.store.state.worldClock),
+        players: this.publicPresenceList(player.playerId),
+      });
+    }
   }
 
   private async disconnect(context: ConnectionContext): Promise<void> {

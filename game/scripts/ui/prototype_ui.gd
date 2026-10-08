@@ -130,7 +130,7 @@ func show_game(character: CharacterState, clock: WorldClock, location_name: Stri
 	_add_background(Color(0.0, 0.0, 0.0, 0.0))
 	var panel := PanelContainer.new()
 	panel.position = Vector2(16.0, 16.0)
-	panel.custom_minimum_size = Vector2(308.0, 650.0)
+	panel.custom_minimum_size = Vector2(308.0, 700.0)
 	panel.size = panel.custom_minimum_size
 	panel.add_theme_stylebox_override("panel", _panel_style(Color(0.93, 0.92, 0.84, 0.96)))
 	_root.add_child(panel)
@@ -173,6 +173,7 @@ func show_game(character: CharacterState, clock: WorldClock, location_name: Stri
 	_add_menu_button(menu_grid, "Nearby chat", "chat")
 	_add_menu_button(menu_grid, "Save / Load", "save")
 	_add_menu_button(menu_grid, "Settings", "settings")
+	_add_menu_button(menu_grid, "Map data", "geography")
 	_hud["message"] = _add_label(content, "", 12, Color("#386546"), HORIZONTAL_ALIGNMENT_LEFT)
 	_hud["message"].autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_add_label(
