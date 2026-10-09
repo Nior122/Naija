@@ -1,0 +1,29 @@
+{
+  "name": "naija-one-world",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0 <23"
+  },
+  "workspaces": [
+    "services/world-api"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=@naija/world-api",
+    "build": "npm run build --workspace=@naija/world-api",
+    "start": "npm run start --workspace=@naija/world-api",
+    "test": "npm run test --workspace=@naija/world-api",
+    "lint": "eslint services/world-api/src --ext .ts",
+    "check": "npm run lint && npm test",
+    "geography:import": "npm run build && node tools/geography/import-geography.mjs",
+    "geography:check": "npm run build && node tools/geography/import-geography.mjs --check"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "eslint": "^10.12.0",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.71.1"
+  }
+}

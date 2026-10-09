@@ -1,0 +1,125 @@
+{
+  "schema_version": 1,
+  "pipeline": {
+    "command": "npm run geography:import",
+    "importer": "services/world-api/src/geography/importer.ts",
+    "pipeline_version": 1,
+    "deterministic": true,
+    "check_command": "npm run geography:check"
+  },
+  "output_files": [
+    {
+      "file": "nigeria-admin.json",
+      "sha256": "a9ab137880e4dcdfda4cbb75a7a84414e800b488e1933fe81f6646b317c64eee"
+    },
+    {
+      "file": "akure-south-core.json",
+      "sha256": "b73639875937aa4a6baaebc03757baed89cb76ca934fbeffd9e17594653bba2a"
+    }
+  ],
+  "counts": {
+    "countries": 1,
+    "states_and_fct": 37,
+    "lgas": 774,
+    "wards_in_sample_lga": 11,
+    "region_features": 200,
+    "feature_kinds": {
+      "building": 108,
+      "health_facility": 3,
+      "landuse": 2,
+      "road": 72,
+      "school": 2,
+      "waterway": 13
+    },
+    "geographic_chunks": 156
+  },
+  "coordinate_contract": {
+    "input_crs": "WGS84 longitude/latitude (GeoJSON OGC:CRS84 axis order)",
+    "storage_precision_degrees": 7,
+    "local_projection": "local-equirectangular-v1",
+    "local_origin_wgs84": {
+      "latitude": 7.25,
+      "longitude": 5.2
+    },
+    "local_axes": "x east, y south",
+    "game_units_per_meter": 1,
+    "local_position_precision_meters": 0.001,
+    "chunk_grid": "Nigeria-wide equirectangular grid centered at 9 degrees latitude; stable 500 m cells",
+    "region_viewport_is_boundary": false
+  },
+  "data_terms": "Composite output. OSM-derived geography is ODbL-1.0 with OpenStreetMap attribution. LGA data retains conservative upstream ODbL lineage and its pinned MIT repository notice. MIT source notices for ward and settlement-name subsets remain component-specific; no one source license supersedes the others.",
+  "sources": [
+    {
+      "path": "admin/nigerian-lgas.json",
+      "provider": "xosasx",
+      "source_url": "https://github.com/xosasx/nigerian-local-government-areas",
+      "source_commit": "115524ab9a1c66109c3c6daea9577b0ee7fb1f76",
+      "repository_license": "MIT",
+      "data_lineage": "README acknowledges the dr5hn countries-states-cities database; conservatively retain its ODbL-1.0 database notice.",
+      "upstream_url": "https://github.com/dr5hn/countries-states-cities-database",
+      "data_license": "ODbL-1.0 (conservative upstream lineage treatment)",
+      "attribution": "LGA source derived from the pinned xosasx repository; upstream dr5hn attribution and ODbL notice retained.",
+      "sha256": "8ef4bd1a80cf0a5334bb4f7571668ae218eaec682e27c241cd19957036d10b39"
+    },
+    {
+      "path": "admin/akure-south-wards.json",
+      "provider": "temikeezy",
+      "source_url": "https://github.com/temikeezy/nigeria-geojson-data",
+      "source_commit": "3cd13e6088bf72b0873d7d6fa7cf4cf0294ad9a6",
+      "repository_license": "MIT",
+      "data_lineage": "Filtered 11-row Akure South ward reference-point subset; coordinate role is unspecified by the source.",
+      "data_license": "MIT",
+      "attribution": "temikeezy/nigeria-geojson-data",
+      "sha256": "f697c457b81202ee8c5c1df2862a3ea04693b6530df679d1273064ed597a85d4"
+    },
+    {
+      "path": "admin/ondo-akure-settlement.json",
+      "provider": "CodeLeom",
+      "source_url": "https://github.com/CodeLeom/nigeria-state-city-lga",
+      "source_commit": "f1c533729a702ff42fb711403bdd0338ef98511e",
+      "repository_license": "MIT",
+      "data_lineage": "Ondo capital/town name subset only; no settlement coordinate or boundary is supplied.",
+      "data_license": "MIT",
+      "attribution": "CodeLeom/nigeria-state-city-lga",
+      "sha256": "1013265469fea053e39cf2d0a0fead82dce99b1b7cc5c441229758d2fa16b9cd"
+    },
+    {
+      "path": "osm/akure-south-core.geojson",
+      "provider": "Mapkathon2026-UseOSM/lga-osm-extractor and OpenStreetMap contributors",
+      "source_url": "https://github.com/Mapkathon2026-UseOSM/lga-osm-extractor",
+      "source_commit": "414af2369c70ee5d5d3800cbed33a4bcf9370117",
+      "source_path": "visuals/akure_south_preview.html",
+      "source_git_blob_sha1": "78a9e1796376ae8bfc432fb763c49c9b27ad4ed1",
+      "source_file_bytes": 36946166,
+      "source_file_sha256": "07f65309781fe15a4d35c115dff2f8e7926eed7eb957e4afae04c820ec86ba92",
+      "source_snapshot_utc": "2026-07-31T12:26:31.185714Z",
+      "crs_review": "Preview WKT has no embedded CRS field; axis order was checked against the declared Akure viewport, Nigeria coordinate ranges, and named Akure features plus the pinned Ondo/Akure South reference point.",
+      "repository_license": "MIT (extractor code only; not the map data)",
+      "data_license": "ODbL-1.0",
+      "attribution": "© OpenStreetMap contributors",
+      "license_url": "https://www.openstreetmap.org/copyright",
+      "data_lineage": "Bounded WGS84 feature sample extracted from an attributed preview; source HTML does not retain original OSM tags.",
+      "sha256": "26d385b1335a0f76dd8cfe1e9c05f5f0b93920df70eee24150b89756df5e6f7b"
+    },
+    {
+      "path": "osm/akure-south-selection.json",
+      "provider": "Naija geography import configuration",
+      "source_url": null,
+      "source_commit": null,
+      "repository_license": "Project source configuration",
+      "data_license": "Not a geographic dataset",
+      "attribution": "Viewport, layer mapping, caps, and source snapshot declaration maintained in this repository.",
+      "sha256": "7066758a42d80445b7891abc21d7c373f06f39cb8de5246a50a44cfaa8b0a50f"
+    }
+  ],
+  "validation": {
+    "passed": true,
+    "rules": [
+      "37 unique state/FCT codes and 774 unique source LGA records; stable canonical IDs do not depend on optional Wikidata identifiers.",
+      "Duplicate optional Wikidata identifiers are reported and omitted from normalized external IDs.",
+      "WGS84 coordinate ranges and broad Nigeria bounds are validated; source administrative points are not relabeled as boundaries or centroids.",
+      "The Akure South viewport is a bounded sample, not an administrative boundary; each retained OSM geometry intersects it and remains within a 0.05 degree safety margin.",
+      "GeoJSON geometry structure, ring closure, OSM source IDs/layers, unique feature IDs, per-feature chunk coverage, and output provenance are validated."
+    ]
+  }
+}

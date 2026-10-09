@@ -1,0 +1,49 @@
+{
+  "regionId": "ng:region:ondo:akure-south-core",
+  "regionName": "Akure South core sample",
+  "stateName": "Ondo",
+  "lgaName": "Akure South",
+  "clipBoundsWgs84": {
+    "west": 5.188,
+    "south": 7.238,
+    "east": 5.212,
+    "north": 7.262
+  },
+  "localFrameOriginWgs84": {
+    "longitude": 5.2,
+    "latitude": 7.25
+  },
+  "sampleGrid": {
+    "columns": 6,
+    "rows": 6,
+    "maxRoadFeaturesPerCell": 2,
+    "maxBuildingFeaturesPerCell": 3,
+    "preferNamedFeatures": true
+  },
+  "sourceSnapshotUtc": "2026-07-31T12:26:31.185714Z",
+  "coordinateReferenceSystem": "OGC:CRS84",
+  "sourceLayerKinds": {
+    "roads": "road",
+    "buildings": "building",
+    "waterways": "waterway",
+    "landuse": "landuse",
+    "health_facilities": "health_facility",
+    "schools": "school"
+  },
+  "selectionNote": "This is a deterministic, stratified sample of mapped features inside the declared WGS84 viewport. The viewport is not an LGA boundary, settlement boundary, or claim of complete OSM coverage. Full feature geometries are retained for selected OSM elements; road/building records are capped per grid cell to keep the prototype bounded.",
+  "sourceArtifact": {
+    "provider": "Mapkathon2026-UseOSM/lga-osm-extractor",
+    "repositoryUrl": "https://github.com/Mapkathon2026-UseOSM/lga-osm-extractor",
+    "repositoryCommit": "414af2369c70ee5d5d3800cbed33a4bcf9370117",
+    "previewPath": "visuals/akure_south_preview.html",
+    "previewGitBlobSha1": "78a9e1796376ae8bfc432fb763c49c9b27ad4ed1",
+    "previewBytes": 36946166,
+    "previewSha256": "07f65309781fe15a4d35c115dff2f8e7926eed7eb957e4afae04c820ec86ba92",
+    "osmSnapshotUtc": "2026-07-31T12:26:31.185714Z",
+    "dataLicense": "ODbL-1.0",
+    "attribution": "© OpenStreetMap contributors",
+    "attributionUrl": "https://www.openstreetmap.org/copyright",
+    "crsAssumption": "OGC:CRS84 with x=longitude and y=latitude",
+    "crsReview": "The preview tables expose WKT without an embedded CRS field. Axis order was cross-checked against the declared Akure viewport, Nigeria coordinate ranges, and named Akure features plus the pinned Ondo/Akure South reference point; retain this limitation in downstream use."
+  }
+}

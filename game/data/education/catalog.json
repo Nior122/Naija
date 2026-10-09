@@ -1,0 +1,1780 @@
+{
+  "schema_version": 1,
+  "world_id": "nigeria-main",
+  "notice": "All institutions, staff, student NPCs, curricula and assessment questions in this prototype catalog are fictional game content. Synthetic coordinates are gameplay anchors, not real facility locations. Grading and admission rules are configurable prototypes, not official Nigerian policy. No WAEC/NECO protected or confidential questions are included.",
+  "calendar": {
+    "weekday_labels": [
+      "Monday",
+      "Tuesday",
+      "Wednesday",
+      "Thursday",
+      "Friday",
+      "Saturday",
+      "Sunday"
+    ],
+    "school_days_of_week": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "term_length_game_days": 5,
+    "terms_per_academic_year": 3,
+    "starting_class_by_age": {
+      "15": "JSS1",
+      "16": "SS1"
+    },
+    "late_grace_minutes": 15,
+    "class_duration_minutes": 40
+  },
+  "grading": {
+    "id": "naija-prototype-weighted-v1",
+    "assessment_weights": {
+      "continuous_assessment": 0.2,
+      "assignment": 0.15,
+      "test": 0.2,
+      "practical": 0.15,
+      "examination": 0.3
+    },
+    "attendance_weight": 0.1,
+    "grade_bands": [
+      {
+        "grade": "A",
+        "minimum_score": 80,
+        "label": "Excellent"
+      },
+      {
+        "grade": "B",
+        "minimum_score": 70,
+        "label": "Very good"
+      },
+      {
+        "grade": "C",
+        "minimum_score": 60,
+        "label": "Good"
+      },
+      {
+        "grade": "D",
+        "minimum_score": 50,
+        "label": "Pass"
+      },
+      {
+        "grade": "E",
+        "minimum_score": 40,
+        "label": "Developing"
+      },
+      {
+        "grade": "F",
+        "minimum_score": 0,
+        "label": "Needs support"
+      }
+    ],
+    "pass_score": 50,
+    "promotion_minimum_average": 50,
+    "core_subject_minimum_score": 40,
+    "final_exam_minimum_credits": 5,
+    "final_exam_required_subject_ids": [
+      "mathematics",
+      "english_language"
+    ],
+    "exam_credit_score": 50
+  },
+  "subjects": [
+    {
+      "id": "mathematics",
+      "name": "Mathematics",
+      "category": "core",
+      "legacy_score_key": "Mathematics"
+    },
+    {
+      "id": "english_language",
+      "name": "English Language",
+      "category": "core",
+      "legacy_score_key": "English"
+    },
+    {
+      "id": "civic_education",
+      "name": "Civic Education",
+      "category": "core",
+      "legacy_score_key": "Civic Education"
+    },
+    {
+      "id": "biology",
+      "name": "Biology",
+      "category": "science",
+      "legacy_score_key": "Biology"
+    },
+    {
+      "id": "chemistry",
+      "name": "Chemistry",
+      "category": "science",
+      "legacy_score_key": "Chemistry"
+    },
+    {
+      "id": "physics",
+      "name": "Physics",
+      "category": "science",
+      "legacy_score_key": "Physics"
+    },
+    {
+      "id": "computer_studies",
+      "name": "Computer Studies",
+      "category": "technology",
+      "legacy_score_key": "Computer Studies"
+    },
+    {
+      "id": "economics",
+      "name": "Economics",
+      "category": "business",
+      "legacy_score_key": "Economics"
+    },
+    {
+      "id": "government",
+      "name": "Government",
+      "category": "humanities",
+      "legacy_score_key": "Government"
+    },
+    {
+      "id": "geography",
+      "name": "Geography",
+      "category": "humanities",
+      "legacy_score_key": "Geography"
+    },
+    {
+      "id": "literature",
+      "name": "Literature in English",
+      "category": "humanities",
+      "legacy_score_key": "Literature"
+    },
+    {
+      "id": "agricultural_science",
+      "name": "Agricultural Science",
+      "category": "science",
+      "legacy_score_key": "Agricultural Science"
+    }
+  ],
+  "school_years": [
+    {
+      "id": "JSS1",
+      "label": "JSS 1",
+      "stage": "junior_secondary",
+      "next_class_id": "JSS2",
+      "sort_order": 1
+    },
+    {
+      "id": "JSS2",
+      "label": "JSS 2",
+      "stage": "junior_secondary",
+      "next_class_id": "JSS3",
+      "sort_order": 2
+    },
+    {
+      "id": "JSS3",
+      "label": "JSS 3",
+      "stage": "junior_secondary",
+      "next_class_id": "SS1",
+      "sort_order": 3
+    },
+    {
+      "id": "SS1",
+      "label": "SS 1",
+      "stage": "senior_secondary",
+      "next_class_id": "SS2",
+      "sort_order": 4
+    },
+    {
+      "id": "SS2",
+      "label": "SS 2",
+      "stage": "senior_secondary",
+      "next_class_id": "SS3",
+      "sort_order": 5
+    },
+    {
+      "id": "SS3",
+      "label": "SS 3",
+      "stage": "senior_secondary",
+      "next_class_id": null,
+      "sort_order": 6
+    }
+  ],
+  "curricula": [
+    {
+      "id": "secondary-foundation-v1",
+      "name": "Secondary foundation curriculum (prototype)",
+      "class_ids": [
+        "JSS1",
+        "JSS2",
+        "JSS3",
+        "SS1",
+        "SS2",
+        "SS3"
+      ],
+      "compulsory_subject_ids": [
+        "mathematics",
+        "english_language",
+        "civic_education"
+      ],
+      "elective_groups": [
+        {
+          "id": "science_or_agriculture",
+          "minimum_choices": 1,
+          "maximum_choices": 4,
+          "subject_ids": [
+            "biology",
+            "chemistry",
+            "physics",
+            "agricultural_science"
+          ]
+        },
+        {
+          "id": "additional_study",
+          "minimum_choices": 1,
+          "maximum_choices": 4,
+          "subject_ids": [
+            "computer_studies",
+            "economics",
+            "government",
+            "geography",
+            "literature"
+          ]
+        }
+      ],
+      "default_elective_subject_ids": [
+        "biology",
+        "computer_studies"
+      ],
+      "maximum_subject_count": 8,
+      "assessment_types": [
+        "continuous_assessment",
+        "assignment",
+        "test",
+        "practical",
+        "examination"
+      ]
+    }
+  ],
+  "institutions": [
+    {
+      "id": "idera_secondary_school",
+      "name": "Idera Community Secondary School",
+      "kind": "secondary_school",
+      "ownership": "public",
+      "school_type": "day_school",
+      "fictional": true,
+      "capacity": 720,
+      "staff_ids": [
+        "teacher-okafor",
+        "teacher-ade",
+        "teacher-bello"
+      ],
+      "facility_ids": [
+        "classrooms",
+        "library",
+        "science_lab",
+        "computer_room",
+        "sports_field",
+        "assembly_yard"
+      ],
+      "curriculum_id": "secondary-foundation-v1",
+      "class_ids": [
+        "JSS1",
+        "JSS2",
+        "JSS3",
+        "SS1",
+        "SS2",
+        "SS3"
+      ],
+      "classroom_ids": [
+        "idera-ss1a"
+      ],
+      "program_ids": [],
+      "school_day_start_minute": 470,
+      "annual_fee_ngn": 9000,
+      "transport_cost_ngn": 150,
+      "geographic_location": {
+        "world_id": "nigeria-main",
+        "region_id": "ng:region:ondo:akure-south-core",
+        "country_id": "NG",
+        "state_id": "ng:state:on",
+        "lga_id": "ng:lga:on:akure-south",
+        "settlement_id": "ng:settlement:on:akure",
+        "latitude": 7.2498667,
+        "longitude": 5.2018,
+        "coordinate_origin": "synthetic_gameplay_anchor",
+        "notice": "Fictional campus anchor aligned to the existing prototype map. Not a mapped or real school address.",
+        "state_name": "Ondo",
+        "lga_name": "Akure South",
+        "settlement_name": "Akure"
+      }
+    },
+    {
+      "id": "idera_metropolitan_university",
+      "name": "Idera Metropolitan University",
+      "kind": "university",
+      "ownership": "public",
+      "fictional": true,
+      "capacity": 12000,
+      "faculties": [
+        "Computing and Engineering",
+        "Arts and Social Studies",
+        "Health and Education"
+      ],
+      "program_ids": [
+        "imu-computer-science-bsc",
+        "imu-accounting-bsc",
+        "imu-education-bsc"
+      ],
+      "calendar_id": "tertiary-semester-calendar-v1",
+      "duration_years": 4,
+      "application_fee_ngn": 250,
+      "registration_fee_ngn": 2000,
+      "tuition_per_term_ngn": 2000,
+      "geographic_location": {
+        "world_id": "nigeria-main",
+        "region_id": "ng:region:ondo:akure-south-core",
+        "country_id": "NG",
+        "state_id": "ng:state:on",
+        "lga_id": "ng:lga:on:akure-south",
+        "settlement_id": "ng:settlement:on:akure",
+        "latitude": 7.2512,
+        "longitude": 5.1989,
+        "coordinate_origin": "synthetic_gameplay_anchor",
+        "notice": "Fictional gameplay anchor only; not a real university location.",
+        "state_name": "Ondo",
+        "lga_name": "Akure South",
+        "settlement_name": "Akure"
+      }
+    },
+    {
+      "id": "idera-technical-polytechnic",
+      "name": "Idera Technical Polytechnic",
+      "kind": "polytechnic",
+      "ownership": "private",
+      "fictional": true,
+      "capacity": 5000,
+      "faculties": [
+        "Engineering Technology",
+        "Applied Computing",
+        "Business Studies"
+      ],
+      "program_ids": [
+        "itp-computer-engineering-nd",
+        "itp-computer-engineering-hnd"
+      ],
+      "calendar_id": "tertiary-semester-calendar-v1",
+      "duration_years": 2,
+      "application_fee_ngn": 180,
+      "registration_fee_ngn": 1500,
+      "tuition_per_term_ngn": 1200,
+      "geographic_location": {
+        "world_id": "nigeria-main",
+        "region_id": "ng:region:ondo:akure-south-core",
+        "country_id": "NG",
+        "state_id": "ng:state:on",
+        "lga_id": "ng:lga:on:akure-south",
+        "settlement_id": "ng:settlement:on:akure",
+        "latitude": 7.2478,
+        "longitude": 5.2041,
+        "coordinate_origin": "synthetic_gameplay_anchor",
+        "notice": "Fictional gameplay anchor only; not a real polytechnic location.",
+        "state_name": "Ondo",
+        "lga_name": "Akure South",
+        "settlement_name": "Akure"
+      }
+    },
+    {
+      "id": "idera-college-of-education",
+      "name": "Idera College of Education",
+      "kind": "college_of_education",
+      "ownership": "community",
+      "fictional": true,
+      "capacity": 1800,
+      "faculties": [
+        "Arts and Social Studies",
+        "Science and Education"
+      ],
+      "program_ids": [
+        "ice-primary-education-nce"
+      ],
+      "calendar_id": "tertiary-semester-calendar-v1",
+      "duration_years": 3,
+      "application_fee_ngn": 150,
+      "registration_fee_ngn": 1200,
+      "tuition_per_term_ngn": 1000,
+      "geographic_location": {
+        "world_id": "nigeria-main",
+        "region_id": "ng:region:ondo:akure-south-core",
+        "country_id": "NG",
+        "state_id": "ng:state:on",
+        "lga_id": "ng:lga:on:akure-south",
+        "settlement_id": "ng:settlement:on:akure",
+        "latitude": 7.253,
+        "longitude": 5.2024,
+        "coordinate_origin": "synthetic_gameplay_anchor",
+        "notice": "Fictional gameplay anchor only; not a real college location.",
+        "state_name": "Ondo",
+        "lga_name": "Akure South",
+        "settlement_name": "Akure"
+      }
+    },
+    {
+      "id": "idera-community-skills-centre",
+      "name": "Idera Community Skills Centre",
+      "kind": "vocational_institute",
+      "ownership": "community",
+      "fictional": true,
+      "capacity": 360,
+      "staff_ids": [
+        "teacher-bello"
+      ],
+      "program_ids": [],
+      "geographic_location": {
+        "world_id": "nigeria-main",
+        "region_id": "ng:region:ondo:akure-south-core",
+        "country_id": "NG",
+        "state_id": "ng:state:on",
+        "lga_id": "ng:lga:on:akure-south",
+        "settlement_id": "ng:settlement:on:akure",
+        "latitude": 7.2518,
+        "longitude": 5.205,
+        "coordinate_origin": "synthetic_gameplay_anchor",
+        "notice": "Fictional gameplay anchor only; not a real training-centre location.",
+        "state_name": "Ondo",
+        "lga_name": "Akure South",
+        "settlement_name": "Akure"
+      }
+    }
+  ],
+  "classrooms": [
+    {
+      "id": "idera-ss1a",
+      "name": "SS 1A Classroom",
+      "institution_id": "idera_secondary_school",
+      "class_id": "SS1",
+      "capacity": 40,
+      "facility_ids": [
+        "whiteboard",
+        "desks",
+        "windows"
+      ],
+      "map_location_id": "classroom"
+    }
+  ],
+  "teachers": [
+    {
+      "id": "teacher-okafor",
+      "name": "Mr. Okafor",
+      "institution_id": "idera_secondary_school",
+      "subject_ids": [
+        "mathematics",
+        "physics"
+      ],
+      "classroom_ids": [
+        "idera-ss1a"
+      ],
+      "schedule_ids": [
+        "ss1-mathematics",
+        "ss1-civic"
+      ]
+    },
+    {
+      "id": "teacher-ade",
+      "name": "Mrs. Bisi Ade",
+      "institution_id": "idera_secondary_school",
+      "subject_ids": [
+        "english_language",
+        "literature"
+      ],
+      "classroom_ids": [
+        "idera-ss1a"
+      ],
+      "schedule_ids": [
+        "ss1-english"
+      ]
+    },
+    {
+      "id": "teacher-bello",
+      "name": "Mr. Bello",
+      "institution_id": "idera_secondary_school",
+      "subject_ids": [
+        "biology",
+        "computer_studies",
+        "agricultural_science"
+      ],
+      "classroom_ids": [
+        "idera-ss1a"
+      ],
+      "schedule_ids": [
+        "ss1-science",
+        "ss1-elective"
+      ]
+    },
+    {
+      "id": "tutor-falola",
+      "name": "Dr. Imani Falola",
+      "institution_id": "idera_metropolitan_university",
+      "subject_ids": [
+        "computer_studies",
+        "mathematics",
+        "english_language"
+      ],
+      "classroom_ids": [],
+      "schedule_ids": [
+        "imu-computer-science-bsc",
+        "imu-accounting-bsc"
+      ]
+    },
+    {
+      "id": "instructor-ogun",
+      "name": "Engr. Dele Ogun",
+      "institution_id": "idera-technical-polytechnic",
+      "subject_ids": [
+        "mathematics",
+        "physics",
+        "computer_studies"
+      ],
+      "classroom_ids": [],
+      "schedule_ids": [
+        "itp-computer-engineering-nd",
+        "itp-computer-engineering-hnd"
+      ]
+    },
+    {
+      "id": "tutor-ibukun",
+      "name": "Mrs. Ibukun Adebayo",
+      "institution_id": "idera-college-of-education",
+      "subject_ids": [
+        "english_language",
+        "biology",
+        "civic_education"
+      ],
+      "classroom_ids": [],
+      "schedule_ids": [
+        "ice-primary-education-nce"
+      ]
+    },
+    {
+      "id": "master-ade",
+      "name": "Master Kola Ade",
+      "institution_id": "idera-community-skills-centre",
+      "subject_ids": [
+        "physics",
+        "computer_studies",
+        "mathematics"
+      ],
+      "classroom_ids": [],
+      "schedule_ids": [
+        "trade-tailoring",
+        "trade-welding",
+        "trade-electrical",
+        "trade-carpentry",
+        "trade-mechanics",
+        "trade-hairdressing",
+        "trade-catering",
+        "trade-photography",
+        "trade-phone-repair",
+        "trade-computer-repair",
+        "trade-graphics-design",
+        "trade-plumbing",
+        "trade-farming"
+      ]
+    }
+  ],
+  "npc_students": [
+    {
+      "id": "npc-student-aisha",
+      "name": "Aisha",
+      "age": 15,
+      "institution_id": "idera_secondary_school",
+      "class_id": "SS1",
+      "academic_state": "steady",
+      "score_band": "B",
+      "attendance_band": "regular",
+      "fictional": true
+    },
+    {
+      "id": "npc-student-tunde",
+      "name": "Tunde",
+      "age": 16,
+      "institution_id": "idera_secondary_school",
+      "class_id": "SS1",
+      "academic_state": "improving",
+      "score_band": "C",
+      "attendance_band": "regular",
+      "fictional": true
+    }
+  ],
+  "timetable": [
+    {
+      "id": "ss1-assembly",
+      "days_of_week": [
+        0
+      ],
+      "class_ids": [
+        "JSS1",
+        "JSS2",
+        "JSS3",
+        "SS1",
+        "SS2",
+        "SS3"
+      ],
+      "start_minute": 470,
+      "duration_minutes": 15,
+      "kind": "activity",
+      "activity_id": "morning-assembly",
+      "label": "Morning assembly",
+      "location_id": "schoolyard",
+      "classroom_id": null,
+      "teacher_id": "teacher-okafor"
+    },
+    {
+      "id": "ss1-mathematics",
+      "days_of_week": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "class_ids": [
+        "JSS1",
+        "JSS2",
+        "JSS3",
+        "SS1",
+        "SS2",
+        "SS3"
+      ],
+      "start_minute": 490,
+      "duration_minutes": 40,
+      "kind": "lesson",
+      "subject_id": "mathematics",
+      "location_id": "classroom",
+      "classroom_id": "idera-ss1a",
+      "teacher_id": "teacher-okafor",
+      "assessment_type": "test"
+    },
+    {
+      "id": "ss1-english",
+      "days_of_week": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "class_ids": [
+        "JSS1",
+        "JSS2",
+        "JSS3",
+        "SS1",
+        "SS2",
+        "SS3"
+      ],
+      "start_minute": 540,
+      "duration_minutes": 40,
+      "kind": "lesson",
+      "subject_id": "english_language",
+      "location_id": "classroom",
+      "classroom_id": "idera-ss1a",
+      "teacher_id": "teacher-ade",
+      "assessment_type": "assignment"
+    },
+    {
+      "id": "ss1-break",
+      "days_of_week": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "class_ids": [
+        "JSS1",
+        "JSS2",
+        "JSS3",
+        "SS1",
+        "SS2",
+        "SS3"
+      ],
+      "start_minute": 590,
+      "duration_minutes": 20,
+      "kind": "break",
+      "activity_id": "school-break",
+      "label": "Break",
+      "location_id": "schoolyard",
+      "classroom_id": null,
+      "teacher_id": null
+    },
+    {
+      "id": "ss1-science",
+      "days_of_week": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "class_ids": [
+        "JSS1",
+        "JSS2",
+        "JSS3",
+        "SS1",
+        "SS2",
+        "SS3"
+      ],
+      "start_minute": 610,
+      "duration_minutes": 40,
+      "kind": "lesson",
+      "subject_slot_id": "science_or_agriculture",
+      "location_id": "classroom",
+      "classroom_id": "idera-ss1a",
+      "teacher_id": "teacher-bello",
+      "assessment_type": "practical"
+    },
+    {
+      "id": "ss1-elective",
+      "days_of_week": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "class_ids": [
+        "JSS1",
+        "JSS2",
+        "JSS3",
+        "SS1",
+        "SS2",
+        "SS3"
+      ],
+      "start_minute": 660,
+      "duration_minutes": 40,
+      "kind": "lesson",
+      "subject_slot_id": "additional_study",
+      "location_id": "classroom",
+      "classroom_id": "idera-ss1a",
+      "teacher_id": "teacher-bello",
+      "assessment_type": "continuous_assessment"
+    },
+    {
+      "id": "ss1-civic",
+      "days_of_week": [
+        1,
+        3
+      ],
+      "class_ids": [
+        "JSS1",
+        "JSS2",
+        "JSS3",
+        "SS1",
+        "SS2",
+        "SS3"
+      ],
+      "start_minute": 710,
+      "duration_minutes": 35,
+      "kind": "lesson",
+      "subject_id": "civic_education",
+      "location_id": "classroom",
+      "classroom_id": "idera-ss1a",
+      "teacher_id": "teacher-okafor",
+      "assessment_type": "continuous_assessment"
+    },
+    {
+      "id": "ss1-club",
+      "days_of_week": [
+        4
+      ],
+      "class_ids": [
+        "JSS1",
+        "JSS2",
+        "JSS3",
+        "SS1",
+        "SS2",
+        "SS3"
+      ],
+      "start_minute": 710,
+      "duration_minutes": 45,
+      "kind": "activity",
+      "activity_id": "school-club",
+      "label": "School club",
+      "location_id": "schoolyard",
+      "classroom_id": null,
+      "teacher_id": "teacher-ade"
+    }
+  ],
+  "activities": [
+    {
+      "id": "morning-assembly",
+      "name": "Morning assembly",
+      "kind": "assembly",
+      "duration_minutes": 15,
+      "energy_cost": 0.2,
+      "academic_bonus": 0,
+      "relationship_bonus": 1,
+      "location_id": "schoolyard"
+    },
+    {
+      "id": "school-break",
+      "name": "Break",
+      "kind": "break",
+      "duration_minutes": 20,
+      "energy_cost": 0,
+      "academic_bonus": 0,
+      "relationship_bonus": 0,
+      "location_id": "schoolyard"
+    },
+    {
+      "id": "school-club",
+      "name": "School club",
+      "kind": "club",
+      "duration_minutes": 45,
+      "energy_cost": 1,
+      "academic_bonus": 1,
+      "relationship_bonus": 2,
+      "location_id": "schoolyard"
+    },
+    {
+      "id": "school-sports",
+      "name": "Sports practice",
+      "kind": "sports",
+      "duration_minutes": 45,
+      "energy_cost": 2,
+      "academic_bonus": 0,
+      "relationship_bonus": 2,
+      "location_id": "schoolyard"
+    },
+    {
+      "id": "class-discussion",
+      "name": "Class discussion",
+      "kind": "discussion",
+      "duration_minutes": 30,
+      "energy_cost": 0.5,
+      "academic_bonus": 1,
+      "relationship_bonus": 1,
+      "location_id": "classroom"
+    }
+  ],
+  "assessment_types": [
+    {
+      "id": "continuous_assessment",
+      "label": "Continuous assessment"
+    },
+    {
+      "id": "assignment",
+      "label": "Assignment"
+    },
+    {
+      "id": "test",
+      "label": "Test"
+    },
+    {
+      "id": "practical",
+      "label": "Practical"
+    },
+    {
+      "id": "examination",
+      "label": "Examination"
+    }
+  ],
+  "questions": [
+    {
+      "id": "math-multiply-1",
+      "subject_id": "mathematics",
+      "class_ids": [
+        "JSS1",
+        "JSS2",
+        "JSS3",
+        "SS1",
+        "SS2",
+        "SS3"
+      ],
+      "prompt": "What is 7 × 8?",
+      "choices": [
+        "54",
+        "56",
+        "58"
+      ],
+      "correct_choice_index": 1,
+      "original_game_content": true
+    },
+    {
+      "id": "english-grammar-1",
+      "subject_id": "english_language",
+      "class_ids": [
+        "JSS1",
+        "JSS2",
+        "JSS3",
+        "SS1",
+        "SS2",
+        "SS3"
+      ],
+      "prompt": "Which sentence is grammatically correct?",
+      "choices": [
+        "She go to school.",
+        "She goes to school.",
+        "She going school."
+      ],
+      "correct_choice_index": 1,
+      "original_game_content": true
+    },
+    {
+      "id": "civic-responsibility-1",
+      "subject_id": "civic_education",
+      "class_ids": [
+        "JSS1",
+        "JSS2",
+        "JSS3",
+        "SS1",
+        "SS2",
+        "SS3"
+      ],
+      "prompt": "Which action shows responsible care for a shared community space?",
+      "choices": [
+        "Keep it clean",
+        "Damage a public bench",
+        "Block the walkway"
+      ],
+      "correct_choice_index": 0,
+      "original_game_content": true
+    },
+    {
+      "id": "biology-plants-1",
+      "subject_id": "biology",
+      "class_ids": [
+        "JSS1",
+        "JSS2",
+        "JSS3",
+        "SS1",
+        "SS2",
+        "SS3"
+      ],
+      "prompt": "What do green plants use as an energy source to make food?",
+      "choices": [
+        "Sunlight",
+        "Plastic",
+        "Sand only"
+      ],
+      "correct_choice_index": 0,
+      "original_game_content": true
+    },
+    {
+      "id": "chemistry-water-1",
+      "subject_id": "chemistry",
+      "class_ids": [
+        "JSS1",
+        "JSS2",
+        "JSS3",
+        "SS1",
+        "SS2",
+        "SS3"
+      ],
+      "prompt": "Which formula represents water?",
+      "choices": [
+        "H₂O",
+        "CO₂",
+        "NaCl"
+      ],
+      "correct_choice_index": 0,
+      "original_game_content": true
+    },
+    {
+      "id": "physics-force-1",
+      "subject_id": "physics",
+      "class_ids": [
+        "JSS1",
+        "JSS2",
+        "JSS3",
+        "SS1",
+        "SS2",
+        "SS3"
+      ],
+      "prompt": "Which unit is commonly used for force?",
+      "choices": [
+        "Newton",
+        "Litre",
+        "Watt-hour"
+      ],
+      "correct_choice_index": 0,
+      "original_game_content": true
+    },
+    {
+      "id": "computer-cpu-1",
+      "subject_id": "computer_studies",
+      "class_ids": [
+        "JSS1",
+        "JSS2",
+        "JSS3",
+        "SS1",
+        "SS2",
+        "SS3"
+      ],
+      "prompt": "Which component executes instructions in a computer?",
+      "choices": [
+        "CPU",
+        "Keyboard",
+        "Monitor"
+      ],
+      "correct_choice_index": 0,
+      "original_game_content": true
+    },
+    {
+      "id": "economics-choice-1",
+      "subject_id": "economics",
+      "class_ids": [
+        "JSS1",
+        "JSS2",
+        "JSS3",
+        "SS1",
+        "SS2",
+        "SS3"
+      ],
+      "prompt": "When someone chooses one option, the next best alternative given up is called what?",
+      "choices": [
+        "Opportunity cost",
+        "A timetable",
+        "A classroom"
+      ],
+      "correct_choice_index": 0,
+      "original_game_content": true
+    },
+    {
+      "id": "government-civic-1",
+      "subject_id": "government",
+      "class_ids": [
+        "JSS1",
+        "JSS2",
+        "JSS3",
+        "SS1",
+        "SS2",
+        "SS3"
+      ],
+      "prompt": "What is the purpose of a written constitution?",
+      "choices": [
+        "Set out a framework of government",
+        "Replace every community rule",
+        "Record a class attendance mark"
+      ],
+      "correct_choice_index": 0,
+      "original_game_content": true
+    },
+    {
+      "id": "geography-river-1",
+      "subject_id": "geography",
+      "class_ids": [
+        "JSS1",
+        "JSS2",
+        "JSS3",
+        "SS1",
+        "SS2",
+        "SS3"
+      ],
+      "prompt": "Which instrument is used to find direction on a map?",
+      "choices": [
+        "Compass",
+        "Thermometer",
+        "Stopwatch"
+      ],
+      "correct_choice_index": 0,
+      "original_game_content": true
+    },
+    {
+      "id": "literature-story-1",
+      "subject_id": "literature",
+      "class_ids": [
+        "JSS1",
+        "JSS2",
+        "JSS3",
+        "SS1",
+        "SS2",
+        "SS3"
+      ],
+      "prompt": "Who tells a story in a first-person narrative?",
+      "choices": [
+        "A narrator using I or we",
+        "A map scale",
+        "A school bell"
+      ],
+      "correct_choice_index": 0,
+      "original_game_content": true
+    },
+    {
+      "id": "agriculture-soil-1",
+      "subject_id": "agricultural_science",
+      "class_ids": [
+        "JSS1",
+        "JSS2",
+        "JSS3",
+        "SS1",
+        "SS2",
+        "SS3"
+      ],
+      "prompt": "Which practice can help protect soil on a slope?",
+      "choices": [
+        "Contour farming",
+        "Removing all ground cover",
+        "Leaving drains blocked"
+      ],
+      "correct_choice_index": 0,
+      "original_game_content": true
+    }
+  ],
+  "final_examination": {
+    "id": "naija-senior-certificate-v1",
+    "name": "Naija Senior Certificate Examination (fictional game system)",
+    "notice": "Fictional WAEC/NECO-inspired progression. Not affiliated with any examination body; all question content is original game material.",
+    "registration_fee_ngn": 1500,
+    "retake_fee_ngn": 750,
+    "minimum_subjects": 5,
+    "minimum_credits": 5,
+    "required_credit_subject_ids": [
+      "mathematics",
+      "english_language"
+    ],
+    "exam_days_after_registration": 1,
+    "pass_score": 50
+  },
+  "tertiary_calendar": {
+    "id": "tertiary-semester-calendar-v1",
+    "semesters_per_year": 2,
+    "term_length_game_days": 5,
+    "credit_pass_score": 50,
+    "good_standing_average": 50,
+    "assessment_weight": 1.0
+  },
+  "programs": [
+    {
+      "id": "imu-computer-science-bsc",
+      "institution_id": "idera_metropolitan_university",
+      "kind": "university",
+      "name": "Computer Science",
+      "award": "BSc",
+      "duration_years": 4,
+      "duration_semesters": 8,
+      "minimum_age": 15,
+      "requirements": {
+        "minimum_final_credits": 5,
+        "required_subject_ids": [
+          "mathematics",
+          "english_language"
+        ],
+        "minimum_secondary_average": 60
+      },
+      "tuition_per_term_ngn": 2000,
+      "application_fee_ngn": 250,
+      "registration_fee_ngn": 2000,
+      "course_ids": [
+        "cs-foundations",
+        "math-for-computing",
+        "communication"
+      ],
+      "career_links": [
+        "future:software-development",
+        "future:systems-analysis"
+      ],
+      "capacity": 30
+    },
+    {
+      "id": "imu-accounting-bsc",
+      "institution_id": "idera_metropolitan_university",
+      "kind": "university",
+      "name": "Accounting",
+      "award": "BSc",
+      "duration_years": 4,
+      "duration_semesters": 8,
+      "minimum_age": 15,
+      "requirements": {
+        "minimum_final_credits": 5,
+        "required_subject_ids": [
+          "mathematics",
+          "english_language",
+          "economics"
+        ],
+        "minimum_secondary_average": 55
+      },
+      "tuition_per_term_ngn": 2000,
+      "application_fee_ngn": 250,
+      "registration_fee_ngn": 2000,
+      "course_ids": [
+        "accounting-foundations",
+        "business-mathematics",
+        "communication"
+      ],
+      "career_links": [
+        "future:accounting"
+      ],
+      "capacity": 24
+    },
+    {
+      "id": "imu-education-bsc",
+      "institution_id": "idera_metropolitan_university",
+      "kind": "university",
+      "name": "Education",
+      "award": "BSc Ed",
+      "duration_years": 4,
+      "duration_semesters": 8,
+      "minimum_age": 15,
+      "requirements": {
+        "minimum_final_credits": 5,
+        "required_subject_ids": [
+          "english_language"
+        ],
+        "minimum_secondary_average": 50
+      },
+      "tuition_per_term_ngn": 1800,
+      "application_fee_ngn": 200,
+      "registration_fee_ngn": 1800,
+      "course_ids": [
+        "learning-foundations",
+        "communication",
+        "subject-methods"
+      ],
+      "career_links": [
+        "future:teaching"
+      ],
+      "capacity": 36
+    },
+    {
+      "id": "itp-computer-engineering-nd",
+      "institution_id": "idera-technical-polytechnic",
+      "kind": "polytechnic",
+      "name": "Computer Engineering Technology",
+      "award": "ND",
+      "duration_years": 2,
+      "duration_semesters": 4,
+      "minimum_age": 15,
+      "requirements": {
+        "minimum_final_credits": 4,
+        "required_subject_ids": [
+          "mathematics",
+          "english_language"
+        ],
+        "minimum_secondary_average": 50
+      },
+      "tuition_per_term_ngn": 1200,
+      "application_fee_ngn": 180,
+      "registration_fee_ngn": 1500,
+      "course_ids": [
+        "electrical-foundations",
+        "computer-hardware",
+        "technical-mathematics"
+      ],
+      "career_links": [
+        "future:computer-technician",
+        "future:electrical-technician"
+      ],
+      "capacity": 24
+    },
+    {
+      "id": "itp-computer-engineering-hnd",
+      "institution_id": "idera-technical-polytechnic",
+      "kind": "polytechnic",
+      "name": "Computer Engineering Technology",
+      "award": "HND",
+      "duration_years": 2,
+      "duration_semesters": 4,
+      "minimum_age": 15,
+      "requirements": {
+        "minimum_final_credits": 0,
+        "required_subject_ids": [],
+        "minimum_secondary_average": 0,
+        "required_qualification_ids": [
+          "qualification:itp-computer-engineering-nd"
+        ]
+      },
+      "tuition_per_term_ngn": 1500,
+      "application_fee_ngn": 180,
+      "registration_fee_ngn": 1800,
+      "course_ids": [
+        "embedded-systems",
+        "industrial-practice",
+        "project-studio"
+      ],
+      "career_links": [
+        "future:computer-technician",
+        "future:electrical-technician"
+      ],
+      "capacity": 18
+    },
+    {
+      "id": "ice-primary-education-nce",
+      "institution_id": "idera-college-of-education",
+      "kind": "college_of_education",
+      "name": "Primary Education",
+      "award": "NCE",
+      "duration_years": 3,
+      "duration_semesters": 6,
+      "minimum_age": 15,
+      "requirements": {
+        "minimum_final_credits": 4,
+        "required_subject_ids": [
+          "english_language"
+        ],
+        "minimum_secondary_average": 45
+      },
+      "tuition_per_term_ngn": 1000,
+      "application_fee_ngn": 150,
+      "registration_fee_ngn": 1200,
+      "course_ids": [
+        "learning-foundations",
+        "communication",
+        "child-development"
+      ],
+      "career_links": [
+        "future:teaching"
+      ],
+      "capacity": 30
+    }
+  ],
+  "courses": [
+    {
+      "id": "cs-foundations",
+      "name": "Computing Foundations",
+      "subject_id": "computer_studies",
+      "assessment_type": "assignment",
+      "question_id": "computer-cpu-1"
+    },
+    {
+      "id": "math-for-computing",
+      "name": "Mathematics for Computing",
+      "subject_id": "mathematics",
+      "assessment_type": "test",
+      "question_id": "math-multiply-1"
+    },
+    {
+      "id": "communication",
+      "name": "Communication Skills",
+      "subject_id": "english_language",
+      "assessment_type": "continuous_assessment",
+      "question_id": "english-grammar-1"
+    },
+    {
+      "id": "accounting-foundations",
+      "name": "Accounting Foundations",
+      "subject_id": "economics",
+      "assessment_type": "assignment",
+      "question_id": "economics-choice-1"
+    },
+    {
+      "id": "business-mathematics",
+      "name": "Business Mathematics",
+      "subject_id": "mathematics",
+      "assessment_type": "test",
+      "question_id": "math-multiply-1"
+    },
+    {
+      "id": "learning-foundations",
+      "name": "Learning Foundations",
+      "subject_id": "civic_education",
+      "assessment_type": "assignment",
+      "question_id": "civic-responsibility-1"
+    },
+    {
+      "id": "subject-methods",
+      "name": "Subject Methods",
+      "subject_id": "english_language",
+      "assessment_type": "practical",
+      "question_id": "english-grammar-1"
+    },
+    {
+      "id": "electrical-foundations",
+      "name": "Electrical Safety Foundations",
+      "subject_id": "physics",
+      "assessment_type": "practical",
+      "question_id": "physics-force-1"
+    },
+    {
+      "id": "computer-hardware",
+      "name": "Computer Hardware",
+      "subject_id": "computer_studies",
+      "assessment_type": "practical",
+      "question_id": "computer-cpu-1"
+    },
+    {
+      "id": "technical-mathematics",
+      "name": "Technical Mathematics",
+      "subject_id": "mathematics",
+      "assessment_type": "test",
+      "question_id": "math-multiply-1"
+    },
+    {
+      "id": "embedded-systems",
+      "name": "Embedded Systems",
+      "subject_id": "computer_studies",
+      "assessment_type": "assignment",
+      "question_id": "computer-cpu-1"
+    },
+    {
+      "id": "industrial-practice",
+      "name": "Industrial Practice",
+      "subject_id": "physics",
+      "assessment_type": "practical",
+      "question_id": "physics-force-1"
+    },
+    {
+      "id": "project-studio",
+      "name": "Project Studio",
+      "subject_id": "computer_studies",
+      "assessment_type": "assignment",
+      "question_id": "computer-cpu-1"
+    },
+    {
+      "id": "child-development",
+      "name": "Child Development",
+      "subject_id": "biology",
+      "assessment_type": "assignment",
+      "question_id": "biology-plants-1"
+    }
+  ],
+  "training_programs": [
+    {
+      "id": "trade-tailoring",
+      "name": "Tailoring and garment repair",
+      "skill_id": "skill:tailoring",
+      "institution_id": "idera-community-skills-centre",
+      "duration_sessions": 6,
+      "session_cost_ngn": 250,
+      "master_teacher_id": "master-ade",
+      "career_links": [
+        "future:tailoring"
+      ],
+      "certificate_name": "Community tailoring skills certificate"
+    },
+    {
+      "id": "trade-welding",
+      "name": "Welding foundations",
+      "skill_id": "skill:welding",
+      "institution_id": "idera-community-skills-centre",
+      "duration_sessions": 8,
+      "session_cost_ngn": 350,
+      "master_teacher_id": "master-ade",
+      "career_links": [
+        "future:welding"
+      ],
+      "certificate_name": "Community welding skills certificate"
+    },
+    {
+      "id": "trade-electrical",
+      "name": "Electrical installation foundations",
+      "skill_id": "skill:electrical-work",
+      "institution_id": "idera-community-skills-centre",
+      "duration_sessions": 8,
+      "session_cost_ngn": 300,
+      "master_teacher_id": "master-ade",
+      "career_links": [
+        "future:electrical-technician"
+      ],
+      "certificate_name": "Electrical skills certificate"
+    },
+    {
+      "id": "trade-carpentry",
+      "name": "Carpentry foundations",
+      "skill_id": "skill:carpentry",
+      "institution_id": "idera-community-skills-centre",
+      "duration_sessions": 8,
+      "session_cost_ngn": 250,
+      "master_teacher_id": "master-ade",
+      "career_links": [
+        "future:carpentry"
+      ],
+      "certificate_name": "Carpentry skills certificate"
+    },
+    {
+      "id": "trade-mechanics",
+      "name": "Motor mechanics foundations",
+      "skill_id": "skill:mechanic-work",
+      "institution_id": "idera-community-skills-centre",
+      "duration_sessions": 8,
+      "session_cost_ngn": 350,
+      "master_teacher_id": "master-ade",
+      "career_links": [
+        "future:mechanic"
+      ],
+      "certificate_name": "Mechanics skills certificate"
+    },
+    {
+      "id": "trade-hairdressing",
+      "name": "Hairdressing foundations",
+      "skill_id": "skill:hairdressing",
+      "institution_id": "idera-community-skills-centre",
+      "duration_sessions": 6,
+      "session_cost_ngn": 250,
+      "master_teacher_id": "master-ade",
+      "career_links": [
+        "future:hairdressing"
+      ],
+      "certificate_name": "Hairdressing skills certificate"
+    },
+    {
+      "id": "trade-catering",
+      "name": "Catering foundations",
+      "skill_id": "skill:catering",
+      "institution_id": "idera-community-skills-centre",
+      "duration_sessions": 6,
+      "session_cost_ngn": 300,
+      "master_teacher_id": "master-ade",
+      "career_links": [
+        "future:catering"
+      ],
+      "certificate_name": "Catering skills certificate"
+    },
+    {
+      "id": "trade-photography",
+      "name": "Photography foundations",
+      "skill_id": "skill:photography",
+      "institution_id": "idera-community-skills-centre",
+      "duration_sessions": 6,
+      "session_cost_ngn": 250,
+      "master_teacher_id": "master-ade",
+      "career_links": [
+        "future:photography"
+      ],
+      "certificate_name": "Photography skills certificate"
+    },
+    {
+      "id": "trade-phone-repair",
+      "name": "Phone repair foundations",
+      "skill_id": "skill:phone-repair",
+      "institution_id": "idera-community-skills-centre",
+      "duration_sessions": 8,
+      "session_cost_ngn": 300,
+      "master_teacher_id": "master-ade",
+      "career_links": [
+        "future:phone-repair"
+      ],
+      "certificate_name": "Phone repair skills certificate"
+    },
+    {
+      "id": "trade-computer-repair",
+      "name": "Computer repair foundations",
+      "skill_id": "skill:computer-repair",
+      "institution_id": "idera-community-skills-centre",
+      "duration_sessions": 8,
+      "session_cost_ngn": 300,
+      "master_teacher_id": "master-ade",
+      "career_links": [
+        "future:computer-technician"
+      ],
+      "certificate_name": "Computer repair skills certificate"
+    },
+    {
+      "id": "trade-graphics-design",
+      "name": "Graphics and design foundations",
+      "skill_id": "skill:graphics-design",
+      "institution_id": "idera-community-skills-centre",
+      "duration_sessions": 6,
+      "session_cost_ngn": 250,
+      "master_teacher_id": "master-ade",
+      "career_links": [
+        "future:graphic-design"
+      ],
+      "certificate_name": "Creative skills certificate"
+    },
+    {
+      "id": "trade-plumbing",
+      "name": "Plumbing foundations",
+      "skill_id": "skill:plumbing",
+      "institution_id": "idera-community-skills-centre",
+      "duration_sessions": 8,
+      "session_cost_ngn": 300,
+      "master_teacher_id": "master-ade",
+      "career_links": [
+        "future:plumbing"
+      ],
+      "certificate_name": "Plumbing skills certificate"
+    },
+    {
+      "id": "trade-farming",
+      "name": "Small-scale farming foundations",
+      "skill_id": "skill:farming",
+      "institution_id": "idera-community-skills-centre",
+      "duration_sessions": 8,
+      "session_cost_ngn": 200,
+      "master_teacher_id": "master-ade",
+      "career_links": [
+        "future:farming"
+      ],
+      "certificate_name": "Farming skills certificate"
+    }
+  ],
+  "apprenticeship_defaults": {
+    "minimum_sessions": 8,
+    "practice_time_minutes": 90,
+    "completion_skill_level": 1,
+    "allow_concurrent_programs": false
+  },
+  "scholarships": [
+    {
+      "id": "merit-learning-award",
+      "name": "Idera Merit Learning Award",
+      "kind": "merit",
+      "minimum_secondary_average": 70,
+      "maximum_money_ngn": null,
+      "award_amount_ngn": 10000,
+      "duration_terms": 8,
+      "capacity": 25
+    },
+    {
+      "id": "community-access-bursary",
+      "name": "Community Access Bursary",
+      "kind": "need_based",
+      "minimum_secondary_average": 40,
+      "maximum_money_ngn": 8000,
+      "award_amount_ngn": 7000,
+      "duration_terms": 4,
+      "capacity": 40
+    }
+  ],
+  "family_support": {
+    "maximum_requests_per_term": 1,
+    "support_amount_ngn": 1200,
+    "minimum_guardians": 1,
+    "eligibility_maximum_player_balance_ngn": 18000
+  },
+  "education_costs": {
+    "books_and_materials_ngn": 450,
+    "school_transport_one_way_ngn": 150,
+    "tertiary_accommodation_per_term_ngn": 0,
+    "work_study_note": "Fictional game-scale tuition and award values are configurable progression hooks, not real Nigerian fee quotes. Existing money remains a small prototype balance; no jobs, bank, loan or economy simulation is added in Stage 4."
+  },
+  "starting_diagnostic_scores": {
+    "mathematics": 72,
+    "english_language": 68,
+    "civic_education": 75,
+    "biology": 64,
+    "computer_studies": 81
+  },
+  "skills": [
+    {
+      "id": "skill:numeracy",
+      "name": "Numeracy",
+      "category": "academic",
+      "career_links": []
+    },
+    {
+      "id": "skill:literacy",
+      "name": "Literacy and communication",
+      "category": "academic",
+      "career_links": []
+    },
+    {
+      "id": "skill:scientific-reasoning",
+      "name": "Scientific reasoning",
+      "category": "academic",
+      "career_links": []
+    },
+    {
+      "id": "skill:digital-literacy",
+      "name": "Digital literacy",
+      "category": "academic",
+      "career_links": [
+        "future:software-development"
+      ]
+    },
+    {
+      "id": "skill:tailoring",
+      "name": "Tailoring",
+      "category": "trade",
+      "career_links": [
+        "future:tailoring"
+      ]
+    },
+    {
+      "id": "skill:welding",
+      "name": "Welding",
+      "category": "trade",
+      "career_links": [
+        "future:welding"
+      ]
+    },
+    {
+      "id": "skill:electrical-work",
+      "name": "Electrical work",
+      "category": "trade",
+      "career_links": [
+        "future:electrical-technician"
+      ]
+    },
+    {
+      "id": "skill:carpentry",
+      "name": "Carpentry",
+      "category": "trade",
+      "career_links": [
+        "future:carpentry"
+      ]
+    },
+    {
+      "id": "skill:mechanic-work",
+      "name": "Mechanic work",
+      "category": "trade",
+      "career_links": [
+        "future:mechanic"
+      ]
+    },
+    {
+      "id": "skill:hairdressing",
+      "name": "Hairdressing",
+      "category": "trade",
+      "career_links": [
+        "future:hairdressing"
+      ]
+    },
+    {
+      "id": "skill:catering",
+      "name": "Catering",
+      "category": "trade",
+      "career_links": [
+        "future:catering"
+      ]
+    },
+    {
+      "id": "skill:photography",
+      "name": "Photography",
+      "category": "creative",
+      "career_links": [
+        "future:photography"
+      ]
+    },
+    {
+      "id": "skill:phone-repair",
+      "name": "Phone repair",
+      "category": "trade",
+      "career_links": [
+        "future:phone-repair"
+      ]
+    },
+    {
+      "id": "skill:computer-repair",
+      "name": "Computer repair",
+      "category": "trade",
+      "career_links": [
+        "future:computer-technician"
+      ]
+    },
+    {
+      "id": "skill:graphics-design",
+      "name": "Graphics and design",
+      "category": "creative",
+      "career_links": [
+        "future:graphic-design"
+      ]
+    },
+    {
+      "id": "skill:plumbing",
+      "name": "Plumbing",
+      "category": "trade",
+      "career_links": [
+        "future:plumbing"
+      ]
+    },
+    {
+      "id": "skill:farming",
+      "name": "Farming",
+      "category": "trade",
+      "career_links": [
+        "future:farming"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,79 @@
+[
+  {
+    "State": "Ondo",
+    "LGA": "Akure South",
+    "Ward": "Aponmu",
+    "Latitude": 7.245398349,
+    "Longitude": 5.106328954
+  },
+  {
+    "State": "Ondo",
+    "LGA": "Akure South",
+    "Ward": "Gbogi/Isikan I",
+    "Latitude": 7.236225531,
+    "Longitude": 5.150431619
+  },
+  {
+    "State": "Ondo",
+    "LGA": "Akure South",
+    "Ward": "Gbogi/Isikan II",
+    "Latitude": 7.281910685,
+    "Longitude": 5.13199668
+  },
+  {
+    "State": "Ondo",
+    "LGA": "Akure South",
+    "Ward": "Ijomu/Obanla",
+    "Latitude": 7.256176385,
+    "Longitude": 5.19339035
+  },
+  {
+    "State": "Ondo",
+    "LGA": "Akure South",
+    "Ward": "Lisa",
+    "Latitude": 7.212689603,
+    "Longitude": 5.206810175
+  },
+  {
+    "State": "Ondo",
+    "LGA": "Akure South",
+    "Ward": "Oda",
+    "Latitude": 7.145458159,
+    "Longitude": 5.265618391
+  },
+  {
+    "State": "Ondo",
+    "LGA": "Akure South",
+    "Ward": "Odopetu",
+    "Latitude": 7.232200406,
+    "Longitude": 5.187304464
+  },
+  {
+    "State": "Ondo",
+    "LGA": "Akure South",
+    "Ward": "Oke aro/Uro I",
+    "Latitude": 7.201261115,
+    "Longitude": 5.15271588
+  },
+  {
+    "State": "Ondo",
+    "LGA": "Akure South",
+    "Ward": "Oke aro/uro II",
+    "Latitude": 7.178794157,
+    "Longitude": 5.188491974
+  },
+  {
+    "State": "Ondo",
+    "LGA": "Akure South",
+    "Ward": "Oshodi/Isolo",
+    "Latitude": 7.28197384,
+    "Longitude": 5.182422868
+  },
+  {
+    "State": "Ondo",
+    "LGA": "Akure South",
+    "Ward": "Owode/Imuagun",
+    "Latitude": 7.305390679,
+    "Longitude": 5.161169542
+  }
+]
