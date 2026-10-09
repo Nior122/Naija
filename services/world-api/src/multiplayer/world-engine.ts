@@ -150,6 +150,30 @@ import {
   electionsErrorMessage,
 } from "../elections/service.js";
 import type { ElectionsCatalog, ElectionPhase, PartyStatus, ManifestoRecord } from "../elections/types.js";
+import { loadJusticeCatalog } from "../justice/catalog.js";
+import {
+  initializeJusticeWorldState,
+  seedJusticeWorld,
+  getActiveLaws,
+  searchLaws,
+  createLegislativeProposal,
+  submitProposal,
+  getCourt,
+  listCourts,
+  fileCase,
+  getCase,
+  getCharacterCases,
+  submitEvidence,
+  issueJudgment,
+  payFine,
+  getCharacterFines,
+  fileAppeal,
+  decideAppeal,
+  getLegalProfile,
+  processJusticeWorldDate,
+  justiceErrorMessage,
+} from "../justice/service.js";
+import type { JusticeCatalog, CaseCategoryId, JudgmentOutcomeId, AppealOutcomeId } from "../justice/types.js";
 import { loadLifeCatalog, dateForWorldDay, isValidDate, worldClockSnapshot } from "../life/calendar.js";
 import {
   advanceWorldLife,
@@ -501,6 +525,7 @@ export class MultiplayerWorld {
   private readonly propertyCatalog: PropertyCatalog = loadPropertyCatalog();
   private readonly governmentCatalog: GovernmentCatalog = loadGovernmentCatalog();
   private readonly electionsCatalog: ElectionsCatalog = loadElectionsCatalog();
+  private readonly justiceCatalog: JusticeCatalog = loadJusticeCatalog();
   private readonly lifeCatalog = loadLifeCatalog();
   private lastTickAt: number;
   private lastBroadcastAt = 0;
@@ -789,6 +814,7 @@ export class MultiplayerWorld {
       case "property.action": await this.propertyAction(context, player, message, requestId); return;
       case "government.action": await this.governmentAction(context, player, message, requestId); return;
       case "election.action": await this.electionAction(context, player, message, requestId); return;
+      case "justice.action": await this.justiceAction(context, player, message, requestId); return;
       case "chat.send": this.handleChat(context, player, message, requestId); return;
       case "player.interact": this.handlePlayerInteraction(context, player, message, requestId); return;
       case "relationship.progress": await this.progressRelationship(context, player, message, requestId); return;
@@ -892,6 +918,8 @@ export class MultiplayerWorld {
     initializeGovernmentWorldState(this.store.state);
     seedGovernmentWorld(this.store.state, this.store.state.worldClock.world_date, this.now(), this.governmentCatalog);
     initializeElectionWorldState(this.store.state);
+    initializeJusticeWorldState(this.store.state);
+    seedJusticeWorld(this.store.state, this.store.state.worldClock.world_date, this.now(), this.justiceCatalog);
     this.playerByTokenHash.set(tokenHash, playerId);
     this.playerByCreationKeyHash.set(creationKeyHash, playerId);
     // The upcoming snapshot includes all current changes; keep later concurrent dirtiness intact.
@@ -944,6 +972,7 @@ export class MultiplayerWorld {
     processPropertyWorldDate(this.store.state);
     processGovernmentWorldDate(this.store.state);
     processElectionWorldDate(this.store.state, this.store.state.worldClock.world_date, this.now());
+    processJusticeWorldDate(this.store.state, this.store.state.worldClock.world_date, this.now());
     processCareerWorldMinute(this.store.state, this.store.state.worldClock.world_date,
       this.store.state.worldClock.minute_of_day, this.now(), this.careerCatalog);
     context.playerId = playerId;
@@ -2587,6 +2616,212 @@ export class MultiplayerWorld {
     await this.flushDirty();
   }
 
+  private async justiceAction(
+    context: ConnectionContext,
+    player: PersistentPlayer,
+    message: Record<string, unknown>,
+    requestId?: string,
+  ): Promise<void> {
+    const data = message;
+    const action = typeof data.action === "string" ? data.action : "";
+    if (!action || action.length > 48) {
+      this.send(context, appendOptionalRequestId({
+        type: "justice.error", action: "", code: "justice_action_invalid",
+        message: "Choose a supported justice action.",
+      }, requestId));
+      return;
+    }
+    const characterId = player.character.character_id;
+    const date = this.store.state.worldClock.world_date;
+    const now = this.now();
+    let messageText = "";
+    const responseData: Record<string, unknown> = {};
+    const requiredString = (key: string, value: unknown, maxLength = 200): string => {
+      if (typeof value !== "string" || value.trim().length === 0 || value.length > maxLength) throw new Error("justice_action_invalid");
+      return value.trim();
+    };
+    const optionalString = (key: string, value: unknown, maxLength = 500): string | null => {
+      if (value === undefined || value === null) return null;
+      if (typeof value !== "string" || value.length > maxLength) throw new Error("justice_action_invalid");
+      return value;
+    };
+
+    try {
+      switch (action) {
+        case "search_laws": {
+          const query = optionalString("query", data.query);
+          const category = optionalString("category", data.category) as import("../justice/types.js").LawCategoryId | undefined;
+          const jurisdiction = optionalString("jurisdiction", data.jurisdiction);
+          responseData.laws = searchLaws(this.store.state, query ?? undefined, category, jurisdiction ?? undefined);
+          messageText = "Laws loaded.";
+          break;
+        }
+        case "active_laws": {
+          const jurisdiction = optionalString("jurisdiction", data.jurisdiction);
+          responseData.laws = getActiveLaws(this.store.state, jurisdiction ?? undefined);
+          messageText = "Active laws loaded.";
+          break;
+        }
+        case "list_courts": {
+          const jurisdiction = optionalString("jurisdiction", data.jurisdiction);
+          responseData.courts = listCourts(this.store.state, jurisdiction ?? undefined);
+          messageText = "Courts loaded.";
+          break;
+        }
+        case "view_court": {
+          const courtId = requiredString("court_id", data.court_id);
+          const court = getCourt(this.store.state, courtId);
+          if (!court) throw new Error("justice_court_not_found");
+          responseData.court = court;
+          messageText = "Court loaded.";
+          break;
+        }
+        case "create_proposal": {
+          const title = requiredString("title", data.title, 200);
+          const description = requiredString("description", data.description, 2000);
+          const purpose = requiredString("purpose", data.purpose, 1000);
+          const jurisdiction = requiredString("jurisdiction", data.jurisdiction);
+          const applicableStateId = optionalString("applicable_state_id", data.applicable_state_id);
+          const supportingExplanation = optionalString("supporting_explanation", data.supporting_explanation, 2000) ?? "";
+          const provisions = Array.isArray(data.provisions) ? data.provisions.map((p) => {
+            const pp = p as Record<string, unknown>;
+            return { section: String(pp.section ?? ""), title: String(pp.title ?? ""), description: String(pp.description ?? "") };
+          }) : [];
+          const proposal = createLegislativeProposal(
+            this.store.state, title, description, purpose, characterId,
+            jurisdiction, applicableStateId ?? null, provisions, supportingExplanation,
+            date, now, this.justiceCatalog,
+          );
+          responseData.proposal = proposal;
+          messageText = "Legislative proposal created.";
+          break;
+        }
+        case "submit_proposal": {
+          const proposalId = requiredString("proposal_id", data.proposal_id);
+          const proposal = submitProposal(this.store.state, proposalId, characterId, date, now);
+          responseData.proposal = proposal;
+          messageText = "Proposal submitted for review.";
+          break;
+        }
+        case "file_case": {
+          const category = requiredString("category", data.category) as CaseCategoryId;
+          const courtId = requiredString("court_id", data.court_id);
+          const respondentId = optionalString("respondent_character_id", data.respondent_character_id);
+          const summary = requiredString("summary", data.summary, 3000);
+          const description = optionalString("description", data.description, 5000) ?? "";
+          const relevantLawIds = Array.isArray(data.relevant_law_ids) ? data.relevant_law_ids.map(String) : [];
+          const relevantEventDate = optionalString("relevant_event_date", data.relevant_event_date);
+          const caseRec = fileCase(
+            this.store.state, category, courtId, characterId, respondentId,
+            summary, description, relevantLawIds, relevantEventDate, date, now, this.justiceCatalog,
+          );
+          responseData.case = getCase(this.store.state, caseRec.case_id);
+          messageText = "Case filed successfully.";
+          break;
+        }
+        case "my_cases": {
+          responseData.cases = getCharacterCases(this.store.state, characterId);
+          messageText = "Your cases loaded.";
+          break;
+        }
+        case "view_case": {
+          const caseId = requiredString("case_id", data.case_id);
+          const caseSnap = getCase(this.store.state, caseId);
+          if (!caseSnap) throw new Error("justice_case_not_found");
+          responseData.case = caseSnap;
+          messageText = "Case loaded.";
+          break;
+        }
+        case "submit_evidence": {
+          const caseId = requiredString("case_id", data.case_id);
+          const category = requiredString("category", data.category);
+          const description = requiredString("description", data.description, 2000);
+          const sourceRef = optionalString("source_reference", data.source_reference);
+          const evidence = submitEvidence(this.store.state, caseId, category, description, characterId, sourceRef, date, now, this.justiceCatalog);
+          responseData.evidence = evidence;
+          messageText = "Evidence submitted.";
+          break;
+        }
+        case "issue_judgment": {
+          const caseId = requiredString("case_id", data.case_id);
+          const outcome = requiredString("outcome", data.outcome) as JudgmentOutcomeId;
+          const findings = requiredString("findings", data.findings, 2000);
+          const reasoning = requiredString("reasoning", data.reasoning, 5000);
+          const remedies = Array.isArray(data.remedies) ? data.remedies.map((r) => {
+            const rr = r as Record<string, unknown>;
+            const rem: { type: string; description: string; amount_ngn?: number; duration_days?: number } = { type: String(rr.type ?? ""), description: String(rr.description ?? "") };
+            if (rr.amount_ngn !== undefined && rr.amount_ngn !== null) rem.amount_ngn = Number(rr.amount_ngn);
+            if (rr.duration_days !== undefined && rr.duration_days !== null) rem.duration_days = Number(rr.duration_days);
+            return rem;
+          }) : [];
+          const appealEligible = data.appeal_eligible !== false;
+          const judgment = issueJudgment(this.store.state, caseId, characterId, outcome, findings, reasoning, remedies, appealEligible, date, now, this.justiceCatalog);
+          responseData.judgment = judgment;
+          messageText = "Judgment issued.";
+          break;
+        }
+        case "file_appeal": {
+          const caseId = requiredString("case_id", data.case_id);
+          const judgmentId = requiredString("judgment_id", data.judgment_id);
+          const grounds = requiredString("grounds", data.grounds, 3000);
+          const appellateCourtId = requiredString("appellate_court_id", data.appellate_court_id);
+          const appeal = fileAppeal(this.store.state, caseId, judgmentId, characterId, grounds, appellateCourtId, date, now, this.justiceCatalog);
+          responseData.appeal = appeal;
+          messageText = "Appeal filed.";
+          break;
+        }
+        case "decide_appeal": {
+          const appealId = requiredString("appeal_id", data.appeal_id);
+          const outcome = requiredString("outcome", data.outcome) as AppealOutcomeId;
+          const reasoning = requiredString("reasoning", data.reasoning, 3000);
+          const appeal = decideAppeal(this.store.state, appealId, outcome, reasoning, characterId, date, now);
+          responseData.appeal = appeal;
+          messageText = "Appeal decided.";
+          break;
+        }
+        case "pay_fine": {
+          const fineId = requiredString("fine_id", data.fine_id);
+          const amountNgn = Number(data.amount_ngn);
+          const transactionId = requiredString("transaction_id", data.transaction_id);
+          const fine = payFine(this.store.state, fineId, amountNgn, transactionId, date, now);
+          responseData.fine = fine;
+          messageText = "Fine payment recorded.";
+          break;
+        }
+        case "my_fines": {
+          responseData.fines = getCharacterFines(this.store.state, characterId);
+          messageText = "Your fines loaded.";
+          break;
+        }
+        case "legal_profile": {
+          const profile = getLegalProfile(this.store.state, characterId);
+          responseData.profile = profile;
+          messageText = "Legal profile loaded.";
+          break;
+        }
+        default:
+          throw new Error("justice_action_unknown");
+      }
+    } catch (error) {
+      const code = this.errorCode(error);
+      this.send(context, appendOptionalRequestId({
+        type: "justice.error",
+        action,
+        code,
+        message: justiceErrorMessage(code),
+      }, requestId));
+      return;
+    }
+
+    this.markRequestProcessed(player, requestId);
+    if (!["search_laws", "active_laws", "list_courts", "view_court", "my_cases", "view_case", "my_fines", "legal_profile"].includes(action)) this.touchPlayer(player);
+    this.send(context, appendOptionalRequestId({
+      type: "justice.result", action, ok: true, message: messageText, data: responseData,
+    }, requestId));
+    this.sendCharacterSnapshot(context);
+    await this.flushDirty();
+  }
+
   private programSeatCount(programId: string): number {
     if (!programId) return 0;
     const occupied = new Set<string>();
@@ -2869,6 +3104,7 @@ export class MultiplayerWorld {
     try { snapshot.rental_agreements = getCharacterRentals(this.store.state, player.character.character_id); } catch { snapshot.rental_agreements = []; }
     try { snapshot.government_appointments = getCharacterAppointments(this.store.state, player.character.character_id); } catch { snapshot.government_appointments = []; }
     try { const pp = getPoliticalProfile(this.store.state, player.character.character_id); if (pp) snapshot.political_profile = pp; } catch { /* ignore */ }
+    try { const lp = getLegalProfile(this.store.state, player.character.character_id); if (lp) snapshot.legal_profile = lp; } catch { /* ignore */ }
     return snapshot;
   }
 

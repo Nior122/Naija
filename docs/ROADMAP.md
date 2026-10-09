@@ -1,6 +1,6 @@
 # Master Roadmap
 
-The roadmap describes intended development, not completed features. Stage 0 is complete. Stages 1–7 remain in place; Godot runtime verification is still pending. Stages 4–11 have backend/persistence/multiplayer checks passing, while their Godot client verification remains blocked. Stage 11 is implementation-present and backend-tested; Stage 12 — Laws, Courts and Justice System is next. See `DEVELOPMENT_STATUS.md` for exact results and limits.
+The roadmap describes intended development, not completed features. Stage 0 is complete. Stages 1–7 remain in place; Godot runtime verification is still pending. Stages 4–12 have backend/persistence/multiplayer checks passing, while their Godot client verification remains blocked. Stage 12 is implementation-present and backend-tested; Stage 13 — Police and Security is next. See `DEVELOPMENT_STATUS.md` for exact results and limits.
 
 | Phase | Name | Purpose | Status |
 |---:|---|---|---|
@@ -16,7 +16,7 @@ The roadmap describes intended development, not completed features. Stage 0 is c
 | 9 | Housing & Property | Add homes, rentals, ownership, construction, property records, and housing markets. | **Implementation present; backend verified; Godot runtime verification pending** |
 | 10 | Government | Model local, state, and federal institutions, agencies, budgets, public services, and office holders. | **Implementation present; backend verified; Godot runtime verification pending** |
 | 11 | Elections & Politics | Add parties, candidates, campaigns, voting, election integrity, offices, and terms of government. | **Implementation present; backend verified; Godot runtime verification pending** |
-| 12 | Laws, Courts & Justice | Establish versioned laws, legal procedure, courts, cases, judges, lawyers, judgments, and appeals. | Not started |
+| 12 | Laws, Courts & Justice | Establish versioned laws, legal procedure, courts, cases, judges, lawyers, judgments, and appeals. | **Implementation present; backend verified; Godot runtime verification pending** |
 | 13 | Police & Security | Add accountable policing, reports, investigations, evidence, and safeguards around sensitive systems. | Not started |
 | 14 | Military | Model the armed forces and their lawful institutional roles at an appropriate level of abstraction. | Not started |
 | 15 | Crime & Consequences | Add risk, reports, investigations, adjudication, penalties, rehabilitation, and prevention without rewarding real-world harm. | Not started |
@@ -46,7 +46,7 @@ The implementation is in place across `game/data/education/catalog.json`, the of
 
 The prior Stage 4 verification reported 26 Node tests, including eight focused education tests for enrollment/progression, attendance/grades/results, final exam outcomes/persistence, tertiary and ND/HND pathways, training/apprenticeship, scholarships/history, geography, online schoolyard co-presence, attendance replication and save/restart. The current full suite has since grown to 48 Node tests and continues to cover those regressions. Geography reproducibility and GDScript formatting pass. Static GDScript lint has structural findings. **Godot 4.7.2 is unavailable**, so Stage 4 project import, offline/client UI/save journeys and Godot multiplayer/runtime regressions remain unverified. See `DEVELOPMENT_STATUS.md` and `EDUCATION_PLAN.md` for the remaining client gate. Stage 5 implementation has been added without replacing or declaring these Godot checks successful; the Stage 4 client limitation remains open.
 
-Next roadmap line: **Stage 12 — Laws, Courts and Justice System**. Stage 11 extends the same world with configurable political parties, elections, candidates, campaigns, voting, results, and government-office transfer; it does not remove the pending Stage 5–11 Godot client verification gate.
+Next roadmap line: **Stage 13 — Police and Security System**. Stage 12 extends the same world with configurable versioned laws, court hierarchy, legislative proposals, legal professional appointments, case management, judgments, fines, and appeals; it does not remove the pending Stage 5–12 Godot client verification gate.
 
 ## Stage 5 exit gate
 

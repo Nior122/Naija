@@ -414,33 +414,26 @@ test("syncCharacterCashFromEconomy updates character money from cash account", (
   assert.equal(player.character.money, 25000);
 });
 
-test("schema version 7 state migrates to version 8 with empty election maps", async () => {
+test("schema version 8 state migrates to version 9 with empty justice maps", async () => {
   const { serverPort, stateFile } = await startServer();
   const { peer, ready } = await createOnlinePeer(serverPort);
   await peer.close();
   const saved = JSON.parse(await readFile(stateFile, "utf8"));
-  assert.equal(saved.schemaVersion, 8);
+  assert.equal(saved.schemaVersion, 9);
   // Simulate a v6 state by removing government fields
-  saved.schemaVersion = 7;
-  delete saved.politicalParties;
-  delete saved.partyMemberships;
-  delete saved.politicalProfiles;
-  delete saved.elections;
-  delete saved.candidates;
-  delete saved.campaigns;
-  delete saved.campaignEvents;
-  delete saved.campaignFinances;
-  delete saved.debates;
-  delete saved.ballots;
-  delete saved.voterParticipation;
-  delete saved.electionDisputes;
-  delete saved.electionAudits;
+  saved.schemaVersion = 8;
+  delete saved.laws; delete saved.lawProvisions; delete saved.legislativeProposals;
+  delete saved.courts; delete saved.legalProfessionals; delete saved.legalRepresentations;
+  delete saved.cases; delete saved.caseParticipants; delete saved.evidence;
+  delete saved.witnesses; delete saved.hearings; delete saved.judgments;
+  delete saved.sentences; delete saved.fines; delete saved.settlements;
+  delete saved.appeals; delete saved.legalAudits;
   await writeFile(stateFile, JSON.stringify(saved), "utf8");
   const migrated = new WorldStore(stateFile, Date.UTC(2025, 0, 2));
-  assert.equal(migrated.state.schemaVersion, 8);
-  assert.ok(typeof migrated.state.politicalParties === "object");
-  assert.ok(typeof migrated.state.elections === "object");
-  assert.ok(typeof migrated.state.ballots === "object");
+  assert.equal(migrated.state.schemaVersion, 9);
+  assert.ok(typeof migrated.state.laws === "object");
+  assert.ok(typeof migrated.state.courts === "object");
+  assert.ok(typeof migrated.state.cases === "object");
   const characterId = ready.character.character_id;
   const creditScore = migrated.state.economyCreditScores[characterId];
   assert.ok(creditScore);

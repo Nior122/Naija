@@ -4,7 +4,7 @@
 
 ## Current stage and verification gate
 
-**Stage 11 — Elections and Politics: backend implementation and Node tests pass; elections integrate with Stage 6 (careers) for character identity, Stage 7 (economy) for campaign finance, and Stage 10 (government) for office transfer; Godot client/runtime verification is blocked.** Stages 0–10 remain preserved on the same `nigeria-main` world. The server still owns one shared online timeline. The earlier Stage 5 Godot limitation is still open; Stages 6–11 do not resolve it.
+**Stage 12 — Laws, Courts and Justice: backend implementation and Node tests pass; justice integrates with Stage 10 (government) for legislative authority and jurisdiction, Stage 11 (elections) for political profiles, and Stage 7 (economy) for fine enforcement; Godot client/runtime verification is blocked.** Stages 0–11 remain preserved on the same `nigeria-main` world. The server still owns one shared online timeline. The earlier Stage 5 Godot limitation is still open; Stages 6–12 do not resolve it.
 
 Godot 4.7.2 is not installed (`godot: command not found`). Project import, engine type-checking, scenes, rendered careers UI, clicks through work/application flows, offline client journeys, and Godot multiplayer/reconnect/save runtime behavior have not been run. Do not infer client success from Node tests or gdtoolkit.
 
@@ -177,6 +177,58 @@ The Godot client path has not been engine-tested in this workspace. See [`docs/G
 
 The Godot client path has not been engine-tested in this workspace. See [`docs/ELECTIONS_AND_POLITICS_PLAN.md`](ELECTIONS_AND_POLITICS_PLAN.md) for full catalogue, contract, persistence, and scope details.
 
+## Stage 12 implementation
+
+### Legal framework and courts
+
+- `game/data/justice/catalog.json` configures 14 law categories, 8 court levels, 11 case categories, 7 legal professional roles, 11 law statuses, 16 case statuses, 8 judgment outcomes, 6 sentence types, 5 appeal outcomes, and 5 seed laws with provisions.
+- 7 seed courts (Supreme Court, Court of Appeal, Federal High Court, National Industrial Court, FCT Magistrate Court, FCT High Court, FCT Customary Court) with jurisdiction-based case assignment.
+- Laws are versioned, with amendment tracking and status lifecycle management.
+- Legislative proposals flow through draft → submitted → approved/rejected, with approved proposals creating new laws automatically.
+
+### Case management and judicial workflow
+
+- Civil and criminal cases with validated status transitions (draft → submitted → accepted → ... → judgment_issued → eligible_for_appeal → closed).
+- Court jurisdiction validation — cases must be filed in a court that handles the case category.
+- Evidence submission and admissibility management with version preservation.
+- Hearing scheduling by assigned judges.
+- Judicial decisions with outcomes, reasoning, remedies, and appeal eligibility.
+- Appeals with appellate court validation (Court of Appeal or Supreme Court).
+
+### Fines and economy integration
+
+- Fine creation with idempotency (linked to case, judgment, sentence, and character).
+- Payment tracking with partial/full payment, duplicate transaction prevention.
+- Integration with Stage 7 economy transaction references.
+
+### Schema and client integration
+
+`services/world-api/src/justice/` contains typed catalogue validation and server rules. `services/world-api/src/multiplayer/persistence.ts` validates/migrates schema version 9 and stores all justice records. `services/world-api/src/multiplayer/world-engine.ts` integrates `justice.action` commands with 16 actions and legal profiles in character snapshots.
+
+The Godot client path has not been engine-tested in this workspace. See [`docs/LAWS_COURTS_AND_JUSTICE_PLAN.md`](LAWS_COURTS_AND_JUSTICE_PLAN.md) for full catalogue, contract, persistence, and scope details.
+
+## Stage 12 acceptance coverage
+
+| Area | Evidence | Result |
+|---|---|---|
+| Catalogue bounds, law categories, court levels, case categories | `services/world-api/test/justice.test.mjs` | **Passed (Node)** |
+| Seed laws, provisions, and courts | Justice service tests | **Passed (Node)** |
+| Law creation and status transitions | Justice service tests | **Passed (Node)** |
+| Law amendment with version tracking | Justice service tests | **Passed (Node)** |
+| Law search and filtering | Justice service tests | **Passed (Node)** |
+| Legislative proposal lifecycle | Justice service tests | **Passed (Node)** |
+| Court listing and details | Justice service tests | **Passed (Node)** |
+| Case filing and jurisdiction validation | Justice service tests | **Passed (Node)** |
+| Case status transitions | Justice service tests | **Passed (Node)** |
+| Evidence submission | Justice service tests | **Passed (Node)** |
+| Judgment issuance | Justice service tests | **Passed (Node)** |
+| Fine creation, payment, and idempotency | Justice service tests | **Passed (Node)** |
+| Appeal filing and decision | Justice service tests | **Passed (Node)** |
+| WebSocket search_laws, list_courts | WebSocket test | **Passed (Node)** |
+| WebSocket legal_profile, my_cases | WebSocket test | **Passed (Node)** |
+| Schema-v8 to v9 migration preserving all records | Persistence test | **Passed (Node)** |
+| Godot project import, engine typing, client justice UI | Godot unavailable | **Blocked / not run** |
+
 ## Stage 11 acceptance coverage
 
 | Area | Evidence | Result |
@@ -345,6 +397,6 @@ When Godot 4.7.2 is available, run the import check and retained client tests in
 3. The current online JSON store is single-process, atomically replaced and limited to 16 MiB; it has no database transaction isolation, multi-writer coordination, backups, or production recovery.
 4. Career employers, salaries, leave, licences, and eligibility rules are fictional configurable fixtures, not official Nigerian economic/legal data. No real employer identity, role authorization, job marketplace, professional credentialing, or labor-law system is implemented.
 5. Stage 7 replaces the Stage 6 prototype salary adapter with the canonical Naira ledger. Tax estimation is display-only; no automatic tax deduction, inter-player transfers, businesses, property, or estate wage settlement are implemented.
-6. Godot 4.7.2 client/runtime verification for Stages 1–11 remains blocked. Node tests and gdformat do not substitute for engine/runtime checks.
+6. Godot 4.7.2 client/runtime verification for Stages 1–12 remains blocked. Node tests and gdformat do not substitute for engine/runtime checks.
 7. Preserve Stage 5 life status and age as the sole authority for death and retirement; do not enable work or future wages for deceased characters.
 8. **Next planned stage: Stage 10 — Government System.** Keep it inside the same world and use Stage 9 for government property and public facilities.
