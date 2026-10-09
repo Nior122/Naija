@@ -1,0 +1,3416 @@
+{
+  "schema_version": 1,
+  "world_id": "nigeria-main",
+  "notice": "Fictional Stage 6 prototype catalogue. Employer fixtures and pay are game data, not real vacancies, salary advice, professional accreditation, legal policy or a production economy.",
+  "rules": {
+    "application_review_days": 1,
+    "minimum_working_age": 16,
+    "maximum_search_results": 50,
+    "maximum_applications_per_character": 100,
+    "maximum_sessions_per_employment": 400,
+    "maximum_history_records_per_character": 200,
+    "maximum_leave_days": 14,
+    "minimum_terminal_age_from_life_catalog": true,
+    "maximum_salary_monthly_ngn": 5000000,
+    "minimum_payable_balance_ngn": 0,
+    "maximum_payable_balance_ngn": 9000000000000,
+    "review_after_completed_sessions": 5,
+    "performance_history_window": 20,
+    "npc_occupation_job_ids": [
+      "community-market-sales-assistant",
+      "farm-support-worker"
+    ]
+  },
+  "industries": [
+    {
+      "id": "health-care",
+      "label": "Health & Care",
+      "code": "A"
+    },
+    {
+      "id": "education-research",
+      "label": "Education & Research",
+      "code": "B"
+    },
+    {
+      "id": "technology-digital",
+      "label": "Technology & Digital Work",
+      "code": "C"
+    },
+    {
+      "id": "trades-crafts",
+      "label": "Trades & Skilled Crafts",
+      "code": "D"
+    },
+    {
+      "id": "business-accounting",
+      "label": "Business & Accounting",
+      "code": "E"
+    },
+    {
+      "id": "legal-judiciary",
+      "label": "Legal & Judiciary",
+      "code": "F"
+    },
+    {
+      "id": "government-civil-service",
+      "label": "Government & Civil Service",
+      "code": "G"
+    },
+    {
+      "id": "public-safety-security",
+      "label": "Public Safety & Security",
+      "code": "H"
+    },
+    {
+      "id": "agriculture-food-systems",
+      "label": "Agriculture & Food Systems",
+      "code": "I"
+    },
+    {
+      "id": "creative-media",
+      "label": "Creative & Media Work",
+      "code": "J"
+    },
+    {
+      "id": "transport-infrastructure",
+      "label": "Transport & Infrastructure",
+      "code": "K"
+    },
+    {
+      "id": "self-employment",
+      "label": "Self-employment & Freelance Work",
+      "code": "L"
+    }
+  ],
+  "skills": [
+    {
+      "id": "skill:communication",
+      "name": "Communication",
+      "category": "foundational"
+    },
+    {
+      "id": "skill:numeracy",
+      "name": "Numeracy",
+      "category": "foundational"
+    },
+    {
+      "id": "skill:digital-literacy",
+      "name": "Digital literacy",
+      "category": "digital"
+    },
+    {
+      "id": "skill:customer-service",
+      "name": "Customer service",
+      "category": "business"
+    },
+    {
+      "id": "skill:records-management",
+      "name": "Records management",
+      "category": "business"
+    },
+    {
+      "id": "skill:teaching",
+      "name": "Teaching practice",
+      "category": "education"
+    },
+    {
+      "id": "skill:software-development",
+      "name": "Software development",
+      "category": "digital"
+    },
+    {
+      "id": "skill:data-analysis",
+      "name": "Data analysis",
+      "category": "digital"
+    },
+    {
+      "id": "skill:network-support",
+      "name": "Network support",
+      "category": "digital"
+    },
+    {
+      "id": "skill:business-operations",
+      "name": "Business operations",
+      "category": "business"
+    },
+    {
+      "id": "skill:leadership",
+      "name": "Leadership",
+      "category": "business"
+    },
+    {
+      "id": "skill:legal-research",
+      "name": "Legal research",
+      "category": "professional"
+    },
+    {
+      "id": "skill:public-administration",
+      "name": "Public administration",
+      "category": "public-service"
+    },
+    {
+      "id": "skill:agriculture",
+      "name": "Agriculture",
+      "category": "agriculture"
+    },
+    {
+      "id": "skill:journalism",
+      "name": "Journalism",
+      "category": "creative"
+    },
+    {
+      "id": "skill:photography",
+      "name": "Photography",
+      "category": "creative"
+    },
+    {
+      "id": "skill:graphics-design",
+      "name": "Graphics and design",
+      "category": "creative"
+    },
+    {
+      "id": "skill:writing",
+      "name": "Writing",
+      "category": "creative"
+    },
+    {
+      "id": "skill:catering",
+      "name": "Catering",
+      "category": "trades"
+    },
+    {
+      "id": "skill:tailoring",
+      "name": "Tailoring",
+      "category": "trades"
+    },
+    {
+      "id": "skill:welding",
+      "name": "Welding",
+      "category": "trades"
+    },
+    {
+      "id": "skill:electrical-work",
+      "name": "Electrical work",
+      "category": "trades"
+    },
+    {
+      "id": "skill:carpentry",
+      "name": "Carpentry",
+      "category": "trades"
+    },
+    {
+      "id": "skill:mechanic-work",
+      "name": "Mechanic work",
+      "category": "trades"
+    },
+    {
+      "id": "skill:plumbing",
+      "name": "Plumbing",
+      "category": "trades"
+    },
+    {
+      "id": "skill:farming",
+      "name": "Farming",
+      "category": "agriculture"
+    },
+    {
+      "id": "skill:logistics",
+      "name": "Logistics",
+      "category": "transport"
+    },
+    {
+      "id": "skill:care-support",
+      "name": "Care support",
+      "category": "health-care"
+    }
+  ],
+  "work_schedules": [
+    {
+      "id": "office-day",
+      "label": "Weekday office shift",
+      "working_weekdays": [
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday"
+      ],
+      "start_minute": 540,
+      "end_minute": 1020,
+      "scheduled_work_minutes": 420,
+      "minimum_session_minutes": 60,
+      "clock_in_grace_minutes": 45,
+      "weekly_hours": 35
+    },
+    {
+      "id": "retail-weekend",
+      "label": "Weekend market shift",
+      "working_weekdays": [
+        "Saturday",
+        "Sunday"
+      ],
+      "start_minute": 600,
+      "end_minute": 960,
+      "scheduled_work_minutes": 300,
+      "minimum_session_minutes": 60,
+      "clock_in_grace_minutes": 30,
+      "weekly_hours": 10
+    },
+    {
+      "id": "part-time-weekend",
+      "label": "Part-time weekend shift",
+      "working_weekdays": [
+        "Saturday",
+        "Sunday"
+      ],
+      "start_minute": 600,
+      "end_minute": 900,
+      "scheduled_work_minutes": 240,
+      "minimum_session_minutes": 60,
+      "clock_in_grace_minutes": 30,
+      "weekly_hours": 8
+    },
+    {
+      "id": "agriculture-morning",
+      "label": "Morning agricultural shift",
+      "working_weekdays": [
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday"
+      ],
+      "start_minute": 360,
+      "end_minute": 720,
+      "scheduled_work_minutes": 300,
+      "minimum_session_minutes": 60,
+      "clock_in_grace_minutes": 30,
+      "weekly_hours": 25
+    },
+    {
+      "id": "evening-shift",
+      "label": "Evening shift",
+      "working_weekdays": [
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday"
+      ],
+      "start_minute": 840,
+      "end_minute": 1260,
+      "scheduled_work_minutes": 360,
+      "minimum_session_minutes": 60,
+      "clock_in_grace_minutes": 30,
+      "weekly_hours": 30
+    },
+    {
+      "id": "flexible-day",
+      "label": "Flexible daytime work",
+      "working_weekdays": [
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday"
+      ],
+      "start_minute": 480,
+      "end_minute": 1080,
+      "scheduled_work_minutes": 360,
+      "minimum_session_minutes": 60,
+      "clock_in_grace_minutes": 120,
+      "weekly_hours": 35,
+      "flexible": true
+    }
+  ],
+  "jobs": [
+    {
+      "id": "clinic-records-assistant",
+      "title": "Clinic Records Assistant",
+      "industry_id": "health-care",
+      "track_id": "clinic-administration",
+      "career_level": 1,
+      "description": "Maintains fictional clinic appointments and non-clinical records.",
+      "duties": "Maintains fictional clinic appointments and non-clinical records.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 35,
+      "minimum_education": "none",
+      "required_qualifications": [],
+      "required_qualification_groups": [],
+      "required_licenses": [],
+      "required_skills": [
+        {
+          "skill_id": "skill:records-management",
+          "minimum_level": 1
+        }
+      ],
+      "career_links": [
+        "future:health-administration"
+      ],
+      "regulated": false,
+      "allow_retired": false,
+      "future_stage_only": false,
+      "employment_types": [
+        "full_time"
+      ],
+      "default_employment_type": "full_time",
+      "schedule_id": "office-day",
+      "salary_range_monthly_ngn": {
+        "minimum": 84000,
+        "maximum": 132000
+      },
+      "work_skill_id": "skill:records-management",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 0,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    },
+    {
+      "id": "community-health-worker",
+      "title": "Community Health Worker",
+      "industry_id": "health-care",
+      "track_id": "community-health",
+      "career_level": 1,
+      "description": "Supports supervised community outreach after the configured game certificate.",
+      "duties": "Supports supervised community outreach after the configured game certificate.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 35,
+      "minimum_education": "vocational",
+      "required_qualifications": [
+        "qualification:prototype-community-health-certificate"
+      ],
+      "required_qualification_groups": [],
+      "required_licenses": [
+        "license:prototype-community-health"
+      ],
+      "required_skills": [
+        {
+          "skill_id": "skill:care-support",
+          "minimum_level": 1
+        }
+      ],
+      "career_links": [
+        "future:community-health"
+      ],
+      "regulated": true,
+      "allow_retired": false,
+      "future_stage_only": false,
+      "employment_types": [
+        "full_time"
+      ],
+      "default_employment_type": "full_time",
+      "schedule_id": "office-day",
+      "salary_range_monthly_ngn": {
+        "minimum": 116000,
+        "maximum": 182000
+      },
+      "work_skill_id": "skill:care-support",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 0,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    },
+    {
+      "id": "registered-nurse",
+      "title": "Registered Nurse",
+      "industry_id": "health-care",
+      "track_id": "nursing",
+      "career_level": 2,
+      "description": "Provides nursing care only with the configured game qualification and registration.",
+      "duties": "Provides nursing care only with the configured game qualification and registration.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 30,
+      "minimum_education": "tertiary",
+      "required_qualifications": [
+        "qualification:prototype-nursing-degree"
+      ],
+      "required_qualification_groups": [],
+      "required_licenses": [
+        "license:prototype-nursing-registration"
+      ],
+      "required_skills": [],
+      "career_links": [
+        "future:nursing"
+      ],
+      "regulated": true,
+      "allow_retired": false,
+      "future_stage_only": false,
+      "employment_types": [
+        "shift"
+      ],
+      "default_employment_type": "shift",
+      "schedule_id": "evening-shift",
+      "salary_range_monthly_ngn": {
+        "minimum": 256000,
+        "maximum": 400000
+      },
+      "work_skill_id": "skill:care-support",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 0,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    },
+    {
+      "id": "medical-doctor",
+      "title": "Medical Doctor",
+      "industry_id": "health-care",
+      "track_id": "medicine",
+      "career_level": 3,
+      "description": "Provides medical care only with the configured game degree and practice registration.",
+      "duties": "Provides medical care only with the configured game degree and practice registration.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 30,
+      "minimum_education": "tertiary",
+      "required_qualifications": [
+        "qualification:prototype-medical-degree"
+      ],
+      "required_qualification_groups": [],
+      "required_licenses": [
+        "license:prototype-medical-registration"
+      ],
+      "required_skills": [],
+      "career_links": [
+        "future:medicine"
+      ],
+      "regulated": true,
+      "allow_retired": false,
+      "future_stage_only": false,
+      "employment_types": [
+        "shift"
+      ],
+      "default_employment_type": "shift",
+      "schedule_id": "evening-shift",
+      "salary_range_monthly_ngn": {
+        "minimum": 520000,
+        "maximum": 813000
+      },
+      "work_skill_id": "skill:care-support",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 0,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    },
+    {
+      "id": "pharmacist",
+      "title": "Pharmacist",
+      "industry_id": "health-care",
+      "track_id": "pharmacy",
+      "career_level": 3,
+      "description": "Dispenses and advises only with the configured game pharmacy credential and registration.",
+      "duties": "Dispenses and advises only with the configured game pharmacy credential and registration.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 35,
+      "minimum_education": "tertiary",
+      "required_qualifications": [
+        "qualification:prototype-pharmacy-degree"
+      ],
+      "required_qualification_groups": [],
+      "required_licenses": [
+        "license:prototype-pharmacy-registration"
+      ],
+      "required_skills": [],
+      "career_links": [
+        "future:pharmacy"
+      ],
+      "regulated": true,
+      "allow_retired": false,
+      "future_stage_only": false,
+      "employment_types": [
+        "full_time"
+      ],
+      "default_employment_type": "full_time",
+      "schedule_id": "office-day",
+      "salary_range_monthly_ngn": {
+        "minimum": 336000,
+        "maximum": 525000
+      },
+      "work_skill_id": "skill:records-management",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 0,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    },
+    {
+      "id": "medical-laboratory-scientist",
+      "title": "Medical Laboratory Scientist",
+      "industry_id": "health-care",
+      "track_id": "laboratory-science",
+      "career_level": 3,
+      "description": "Performs laboratory work only with the configured game science credential and registration.",
+      "duties": "Performs laboratory work only with the configured game science credential and registration.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 35,
+      "minimum_education": "tertiary",
+      "required_qualifications": [
+        "qualification:prototype-medical-laboratory-degree"
+      ],
+      "required_qualification_groups": [],
+      "required_licenses": [
+        "license:prototype-laboratory-registration"
+      ],
+      "required_skills": [],
+      "career_links": [
+        "future:medical-laboratory"
+      ],
+      "regulated": true,
+      "allow_retired": false,
+      "future_stage_only": false,
+      "employment_types": [
+        "full_time"
+      ],
+      "default_employment_type": "full_time",
+      "schedule_id": "office-day",
+      "salary_range_monthly_ngn": {
+        "minimum": 304000,
+        "maximum": 475000
+      },
+      "work_skill_id": "skill:records-management",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 0,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    },
+    {
+      "id": "teaching-assistant",
+      "title": "Teaching Assistant",
+      "industry_id": "education-research",
+      "track_id": "school-education",
+      "career_level": 1,
+      "description": "Helps prepare classroom materials and support supervised learning activities.",
+      "duties": "Helps prepare classroom materials and support supervised learning activities.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 35,
+      "minimum_education": "secondary",
+      "required_qualifications": [],
+      "required_qualification_groups": [],
+      "required_licenses": [],
+      "required_skills": [
+        {
+          "skill_id": "skill:communication",
+          "minimum_level": 1
+        }
+      ],
+      "career_links": [
+        "future:teaching"
+      ],
+      "regulated": false,
+      "allow_retired": false,
+      "future_stage_only": false,
+      "employment_types": [
+        "full_time"
+      ],
+      "default_employment_type": "full_time",
+      "schedule_id": "office-day",
+      "salary_range_monthly_ngn": {
+        "minimum": 96000,
+        "maximum": 150000
+      },
+      "work_skill_id": "skill:teaching",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 0,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    },
+    {
+      "id": "class-teacher",
+      "title": "Class Teacher",
+      "industry_id": "education-research",
+      "track_id": "school-education",
+      "career_level": 2,
+      "description": "Plans fictional lessons after an education award and the prototype teaching registration.",
+      "duties": "Plans fictional lessons after an education award and the prototype teaching registration.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 35,
+      "minimum_education": "tertiary",
+      "required_qualifications": [],
+      "required_qualification_groups": [
+        [
+          "qualification:ice-primary-education-nce",
+          "qualification:imu-education-bsc"
+        ]
+      ],
+      "required_licenses": [
+        "license:prototype-teaching-registration"
+      ],
+      "required_skills": [
+        {
+          "skill_id": "skill:teaching",
+          "minimum_level": 2
+        }
+      ],
+      "career_links": [
+        "future:teaching"
+      ],
+      "regulated": true,
+      "allow_retired": false,
+      "future_stage_only": false,
+      "employment_types": [
+        "full_time"
+      ],
+      "default_employment_type": "full_time",
+      "schedule_id": "office-day",
+      "salary_range_monthly_ngn": {
+        "minimum": 184000,
+        "maximum": 288000
+      },
+      "work_skill_id": "skill:teaching",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 0,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    },
+    {
+      "id": "university-lecturer",
+      "title": "University Lecturer",
+      "industry_id": "education-research",
+      "track_id": "tertiary-education",
+      "career_level": 3,
+      "description": "Teaches and supervises study after the configured advanced teaching credential.",
+      "duties": "Teaches and supervises study after the configured advanced teaching credential.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 35,
+      "minimum_education": "tertiary",
+      "required_qualifications": [
+        "qualification:prototype-postgraduate-education"
+      ],
+      "required_qualification_groups": [],
+      "required_licenses": [
+        "license:prototype-teaching-registration"
+      ],
+      "required_skills": [
+        {
+          "skill_id": "skill:teaching",
+          "minimum_level": 3
+        }
+      ],
+      "career_links": [
+        "future:teaching"
+      ],
+      "regulated": true,
+      "allow_retired": false,
+      "future_stage_only": false,
+      "employment_types": [
+        "full_time"
+      ],
+      "default_employment_type": "full_time",
+      "schedule_id": "office-day",
+      "salary_range_monthly_ngn": {
+        "minimum": 336000,
+        "maximum": 525000
+      },
+      "work_skill_id": "skill:teaching",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 0,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    },
+    {
+      "id": "research-assistant",
+      "title": "Research Assistant",
+      "industry_id": "education-research",
+      "track_id": "research",
+      "career_level": 1,
+      "description": "Supports fictional education and community research under supervision.",
+      "duties": "Supports fictional education and community research under supervision.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 35,
+      "minimum_education": "tertiary",
+      "required_qualifications": [],
+      "required_qualification_groups": [
+        [
+          "qualification:imu-computer-science-bsc",
+          "qualification:imu-accounting-bsc",
+          "qualification:imu-education-bsc",
+          "qualification:ice-primary-education-nce"
+        ]
+      ],
+      "required_licenses": [],
+      "required_skills": [
+        {
+          "skill_id": "skill:records-management",
+          "minimum_level": 1
+        }
+      ],
+      "career_links": [
+        "future:research"
+      ],
+      "regulated": false,
+      "allow_retired": false,
+      "future_stage_only": false,
+      "employment_types": [
+        "full_time"
+      ],
+      "default_employment_type": "full_time",
+      "schedule_id": "office-day",
+      "salary_range_monthly_ngn": {
+        "minimum": 124000,
+        "maximum": 194000
+      },
+      "work_skill_id": "skill:records-management",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 0,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    },
+    {
+      "id": "computer-lab-assistant",
+      "title": "Computer Lab Assistant",
+      "industry_id": "technology-digital",
+      "track_id": "digital-support",
+      "career_level": 1,
+      "description": "Maintains learning-room devices and helps users with routine setup.",
+      "duties": "Maintains learning-room devices and helps users with routine setup.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 35,
+      "minimum_education": "none",
+      "required_qualifications": [],
+      "required_qualification_groups": [],
+      "required_licenses": [],
+      "required_skills": [
+        {
+          "skill_id": "skill:digital-literacy",
+          "minimum_level": 1
+        }
+      ],
+      "career_links": [
+        "future:computer-technician"
+      ],
+      "regulated": false,
+      "allow_retired": false,
+      "future_stage_only": false,
+      "employment_types": [
+        "full_time"
+      ],
+      "default_employment_type": "full_time",
+      "schedule_id": "office-day",
+      "salary_range_monthly_ngn": {
+        "minimum": 104000,
+        "maximum": 163000
+      },
+      "work_skill_id": "skill:network-support",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 0,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    },
+    {
+      "id": "junior-software-developer",
+      "title": "Junior Software Developer",
+      "industry_id": "technology-digital",
+      "track_id": "software-development",
+      "career_level": 1,
+      "description": "Builds small software features with review and documented tests.",
+      "duties": "Builds small software features with review and documented tests.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 35,
+      "minimum_education": "tertiary",
+      "required_qualifications": [],
+      "required_qualification_groups": [
+        [
+          "qualification:imu-computer-science-bsc",
+          "qualification:itp-computer-engineering-hnd"
+        ]
+      ],
+      "required_licenses": [],
+      "required_skills": [
+        {
+          "skill_id": "skill:digital-literacy",
+          "minimum_level": 2
+        }
+      ],
+      "career_links": [
+        "future:software-development"
+      ],
+      "regulated": false,
+      "allow_retired": false,
+      "future_stage_only": false,
+      "employment_types": [
+        "full_time"
+      ],
+      "default_employment_type": "full_time",
+      "schedule_id": "office-day",
+      "salary_range_monthly_ngn": {
+        "minimum": 192000,
+        "maximum": 300000
+      },
+      "work_skill_id": "skill:software-development",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 0,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    },
+    {
+      "id": "software-engineer",
+      "title": "Software Engineer",
+      "industry_id": "technology-digital",
+      "track_id": "software-development",
+      "career_level": 2,
+      "description": "Designs and maintains software components with a team.",
+      "duties": "Designs and maintains software components with a team.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 35,
+      "minimum_education": "tertiary",
+      "required_qualifications": [
+        "qualification:imu-computer-science-bsc"
+      ],
+      "required_qualification_groups": [],
+      "required_licenses": [],
+      "required_skills": [
+        {
+          "skill_id": "skill:software-development",
+          "minimum_level": 2
+        }
+      ],
+      "career_links": [
+        "future:software-development"
+      ],
+      "regulated": false,
+      "allow_retired": false,
+      "future_stage_only": false,
+      "employment_types": [
+        "full_time"
+      ],
+      "default_employment_type": "full_time",
+      "schedule_id": "office-day",
+      "salary_range_monthly_ngn": {
+        "minimum": 312000,
+        "maximum": 488000
+      },
+      "work_skill_id": "skill:software-development",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 8,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    },
+    {
+      "id": "data-analyst",
+      "title": "Data Analyst",
+      "industry_id": "technology-digital",
+      "track_id": "data",
+      "career_level": 1,
+      "description": "Prepares and explains synthetic data reports using validated methods.",
+      "duties": "Prepares and explains synthetic data reports using validated methods.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 35,
+      "minimum_education": "tertiary",
+      "required_qualifications": [],
+      "required_qualification_groups": [
+        [
+          "qualification:imu-computer-science-bsc",
+          "qualification:imu-accounting-bsc"
+        ]
+      ],
+      "required_licenses": [],
+      "required_skills": [
+        {
+          "skill_id": "skill:numeracy",
+          "minimum_level": 2
+        },
+        {
+          "skill_id": "skill:data-analysis",
+          "minimum_level": 1
+        }
+      ],
+      "career_links": [
+        "future:systems-analysis"
+      ],
+      "regulated": false,
+      "allow_retired": false,
+      "future_stage_only": false,
+      "employment_types": [
+        "full_time"
+      ],
+      "default_employment_type": "full_time",
+      "schedule_id": "office-day",
+      "salary_range_monthly_ngn": {
+        "minimum": 208000,
+        "maximum": 325000
+      },
+      "work_skill_id": "skill:data-analysis",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 0,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    },
+    {
+      "id": "network-administrator",
+      "title": "Network Administrator",
+      "industry_id": "technology-digital",
+      "track_id": "networking",
+      "career_level": 2,
+      "description": "Maintains a fictional workplace network and documents routine changes.",
+      "duties": "Maintains a fictional workplace network and documents routine changes.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 35,
+      "minimum_education": "tertiary",
+      "required_qualifications": [],
+      "required_qualification_groups": [
+        [
+          "qualification:imu-computer-science-bsc",
+          "qualification:itp-computer-engineering-hnd"
+        ]
+      ],
+      "required_licenses": [],
+      "required_skills": [
+        {
+          "skill_id": "skill:network-support",
+          "minimum_level": 2
+        }
+      ],
+      "career_links": [
+        "future:computer-technician"
+      ],
+      "regulated": false,
+      "allow_retired": false,
+      "future_stage_only": false,
+      "employment_types": [
+        "full_time"
+      ],
+      "default_employment_type": "full_time",
+      "schedule_id": "office-day",
+      "salary_range_monthly_ngn": {
+        "minimum": 240000,
+        "maximum": 375000
+      },
+      "work_skill_id": "skill:network-support",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 0,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    },
+    {
+      "id": "cybersecurity-analyst",
+      "title": "Cybersecurity Analyst",
+      "industry_id": "technology-digital",
+      "track_id": "security-technology",
+      "career_level": 2,
+      "description": "Reviews fictional system alerts and follows safe access-control procedures.",
+      "duties": "Reviews fictional system alerts and follows safe access-control procedures.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 35,
+      "minimum_education": "tertiary",
+      "required_qualifications": [
+        "qualification:prototype-cybersecurity-diploma"
+      ],
+      "required_qualification_groups": [],
+      "required_licenses": [],
+      "required_skills": [
+        {
+          "skill_id": "skill:digital-literacy",
+          "minimum_level": 3
+        }
+      ],
+      "career_links": [
+        "future:cybersecurity"
+      ],
+      "regulated": false,
+      "allow_retired": false,
+      "future_stage_only": false,
+      "employment_types": [
+        "full_time"
+      ],
+      "default_employment_type": "full_time",
+      "schedule_id": "office-day",
+      "salary_range_monthly_ngn": {
+        "minimum": 288000,
+        "maximum": 450000
+      },
+      "work_skill_id": "skill:network-support",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 0,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    },
+    {
+      "id": "community-market-sales-assistant",
+      "title": "Community Market Sales Assistant",
+      "industry_id": "trades-crafts",
+      "track_id": "retail-and-craft",
+      "career_level": 1,
+      "description": "Helps a local market stall with customer service and routine stock notes; no hazardous duties.",
+      "duties": "Helps a local market stall with customer service and routine stock notes; no hazardous duties.",
+      "minimum_age": 16,
+      "maximum_weekly_hours": 10,
+      "minimum_education": "none",
+      "required_qualifications": [],
+      "required_qualification_groups": [],
+      "required_licenses": [],
+      "required_skills": [],
+      "career_links": [
+        "future:retail"
+      ],
+      "regulated": false,
+      "allow_retired": false,
+      "future_stage_only": false,
+      "employment_types": [
+        "part_time"
+      ],
+      "default_employment_type": "part_time",
+      "schedule_id": "retail-weekend",
+      "salary_range_monthly_ngn": {
+        "minimum": 52000,
+        "maximum": 82000
+      },
+      "work_skill_id": "skill:customer-service",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 0,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": true
+    },
+    {
+      "id": "tailoring-assistant",
+      "title": "Tailoring Assistant",
+      "industry_id": "trades-crafts",
+      "track_id": "garment-work",
+      "career_level": 1,
+      "description": "Performs supervised garment repair after demonstrating basic tailoring skill.",
+      "duties": "Performs supervised garment repair after demonstrating basic tailoring skill.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 35,
+      "minimum_education": "vocational",
+      "required_qualifications": [],
+      "required_qualification_groups": [
+        [
+          "qualification:trade-tailoring"
+        ]
+      ],
+      "required_licenses": [],
+      "required_skills": [
+        {
+          "skill_id": "skill:tailoring",
+          "minimum_level": 1
+        }
+      ],
+      "career_links": [
+        "future:tailoring"
+      ],
+      "regulated": false,
+      "allow_retired": false,
+      "future_stage_only": false,
+      "employment_types": [
+        "full_time",
+        "apprenticeship"
+      ],
+      "default_employment_type": "full_time",
+      "schedule_id": "office-day",
+      "salary_range_monthly_ngn": {
+        "minimum": 92000,
+        "maximum": 144000
+      },
+      "work_skill_id": "skill:tailoring",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 0,
+      "promotion_to": "tailor-technician",
+      "minimum_sessions_to_promote": 8,
+      "minimum_performance_to_promote": 75,
+      "npc_assignable": false
+    },
+    {
+      "id": "tailor-technician",
+      "title": "Tailor Technician",
+      "industry_id": "trades-crafts",
+      "track_id": "garment-work",
+      "career_level": 2,
+      "description": "Completes more complex garment work and mentors trainees.",
+      "duties": "Completes more complex garment work and mentors trainees.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 35,
+      "minimum_education": "vocational",
+      "required_qualifications": [],
+      "required_qualification_groups": [
+        [
+          "qualification:trade-tailoring"
+        ]
+      ],
+      "required_licenses": [],
+      "required_skills": [
+        {
+          "skill_id": "skill:tailoring",
+          "minimum_level": 2
+        }
+      ],
+      "career_links": [
+        "future:tailoring"
+      ],
+      "regulated": false,
+      "allow_retired": false,
+      "future_stage_only": false,
+      "employment_types": [
+        "full_time"
+      ],
+      "default_employment_type": "full_time",
+      "schedule_id": "office-day",
+      "salary_range_monthly_ngn": {
+        "minimum": 148000,
+        "maximum": 232000
+      },
+      "work_skill_id": "skill:tailoring",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 8,
+      "promotion_to": "senior-tailor-technician",
+      "minimum_sessions_to_promote": 8,
+      "minimum_performance_to_promote": 75,
+      "npc_assignable": false
+    },
+    {
+      "id": "senior-tailor-technician",
+      "title": "Senior Tailor Technician",
+      "industry_id": "trades-crafts",
+      "track_id": "garment-work",
+      "career_level": 3,
+      "description": "Coordinates garment-repair work and quality review.",
+      "duties": "Coordinates garment-repair work and quality review.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 35,
+      "minimum_education": "vocational",
+      "required_qualifications": [],
+      "required_qualification_groups": [
+        [
+          "qualification:trade-tailoring"
+        ]
+      ],
+      "required_licenses": [],
+      "required_skills": [
+        {
+          "skill_id": "skill:tailoring",
+          "minimum_level": 3
+        }
+      ],
+      "career_links": [
+        "future:tailoring"
+      ],
+      "regulated": false,
+      "allow_retired": false,
+      "future_stage_only": false,
+      "employment_types": [
+        "full_time"
+      ],
+      "default_employment_type": "full_time",
+      "schedule_id": "office-day",
+      "salary_range_monthly_ngn": {
+        "minimum": 204000,
+        "maximum": 319000
+      },
+      "work_skill_id": "skill:tailoring",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 18,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    },
+    {
+      "id": "welder",
+      "title": "Welder",
+      "industry_id": "trades-crafts",
+      "track_id": "metalwork",
+      "career_level": 1,
+      "description": "Performs configured workshop welding tasks after the required practical training.",
+      "duties": "Performs configured workshop welding tasks after the required practical training.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 35,
+      "minimum_education": "vocational",
+      "required_qualifications": [],
+      "required_qualification_groups": [
+        [
+          "qualification:trade-welding"
+        ]
+      ],
+      "required_licenses": [],
+      "required_skills": [
+        {
+          "skill_id": "skill:welding",
+          "minimum_level": 1
+        }
+      ],
+      "career_links": [
+        "future:welding"
+      ],
+      "regulated": false,
+      "allow_retired": false,
+      "future_stage_only": false,
+      "employment_types": [
+        "full_time",
+        "contract"
+      ],
+      "default_employment_type": "full_time",
+      "schedule_id": "office-day",
+      "salary_range_monthly_ngn": {
+        "minimum": 128000,
+        "maximum": 200000
+      },
+      "work_skill_id": "skill:welding",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 0,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    },
+    {
+      "id": "licensed-electrician",
+      "title": "Licensed Electrical Installer",
+      "industry_id": "trades-crafts",
+      "track_id": "electrical-work",
+      "career_level": 2,
+      "description": "Carries out electrical installation work only with the configured game qualification and permit.",
+      "duties": "Carries out electrical installation work only with the configured game qualification and permit.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 35,
+      "minimum_education": "vocational",
+      "required_qualifications": [
+        "qualification:trade-electrical"
+      ],
+      "required_qualification_groups": [],
+      "required_licenses": [
+        "license:prototype-electrical-installer"
+      ],
+      "required_skills": [
+        {
+          "skill_id": "skill:electrical-work",
+          "minimum_level": 2
+        }
+      ],
+      "career_links": [
+        "future:electrical-technician"
+      ],
+      "regulated": true,
+      "allow_retired": false,
+      "future_stage_only": false,
+      "employment_types": [
+        "contract",
+        "full_time"
+      ],
+      "default_employment_type": "contract",
+      "schedule_id": "office-day",
+      "salary_range_monthly_ngn": {
+        "minimum": 192000,
+        "maximum": 300000
+      },
+      "work_skill_id": "skill:electrical-work",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 0,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    },
+    {
+      "id": "motor-mechanic",
+      "title": "Motor Mechanic",
+      "industry_id": "trades-crafts",
+      "track_id": "vehicle-repair",
+      "career_level": 1,
+      "description": "Inspects and repairs vehicles in the fictional workshop setting.",
+      "duties": "Inspects and repairs vehicles in the fictional workshop setting.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 35,
+      "minimum_education": "vocational",
+      "required_qualifications": [],
+      "required_qualification_groups": [
+        [
+          "qualification:trade-mechanics"
+        ]
+      ],
+      "required_licenses": [],
+      "required_skills": [
+        {
+          "skill_id": "skill:mechanic-work",
+          "minimum_level": 1
+        }
+      ],
+      "career_links": [
+        "future:mechanic"
+      ],
+      "regulated": false,
+      "allow_retired": false,
+      "future_stage_only": false,
+      "employment_types": [
+        "full_time",
+        "contract"
+      ],
+      "default_employment_type": "full_time",
+      "schedule_id": "office-day",
+      "salary_range_monthly_ngn": {
+        "minimum": 140000,
+        "maximum": 219000
+      },
+      "work_skill_id": "skill:mechanic-work",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 0,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    },
+    {
+      "id": "carpenter",
+      "title": "Carpenter",
+      "industry_id": "trades-crafts",
+      "track_id": "woodwork",
+      "career_level": 1,
+      "description": "Builds and repairs basic wooden fittings after supervised training.",
+      "duties": "Builds and repairs basic wooden fittings after supervised training.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 35,
+      "minimum_education": "vocational",
+      "required_qualifications": [],
+      "required_qualification_groups": [
+        [
+          "qualification:trade-carpentry"
+        ]
+      ],
+      "required_licenses": [],
+      "required_skills": [
+        {
+          "skill_id": "skill:carpentry",
+          "minimum_level": 1
+        }
+      ],
+      "career_links": [
+        "future:carpentry"
+      ],
+      "regulated": false,
+      "allow_retired": false,
+      "future_stage_only": false,
+      "employment_types": [
+        "contract",
+        "full_time"
+      ],
+      "default_employment_type": "contract",
+      "schedule_id": "office-day",
+      "salary_range_monthly_ngn": {
+        "minimum": 132000,
+        "maximum": 207000
+      },
+      "work_skill_id": "skill:carpentry",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 0,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    },
+    {
+      "id": "plumber",
+      "title": "Plumber",
+      "industry_id": "trades-crafts",
+      "track_id": "plumbing",
+      "career_level": 1,
+      "description": "Installs and repairs basic water fittings after practical training.",
+      "duties": "Installs and repairs basic water fittings after practical training.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 35,
+      "minimum_education": "vocational",
+      "required_qualifications": [],
+      "required_qualification_groups": [
+        [
+          "qualification:trade-plumbing"
+        ]
+      ],
+      "required_licenses": [],
+      "required_skills": [
+        {
+          "skill_id": "skill:plumbing",
+          "minimum_level": 1
+        }
+      ],
+      "career_links": [
+        "future:plumbing"
+      ],
+      "regulated": false,
+      "allow_retired": false,
+      "future_stage_only": false,
+      "employment_types": [
+        "contract",
+        "full_time"
+      ],
+      "default_employment_type": "contract",
+      "schedule_id": "office-day",
+      "salary_range_monthly_ngn": {
+        "minimum": 136000,
+        "maximum": 213000
+      },
+      "work_skill_id": "skill:plumbing",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 0,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    },
+    {
+      "id": "bookkeeping-clerk",
+      "title": "Bookkeeping Clerk",
+      "industry_id": "business-accounting",
+      "track_id": "accounting",
+      "career_level": 1,
+      "description": "Records routine invoices and reconciles simple fictional business notes.",
+      "duties": "Records routine invoices and reconciles simple fictional business notes.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 35,
+      "minimum_education": "secondary",
+      "required_qualifications": [],
+      "required_qualification_groups": [],
+      "required_licenses": [],
+      "required_skills": [
+        {
+          "skill_id": "skill:numeracy",
+          "minimum_level": 1
+        },
+        {
+          "skill_id": "skill:records-management",
+          "minimum_level": 1
+        }
+      ],
+      "career_links": [
+        "future:accounting"
+      ],
+      "regulated": false,
+      "allow_retired": false,
+      "future_stage_only": false,
+      "employment_types": [
+        "full_time"
+      ],
+      "default_employment_type": "full_time",
+      "schedule_id": "office-day",
+      "salary_range_monthly_ngn": {
+        "minimum": 116000,
+        "maximum": 182000
+      },
+      "work_skill_id": "skill:records-management",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 0,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    },
+    {
+      "id": "accounts-officer",
+      "title": "Accounts Officer",
+      "industry_id": "business-accounting",
+      "track_id": "accounting",
+      "career_level": 2,
+      "description": "Prepares internal account schedules after the configured accounting award.",
+      "duties": "Prepares internal account schedules after the configured accounting award.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 35,
+      "minimum_education": "tertiary",
+      "required_qualifications": [
+        "qualification:imu-accounting-bsc"
+      ],
+      "required_qualification_groups": [],
+      "required_licenses": [],
+      "required_skills": [
+        {
+          "skill_id": "skill:numeracy",
+          "minimum_level": 2
+        }
+      ],
+      "career_links": [
+        "future:accounting"
+      ],
+      "regulated": false,
+      "allow_retired": false,
+      "future_stage_only": false,
+      "employment_types": [
+        "full_time"
+      ],
+      "default_employment_type": "full_time",
+      "schedule_id": "office-day",
+      "salary_range_monthly_ngn": {
+        "minimum": 216000,
+        "maximum": 338000
+      },
+      "work_skill_id": "skill:numeracy",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 0,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    },
+    {
+      "id": "chartered-accountant",
+      "title": "Chartered Accountant",
+      "industry_id": "business-accounting",
+      "track_id": "accounting",
+      "career_level": 3,
+      "description": "Provides chartered accounting services only with the configured game professional credential.",
+      "duties": "Provides chartered accounting services only with the configured game professional credential.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 35,
+      "minimum_education": "tertiary",
+      "required_qualifications": [
+        "qualification:imu-accounting-bsc",
+        "qualification:prototype-chartered-accounting"
+      ],
+      "required_qualification_groups": [],
+      "required_licenses": [
+        "license:prototype-chartered-accounting"
+      ],
+      "required_skills": [
+        {
+          "skill_id": "skill:numeracy",
+          "minimum_level": 3
+        }
+      ],
+      "career_links": [
+        "future:accounting"
+      ],
+      "regulated": true,
+      "allow_retired": false,
+      "future_stage_only": false,
+      "employment_types": [
+        "full_time"
+      ],
+      "default_employment_type": "full_time",
+      "schedule_id": "office-day",
+      "salary_range_monthly_ngn": {
+        "minimum": 376000,
+        "maximum": 588000
+      },
+      "work_skill_id": "skill:numeracy",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 0,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    },
+    {
+      "id": "business-analyst",
+      "title": "Business Analyst",
+      "industry_id": "business-accounting",
+      "track_id": "business-analysis",
+      "career_level": 2,
+      "description": "Reviews fictional operating data and documents process improvements.",
+      "duties": "Reviews fictional operating data and documents process improvements.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 35,
+      "minimum_education": "tertiary",
+      "required_qualifications": [],
+      "required_qualification_groups": [
+        [
+          "qualification:imu-accounting-bsc",
+          "qualification:imu-computer-science-bsc"
+        ]
+      ],
+      "required_licenses": [],
+      "required_skills": [
+        {
+          "skill_id": "skill:data-analysis",
+          "minimum_level": 1
+        },
+        {
+          "skill_id": "skill:business-operations",
+          "minimum_level": 1
+        }
+      ],
+      "career_links": [
+        "future:business-analysis"
+      ],
+      "regulated": false,
+      "allow_retired": false,
+      "future_stage_only": false,
+      "employment_types": [
+        "full_time"
+      ],
+      "default_employment_type": "full_time",
+      "schedule_id": "office-day",
+      "salary_range_monthly_ngn": {
+        "minimum": 256000,
+        "maximum": 400000
+      },
+      "work_skill_id": "skill:business-operations",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 0,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    },
+    {
+      "id": "retail-shift-supervisor",
+      "title": "Retail Shift Supervisor",
+      "industry_id": "business-accounting",
+      "track_id": "retail-and-craft",
+      "career_level": 2,
+      "description": "Coordinates a small retail shift and supports safe customer service.",
+      "duties": "Coordinates a small retail shift and supports safe customer service.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 10,
+      "minimum_education": "none",
+      "required_qualifications": [],
+      "required_qualification_groups": [],
+      "required_licenses": [],
+      "required_skills": [
+        {
+          "skill_id": "skill:customer-service",
+          "minimum_level": 2
+        }
+      ],
+      "career_links": [
+        "future:retail"
+      ],
+      "regulated": false,
+      "allow_retired": false,
+      "future_stage_only": false,
+      "employment_types": [
+        "part_time"
+      ],
+      "default_employment_type": "part_time",
+      "schedule_id": "retail-weekend",
+      "salary_range_monthly_ngn": {
+        "minimum": 116000,
+        "maximum": 182000
+      },
+      "work_skill_id": "skill:leadership",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 8,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    },
+    {
+      "id": "operations-manager",
+      "title": "Operations Manager",
+      "industry_id": "business-accounting",
+      "track_id": "business-operations",
+      "career_level": 3,
+      "description": "Coordinates a fictional workplace's daily processes and staff handover.",
+      "duties": "Coordinates a fictional workplace's daily processes and staff handover.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 35,
+      "minimum_education": "tertiary",
+      "required_qualifications": [],
+      "required_qualification_groups": [],
+      "required_licenses": [],
+      "required_skills": [
+        {
+          "skill_id": "skill:business-operations",
+          "minimum_level": 3
+        },
+        {
+          "skill_id": "skill:leadership",
+          "minimum_level": 2
+        }
+      ],
+      "career_links": [
+        "future:business-management"
+      ],
+      "regulated": false,
+      "allow_retired": false,
+      "future_stage_only": false,
+      "employment_types": [
+        "full_time"
+      ],
+      "default_employment_type": "full_time",
+      "schedule_id": "office-day",
+      "salary_range_monthly_ngn": {
+        "minimum": 416000,
+        "maximum": 650000
+      },
+      "work_skill_id": "skill:leadership",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 18,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    },
+    {
+      "id": "legal-records-clerk",
+      "title": "Legal Records Clerk",
+      "industry_id": "legal-judiciary",
+      "track_id": "legal-support",
+      "career_level": 1,
+      "description": "Organizes fictional case-file records under supervision; offers no legal advice.",
+      "duties": "Organizes fictional case-file records under supervision; offers no legal advice.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 35,
+      "minimum_education": "secondary",
+      "required_qualifications": [],
+      "required_qualification_groups": [],
+      "required_licenses": [],
+      "required_skills": [
+        {
+          "skill_id": "skill:records-management",
+          "minimum_level": 1
+        }
+      ],
+      "career_links": [
+        "future:legal-support"
+      ],
+      "regulated": false,
+      "allow_retired": false,
+      "future_stage_only": false,
+      "employment_types": [
+        "full_time"
+      ],
+      "default_employment_type": "full_time",
+      "schedule_id": "office-day",
+      "salary_range_monthly_ngn": {
+        "minimum": 112000,
+        "maximum": 175000
+      },
+      "work_skill_id": "skill:records-management",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 0,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    },
+    {
+      "id": "paralegal-assistant",
+      "title": "Paralegal Assistant",
+      "industry_id": "legal-judiciary",
+      "track_id": "legal-support",
+      "career_level": 1,
+      "description": "Supports legal administration after the configured fictional paralegal course.",
+      "duties": "Supports legal administration after the configured fictional paralegal course.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 35,
+      "minimum_education": "vocational",
+      "required_qualifications": [
+        "qualification:prototype-paralegal-certificate"
+      ],
+      "required_qualification_groups": [],
+      "required_licenses": [],
+      "required_skills": [
+        {
+          "skill_id": "skill:legal-research",
+          "minimum_level": 1
+        }
+      ],
+      "career_links": [
+        "future:legal-support"
+      ],
+      "regulated": false,
+      "allow_retired": false,
+      "future_stage_only": false,
+      "employment_types": [
+        "full_time"
+      ],
+      "default_employment_type": "full_time",
+      "schedule_id": "office-day",
+      "salary_range_monthly_ngn": {
+        "minimum": 152000,
+        "maximum": 238000
+      },
+      "work_skill_id": "skill:legal-research",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 0,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    },
+    {
+      "id": "legal-practitioner",
+      "title": "Legal Practitioner",
+      "industry_id": "legal-judiciary",
+      "track_id": "legal-practice",
+      "career_level": 3,
+      "description": "Provides legal services only with the configured game law degree and practice permit.",
+      "duties": "Provides legal services only with the configured game law degree and practice permit.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 35,
+      "minimum_education": "tertiary",
+      "required_qualifications": [
+        "qualification:prototype-law-degree"
+      ],
+      "required_qualification_groups": [],
+      "required_licenses": [
+        "license:prototype-legal-practice"
+      ],
+      "required_skills": [
+        {
+          "skill_id": "skill:legal-research",
+          "minimum_level": 3
+        }
+      ],
+      "career_links": [
+        "future:legal-practice"
+      ],
+      "regulated": true,
+      "allow_retired": false,
+      "future_stage_only": false,
+      "employment_types": [
+        "full_time"
+      ],
+      "default_employment_type": "full_time",
+      "schedule_id": "office-day",
+      "salary_range_monthly_ngn": {
+        "minimum": 360000,
+        "maximum": 563000
+      },
+      "work_skill_id": "skill:legal-research",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 0,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    },
+    {
+      "id": "judge",
+      "title": "Judge",
+      "industry_id": "legal-judiciary",
+      "track_id": "judiciary",
+      "career_level": 4,
+      "description": "Judicial office is a catalog placeholder pending the later justice stage.",
+      "duties": "Judicial office is a catalog placeholder pending the later justice stage.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 35,
+      "minimum_education": "tertiary",
+      "required_qualifications": [
+        "qualification:prototype-law-degree"
+      ],
+      "required_qualification_groups": [],
+      "required_licenses": [
+        "license:prototype-judicial-appointment"
+      ],
+      "required_skills": [],
+      "career_links": [
+        "future:judiciary"
+      ],
+      "regulated": true,
+      "allow_retired": false,
+      "future_stage_only": true,
+      "employment_types": [
+        "full_time"
+      ],
+      "default_employment_type": "full_time",
+      "schedule_id": "office-day",
+      "salary_range_monthly_ngn": {
+        "minimum": 640000,
+        "maximum": 1000000
+      },
+      "work_skill_id": "skill:legal-research",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 0,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    },
+    {
+      "id": "public-office-assistant",
+      "title": "Public Office Assistant",
+      "industry_id": "government-civil-service",
+      "track_id": "public-administration",
+      "career_level": 1,
+      "description": "Supports public-facing records and scheduled community service appointments.",
+      "duties": "Supports public-facing records and scheduled community service appointments.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 35,
+      "minimum_education": "secondary",
+      "required_qualifications": [],
+      "required_qualification_groups": [],
+      "required_licenses": [],
+      "required_skills": [
+        {
+          "skill_id": "skill:communication",
+          "minimum_level": 1
+        }
+      ],
+      "career_links": [
+        "future:public-administration"
+      ],
+      "regulated": false,
+      "allow_retired": false,
+      "future_stage_only": false,
+      "employment_types": [
+        "full_time"
+      ],
+      "default_employment_type": "full_time",
+      "schedule_id": "office-day",
+      "salary_range_monthly_ngn": {
+        "minimum": 120000,
+        "maximum": 188000
+      },
+      "work_skill_id": "skill:public-administration",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 0,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    },
+    {
+      "id": "civil-service-officer",
+      "title": "Civil Service Officer",
+      "industry_id": "government-civil-service",
+      "track_id": "civil-service",
+      "career_level": 2,
+      "description": "Processes fictional administrative work under an established review procedure.",
+      "duties": "Processes fictional administrative work under an established review procedure.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 35,
+      "minimum_education": "tertiary",
+      "required_qualifications": [],
+      "required_qualification_groups": [
+        [
+          "qualification:imu-accounting-bsc",
+          "qualification:imu-education-bsc",
+          "qualification:imu-computer-science-bsc"
+        ]
+      ],
+      "required_licenses": [],
+      "required_skills": [
+        {
+          "skill_id": "skill:public-administration",
+          "minimum_level": 1
+        }
+      ],
+      "career_links": [
+        "future:civil-service"
+      ],
+      "regulated": false,
+      "allow_retired": false,
+      "future_stage_only": false,
+      "employment_types": [
+        "full_time"
+      ],
+      "default_employment_type": "full_time",
+      "schedule_id": "office-day",
+      "salary_range_monthly_ngn": {
+        "minimum": 200000,
+        "maximum": 313000
+      },
+      "work_skill_id": "skill:public-administration",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 0,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    },
+    {
+      "id": "policy-analyst",
+      "title": "Policy Analyst",
+      "industry_id": "government-civil-service",
+      "track_id": "policy",
+      "career_level": 3,
+      "description": "Prepares fictional policy notes and public-service analysis.",
+      "duties": "Prepares fictional policy notes and public-service analysis.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 35,
+      "minimum_education": "tertiary",
+      "required_qualifications": [],
+      "required_qualification_groups": [
+        [
+          "qualification:imu-accounting-bsc",
+          "qualification:imu-education-bsc",
+          "qualification:imu-computer-science-bsc"
+        ]
+      ],
+      "required_licenses": [],
+      "required_skills": [
+        {
+          "skill_id": "skill:public-administration",
+          "minimum_level": 2
+        },
+        {
+          "skill_id": "skill:writing",
+          "minimum_level": 1
+        }
+      ],
+      "career_links": [
+        "future:policy"
+      ],
+      "regulated": false,
+      "allow_retired": false,
+      "future_stage_only": false,
+      "employment_types": [
+        "full_time"
+      ],
+      "default_employment_type": "full_time",
+      "schedule_id": "office-day",
+      "salary_range_monthly_ngn": {
+        "minimum": 320000,
+        "maximum": 500000
+      },
+      "work_skill_id": "skill:public-administration",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 0,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    },
+    {
+      "id": "community-programme-officer",
+      "title": "Community Programme Officer",
+      "industry_id": "government-civil-service",
+      "track_id": "community-programmes",
+      "career_level": 1,
+      "description": "Coordinates a fictional community-programme schedule and attendance records.",
+      "duties": "Coordinates a fictional community-programme schedule and attendance records.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 35,
+      "minimum_education": "secondary",
+      "required_qualifications": [],
+      "required_qualification_groups": [],
+      "required_licenses": [],
+      "required_skills": [
+        {
+          "skill_id": "skill:communication",
+          "minimum_level": 1
+        }
+      ],
+      "career_links": [
+        "future:community-programmes"
+      ],
+      "regulated": false,
+      "allow_retired": false,
+      "future_stage_only": false,
+      "employment_types": [
+        "full_time"
+      ],
+      "default_employment_type": "full_time",
+      "schedule_id": "office-day",
+      "salary_range_monthly_ngn": {
+        "minimum": 148000,
+        "maximum": 232000
+      },
+      "work_skill_id": "skill:public-administration",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 0,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    },
+    {
+      "id": "elected-public-official",
+      "title": "Elected Public Official",
+      "industry_id": "government-civil-service",
+      "track_id": "public-office",
+      "career_level": 4,
+      "description": "Elections, office-holding, public budgets and political authority are reserved for later stages.",
+      "duties": "Elections, office-holding, public budgets and political authority are reserved for later stages.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 35,
+      "minimum_education": "tertiary",
+      "required_qualifications": [],
+      "required_qualification_groups": [],
+      "required_licenses": [],
+      "required_skills": [],
+      "career_links": [
+        "future:elections"
+      ],
+      "regulated": false,
+      "allow_retired": false,
+      "future_stage_only": true,
+      "employment_types": [
+        "full_time"
+      ],
+      "default_employment_type": "full_time",
+      "schedule_id": "office-day",
+      "salary_range_monthly_ngn": {
+        "minimum": 10000,
+        "maximum": 10000
+      },
+      "work_skill_id": "skill:public-administration",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 0,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    },
+    {
+      "id": "venue-safety-steward",
+      "title": "Community Venue Safety Steward",
+      "industry_id": "public-safety-security",
+      "track_id": "venue-safety",
+      "career_level": 1,
+      "description": "Helps visitors find exits and reports hazards; has no police powers.",
+      "duties": "Helps visitors find exits and reports hazards; has no police powers.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 30,
+      "minimum_education": "none",
+      "required_qualifications": [],
+      "required_qualification_groups": [],
+      "required_licenses": [],
+      "required_skills": [
+        {
+          "skill_id": "skill:communication",
+          "minimum_level": 1
+        }
+      ],
+      "career_links": [
+        "future:venue-safety"
+      ],
+      "regulated": false,
+      "allow_retired": false,
+      "future_stage_only": false,
+      "employment_types": [
+        "shift"
+      ],
+      "default_employment_type": "shift",
+      "schedule_id": "evening-shift",
+      "salary_range_monthly_ngn": {
+        "minimum": 92000,
+        "maximum": 144000
+      },
+      "work_skill_id": "skill:communication",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 0,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    },
+    {
+      "id": "security-officer",
+      "title": "Security Officer",
+      "industry_id": "public-safety-security",
+      "track_id": "security",
+      "career_level": 2,
+      "description": "Private security employment requires the configured prototype training record.",
+      "duties": "Private security employment requires the configured prototype training record.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 30,
+      "minimum_education": "secondary",
+      "required_qualifications": [
+        "qualification:prototype-security-training"
+      ],
+      "required_qualification_groups": [],
+      "required_licenses": [],
+      "required_skills": [],
+      "career_links": [
+        "future:security"
+      ],
+      "regulated": false,
+      "allow_retired": false,
+      "future_stage_only": false,
+      "employment_types": [
+        "shift"
+      ],
+      "default_employment_type": "shift",
+      "schedule_id": "evening-shift",
+      "salary_range_monthly_ngn": {
+        "minimum": 144000,
+        "maximum": 225000
+      },
+      "work_skill_id": "skill:communication",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 0,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    },
+    {
+      "id": "police-officer",
+      "title": "Police Officer",
+      "industry_id": "public-safety-security",
+      "track_id": "policing",
+      "career_level": 3,
+      "description": "Police recruitment, powers, records and accountability are reserved for a later civic-safety stage.",
+      "duties": "Police recruitment, powers, records and accountability are reserved for a later civic-safety stage.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 35,
+      "minimum_education": "tertiary",
+      "required_qualifications": [
+        "qualification:prototype-police-recruitment"
+      ],
+      "required_qualification_groups": [],
+      "required_licenses": [
+        "license:prototype-police-appointment"
+      ],
+      "required_skills": [],
+      "career_links": [
+        "future:policing"
+      ],
+      "regulated": true,
+      "allow_retired": false,
+      "future_stage_only": true,
+      "employment_types": [
+        "full_time"
+      ],
+      "default_employment_type": "full_time",
+      "schedule_id": "office-day",
+      "salary_range_monthly_ngn": {
+        "minimum": 10000,
+        "maximum": 10000
+      },
+      "work_skill_id": "skill:public-administration",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 0,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    },
+    {
+      "id": "military-service-member",
+      "title": "Military Service Member",
+      "industry_id": "public-safety-security",
+      "track_id": "military",
+      "career_level": 3,
+      "description": "Military recruitment, command and operational activity are reserved for a later stage.",
+      "duties": "Military recruitment, command and operational activity are reserved for a later stage.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 35,
+      "minimum_education": "tertiary",
+      "required_qualifications": [
+        "qualification:prototype-military-recruitment"
+      ],
+      "required_qualification_groups": [],
+      "required_licenses": [
+        "license:prototype-military-appointment"
+      ],
+      "required_skills": [],
+      "career_links": [
+        "future:military"
+      ],
+      "regulated": true,
+      "allow_retired": false,
+      "future_stage_only": true,
+      "employment_types": [
+        "full_time"
+      ],
+      "default_employment_type": "full_time",
+      "schedule_id": "office-day",
+      "salary_range_monthly_ngn": {
+        "minimum": 10000,
+        "maximum": 10000
+      },
+      "work_skill_id": "skill:public-administration",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 0,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    },
+    {
+      "id": "farm-support-worker",
+      "title": "Farm Support Worker",
+      "industry_id": "agriculture-food-systems",
+      "track_id": "farm-operations",
+      "career_level": 1,
+      "description": "Supports non-hazardous crop care and simple record keeping at a fictional community farm.",
+      "duties": "Supports non-hazardous crop care and simple record keeping at a fictional community farm.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 25,
+      "minimum_education": "none",
+      "required_qualifications": [],
+      "required_qualification_groups": [],
+      "required_licenses": [],
+      "required_skills": [],
+      "career_links": [
+        "future:farming"
+      ],
+      "regulated": false,
+      "allow_retired": false,
+      "future_stage_only": false,
+      "employment_types": [
+        "part_time",
+        "seasonal"
+      ],
+      "default_employment_type": "part_time",
+      "schedule_id": "agriculture-morning",
+      "salary_range_monthly_ngn": {
+        "minimum": 80000,
+        "maximum": 125000
+      },
+      "work_skill_id": "skill:agriculture",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 0,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": true
+    },
+    {
+      "id": "crop-grower",
+      "title": "Crop Grower",
+      "industry_id": "agriculture-food-systems",
+      "track_id": "crop-production",
+      "career_level": 1,
+      "description": "Plans small-scale crop work using the configured farming skill.",
+      "duties": "Plans small-scale crop work using the configured farming skill.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 25,
+      "minimum_education": "none",
+      "required_qualifications": [],
+      "required_qualification_groups": [],
+      "required_licenses": [],
+      "required_skills": [
+        {
+          "skill_id": "skill:farming",
+          "minimum_level": 1
+        }
+      ],
+      "career_links": [
+        "future:farming"
+      ],
+      "regulated": false,
+      "allow_retired": false,
+      "future_stage_only": false,
+      "employment_types": [
+        "seasonal",
+        "self_employed"
+      ],
+      "default_employment_type": "seasonal",
+      "schedule_id": "agriculture-morning",
+      "salary_range_monthly_ngn": {
+        "minimum": 100000,
+        "maximum": 157000
+      },
+      "work_skill_id": "skill:farming",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 0,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    },
+    {
+      "id": "agricultural-extension-assistant",
+      "title": "Agricultural Extension Assistant",
+      "industry_id": "agriculture-food-systems",
+      "track_id": "extension",
+      "career_level": 2,
+      "description": "Supports farmer training after the configured game agriculture diploma.",
+      "duties": "Supports farmer training after the configured game agriculture diploma.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 35,
+      "minimum_education": "tertiary",
+      "required_qualifications": [
+        "qualification:prototype-agriculture-diploma"
+      ],
+      "required_qualification_groups": [],
+      "required_licenses": [],
+      "required_skills": [
+        {
+          "skill_id": "skill:agriculture",
+          "minimum_level": 1
+        }
+      ],
+      "career_links": [
+        "future:agricultural-extension"
+      ],
+      "regulated": false,
+      "allow_retired": false,
+      "future_stage_only": false,
+      "employment_types": [
+        "full_time"
+      ],
+      "default_employment_type": "full_time",
+      "schedule_id": "office-day",
+      "salary_range_monthly_ngn": {
+        "minimum": 176000,
+        "maximum": 275000
+      },
+      "work_skill_id": "skill:agriculture",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 0,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    },
+    {
+      "id": "agronomist",
+      "title": "Agronomist",
+      "industry_id": "agriculture-food-systems",
+      "track_id": "agronomy",
+      "career_level": 3,
+      "description": "Provides specialist crop advice only with the configured game agronomy credential.",
+      "duties": "Provides specialist crop advice only with the configured game agronomy credential.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 35,
+      "minimum_education": "tertiary",
+      "required_qualifications": [
+        "qualification:prototype-agronomy-degree"
+      ],
+      "required_qualification_groups": [],
+      "required_licenses": [
+        "license:prototype-agronomy-practice"
+      ],
+      "required_skills": [
+        {
+          "skill_id": "skill:agriculture",
+          "minimum_level": 3
+        }
+      ],
+      "career_links": [
+        "future:agronomy"
+      ],
+      "regulated": true,
+      "allow_retired": false,
+      "future_stage_only": false,
+      "employment_types": [
+        "full_time"
+      ],
+      "default_employment_type": "full_time",
+      "schedule_id": "office-day",
+      "salary_range_monthly_ngn": {
+        "minimum": 288000,
+        "maximum": 450000
+      },
+      "work_skill_id": "skill:agriculture",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 0,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    },
+    {
+      "id": "creative-production-assistant",
+      "title": "Creative Production Assistant",
+      "industry_id": "creative-media",
+      "track_id": "production",
+      "career_level": 1,
+      "description": "Supports a fictional creative team with safe setup and production notes.",
+      "duties": "Supports a fictional creative team with safe setup and production notes.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 30,
+      "minimum_education": "none",
+      "required_qualifications": [],
+      "required_qualification_groups": [],
+      "required_licenses": [],
+      "required_skills": [
+        {
+          "skill_id": "skill:communication",
+          "minimum_level": 1
+        }
+      ],
+      "career_links": [
+        "future:creative-production"
+      ],
+      "regulated": false,
+      "allow_retired": false,
+      "future_stage_only": false,
+      "employment_types": [
+        "contract",
+        "part_time"
+      ],
+      "default_employment_type": "contract",
+      "schedule_id": "flexible-day",
+      "salary_range_monthly_ngn": {
+        "minimum": 100000,
+        "maximum": 157000
+      },
+      "work_skill_id": "skill:writing",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 0,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    },
+    {
+      "id": "graphic-designer",
+      "title": "Graphic Designer",
+      "industry_id": "creative-media",
+      "track_id": "design",
+      "career_level": 1,
+      "description": "Creates original graphic layouts for fictional clients.",
+      "duties": "Creates original graphic layouts for fictional clients.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 30,
+      "minimum_education": "none",
+      "required_qualifications": [],
+      "required_qualification_groups": [],
+      "required_licenses": [],
+      "required_skills": [
+        {
+          "skill_id": "skill:graphics-design",
+          "minimum_level": 1
+        }
+      ],
+      "career_links": [
+        "future:graphic-design"
+      ],
+      "regulated": false,
+      "allow_retired": false,
+      "future_stage_only": false,
+      "employment_types": [
+        "contract",
+        "freelance"
+      ],
+      "default_employment_type": "contract",
+      "schedule_id": "flexible-day",
+      "salary_range_monthly_ngn": {
+        "minimum": 144000,
+        "maximum": 225000
+      },
+      "work_skill_id": "skill:graphics-design",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 0,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    },
+    {
+      "id": "photographer",
+      "title": "Photographer",
+      "industry_id": "creative-media",
+      "track_id": "photography",
+      "career_level": 1,
+      "description": "Produces original fictional event and community photography.",
+      "duties": "Produces original fictional event and community photography.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 30,
+      "minimum_education": "none",
+      "required_qualifications": [],
+      "required_qualification_groups": [],
+      "required_licenses": [],
+      "required_skills": [
+        {
+          "skill_id": "skill:photography",
+          "minimum_level": 1
+        }
+      ],
+      "career_links": [
+        "future:photography"
+      ],
+      "regulated": false,
+      "allow_retired": false,
+      "future_stage_only": false,
+      "employment_types": [
+        "contract",
+        "freelance"
+      ],
+      "default_employment_type": "contract",
+      "schedule_id": "flexible-day",
+      "salary_range_monthly_ngn": {
+        "minimum": 128000,
+        "maximum": 200000
+      },
+      "work_skill_id": "skill:photography",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 0,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    },
+    {
+      "id": "feature-writer",
+      "title": "Feature Writer",
+      "industry_id": "creative-media",
+      "track_id": "writing",
+      "career_level": 1,
+      "description": "Writes original fictional features and community reports.",
+      "duties": "Writes original fictional features and community reports.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 30,
+      "minimum_education": "secondary",
+      "required_qualifications": [],
+      "required_qualification_groups": [],
+      "required_licenses": [],
+      "required_skills": [
+        {
+          "skill_id": "skill:writing",
+          "minimum_level": 1
+        }
+      ],
+      "career_links": [
+        "future:writing"
+      ],
+      "regulated": false,
+      "allow_retired": false,
+      "future_stage_only": false,
+      "employment_types": [
+        "contract",
+        "freelance"
+      ],
+      "default_employment_type": "contract",
+      "schedule_id": "flexible-day",
+      "salary_range_monthly_ngn": {
+        "minimum": 120000,
+        "maximum": 188000
+      },
+      "work_skill_id": "skill:writing",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 0,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    },
+    {
+      "id": "journalist",
+      "title": "Journalist",
+      "industry_id": "creative-media",
+      "track_id": "journalism",
+      "career_level": 2,
+      "description": "Reports fictional community stories using verified game-world information.",
+      "duties": "Reports fictional community stories using verified game-world information.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 35,
+      "minimum_education": "secondary",
+      "required_qualifications": [],
+      "required_qualification_groups": [],
+      "required_licenses": [],
+      "required_skills": [
+        {
+          "skill_id": "skill:journalism",
+          "minimum_level": 2
+        },
+        {
+          "skill_id": "skill:writing",
+          "minimum_level": 2
+        }
+      ],
+      "career_links": [
+        "future:journalism"
+      ],
+      "regulated": false,
+      "allow_retired": false,
+      "future_stage_only": false,
+      "employment_types": [
+        "contract",
+        "full_time"
+      ],
+      "default_employment_type": "contract",
+      "schedule_id": "flexible-day",
+      "salary_range_monthly_ngn": {
+        "minimum": 192000,
+        "maximum": 300000
+      },
+      "work_skill_id": "skill:journalism",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 0,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    },
+    {
+      "id": "music-producer",
+      "title": "Music Producer",
+      "industry_id": "creative-media",
+      "track_id": "music",
+      "career_level": 2,
+      "description": "Produces original fictional music and coordinates creative sessions.",
+      "duties": "Produces original fictional music and coordinates creative sessions.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 30,
+      "minimum_education": "none",
+      "required_qualifications": [],
+      "required_qualification_groups": [],
+      "required_licenses": [],
+      "required_skills": [
+        {
+          "skill_id": "skill:communication",
+          "minimum_level": 1
+        }
+      ],
+      "career_links": [
+        "future:music"
+      ],
+      "regulated": false,
+      "allow_retired": false,
+      "future_stage_only": false,
+      "employment_types": [
+        "contract",
+        "freelance"
+      ],
+      "default_employment_type": "contract",
+      "schedule_id": "flexible-day",
+      "salary_range_monthly_ngn": {
+        "minimum": 208000,
+        "maximum": 325000
+      },
+      "work_skill_id": "skill:writing",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 0,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    },
+    {
+      "id": "logistics-coordinator",
+      "title": "Logistics Coordinator",
+      "industry_id": "transport-infrastructure",
+      "track_id": "logistics",
+      "career_level": 1,
+      "description": "Schedules fictional deliveries and records handovers without simulating a real transport network.",
+      "duties": "Schedules fictional deliveries and records handovers without simulating a real transport network.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 35,
+      "minimum_education": "secondary",
+      "required_qualifications": [],
+      "required_qualification_groups": [],
+      "required_licenses": [],
+      "required_skills": [
+        {
+          "skill_id": "skill:logistics",
+          "minimum_level": 1
+        }
+      ],
+      "career_links": [
+        "future:logistics"
+      ],
+      "regulated": false,
+      "allow_retired": false,
+      "future_stage_only": false,
+      "employment_types": [
+        "full_time"
+      ],
+      "default_employment_type": "full_time",
+      "schedule_id": "office-day",
+      "salary_range_monthly_ngn": {
+        "minimum": 152000,
+        "maximum": 238000
+      },
+      "work_skill_id": "skill:logistics",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 0,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    },
+    {
+      "id": "delivery-courier",
+      "title": "Delivery Courier",
+      "industry_id": "transport-infrastructure",
+      "track_id": "delivery",
+      "career_level": 1,
+      "description": "Completes short fictional delivery shifts only with the prototype courier permit.",
+      "duties": "Completes short fictional delivery shifts only with the prototype courier permit.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 10,
+      "minimum_education": "none",
+      "required_qualifications": [],
+      "required_qualification_groups": [],
+      "required_licenses": [
+        "license:prototype-courier-permit"
+      ],
+      "required_skills": [],
+      "career_links": [
+        "future:delivery"
+      ],
+      "regulated": true,
+      "allow_retired": false,
+      "future_stage_only": false,
+      "employment_types": [
+        "contract",
+        "shift"
+      ],
+      "default_employment_type": "contract",
+      "schedule_id": "retail-weekend",
+      "salary_range_monthly_ngn": {
+        "minimum": 116000,
+        "maximum": 182000
+      },
+      "work_skill_id": "skill:logistics",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 0,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    },
+    {
+      "id": "commercial-driver",
+      "title": "Commercial Driver",
+      "industry_id": "transport-infrastructure",
+      "track_id": "driving",
+      "career_level": 2,
+      "description": "Commercial driving requires the configured game permit; no vehicle-routing simulation is included.",
+      "duties": "Commercial driving requires the configured game permit; no vehicle-routing simulation is included.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 30,
+      "minimum_education": "secondary",
+      "required_qualifications": [],
+      "required_qualification_groups": [],
+      "required_licenses": [
+        "license:prototype-commercial-driving"
+      ],
+      "required_skills": [],
+      "career_links": [
+        "future:commercial-driving"
+      ],
+      "regulated": true,
+      "allow_retired": false,
+      "future_stage_only": false,
+      "employment_types": [
+        "shift",
+        "full_time"
+      ],
+      "default_employment_type": "shift",
+      "schedule_id": "evening-shift",
+      "salary_range_monthly_ngn": {
+        "minimum": 176000,
+        "maximum": 275000
+      },
+      "work_skill_id": "skill:logistics",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 0,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    },
+    {
+      "id": "civil-engineer",
+      "title": "Civil Engineer",
+      "industry_id": "transport-infrastructure",
+      "track_id": "engineering",
+      "career_level": 3,
+      "description": "Plans infrastructure only with the configured game engineering qualification and registration.",
+      "duties": "Plans infrastructure only with the configured game engineering qualification and registration.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 35,
+      "minimum_education": "tertiary",
+      "required_qualifications": [
+        "qualification:prototype-civil-engineering-degree"
+      ],
+      "required_qualification_groups": [],
+      "required_licenses": [
+        "license:prototype-engineering-registration"
+      ],
+      "required_skills": [],
+      "career_links": [
+        "future:engineering"
+      ],
+      "regulated": true,
+      "allow_retired": false,
+      "future_stage_only": false,
+      "employment_types": [
+        "full_time"
+      ],
+      "default_employment_type": "full_time",
+      "schedule_id": "office-day",
+      "salary_range_monthly_ngn": {
+        "minimum": 400000,
+        "maximum": 625000
+      },
+      "work_skill_id": "skill:business-operations",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 0,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    },
+    {
+      "id": "independent-writer",
+      "title": "Independent Writer",
+      "industry_id": "self-employment",
+      "track_id": "independent-creative",
+      "career_level": 1,
+      "description": "Completes server-recorded writing gigs; there are no client businesses or market-demand simulation.",
+      "duties": "Completes server-recorded writing gigs; there are no client businesses or market-demand simulation.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 25,
+      "minimum_education": "none",
+      "required_qualifications": [],
+      "required_qualification_groups": [],
+      "required_licenses": [],
+      "required_skills": [
+        {
+          "skill_id": "skill:writing",
+          "minimum_level": 1
+        }
+      ],
+      "career_links": [
+        "future:writing"
+      ],
+      "regulated": false,
+      "allow_retired": false,
+      "future_stage_only": false,
+      "employment_types": [
+        "self_employed",
+        "freelance"
+      ],
+      "default_employment_type": "self_employed",
+      "schedule_id": "flexible-day",
+      "salary_range_monthly_ngn": {
+        "minimum": 72000,
+        "maximum": 113000
+      },
+      "work_skill_id": "skill:writing",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 0,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    },
+    {
+      "id": "independent-tailor",
+      "title": "Independent Tailor",
+      "industry_id": "self-employment",
+      "track_id": "independent-trades",
+      "career_level": 1,
+      "description": "Takes bounded tailoring work using an earned trade skill; no shop inventory is created.",
+      "duties": "Takes bounded tailoring work using an earned trade skill; no shop inventory is created.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 25,
+      "minimum_education": "none",
+      "required_qualifications": [],
+      "required_qualification_groups": [],
+      "required_licenses": [],
+      "required_skills": [
+        {
+          "skill_id": "skill:tailoring",
+          "minimum_level": 1
+        }
+      ],
+      "career_links": [
+        "future:tailoring"
+      ],
+      "regulated": false,
+      "allow_retired": false,
+      "future_stage_only": false,
+      "employment_types": [
+        "self_employed",
+        "freelance"
+      ],
+      "default_employment_type": "self_employed",
+      "schedule_id": "flexible-day",
+      "salary_range_monthly_ngn": {
+        "minimum": 92000,
+        "maximum": 144000
+      },
+      "work_skill_id": "skill:tailoring",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 0,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    },
+    {
+      "id": "independent-caterer",
+      "title": "Independent Caterer",
+      "industry_id": "self-employment",
+      "track_id": "independent-food",
+      "career_level": 1,
+      "description": "Completes small fictional catering shifts; no food-stock or customer-demand system is included.",
+      "duties": "Completes small fictional catering shifts; no food-stock or customer-demand system is included.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 25,
+      "minimum_education": "none",
+      "required_qualifications": [],
+      "required_qualification_groups": [],
+      "required_licenses": [],
+      "required_skills": [
+        {
+          "skill_id": "skill:catering",
+          "minimum_level": 1
+        }
+      ],
+      "career_links": [
+        "future:catering"
+      ],
+      "regulated": false,
+      "allow_retired": false,
+      "future_stage_only": false,
+      "employment_types": [
+        "self_employed",
+        "freelance"
+      ],
+      "default_employment_type": "self_employed",
+      "schedule_id": "flexible-day",
+      "salary_range_monthly_ngn": {
+        "minimum": 96000,
+        "maximum": 150000
+      },
+      "work_skill_id": "skill:catering",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 0,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    },
+    {
+      "id": "independent-digital-designer",
+      "title": "Independent Digital Designer",
+      "industry_id": "self-employment",
+      "track_id": "independent-digital",
+      "career_level": 1,
+      "description": "Completes capped digital-design contracts using the configured design skill.",
+      "duties": "Completes capped digital-design contracts using the configured design skill.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 25,
+      "minimum_education": "none",
+      "required_qualifications": [],
+      "required_qualification_groups": [],
+      "required_licenses": [],
+      "required_skills": [
+        {
+          "skill_id": "skill:graphics-design",
+          "minimum_level": 1
+        }
+      ],
+      "career_links": [
+        "future:graphic-design"
+      ],
+      "regulated": false,
+      "allow_retired": false,
+      "future_stage_only": false,
+      "employment_types": [
+        "self_employed",
+        "freelance"
+      ],
+      "default_employment_type": "self_employed",
+      "schedule_id": "flexible-day",
+      "salary_range_monthly_ngn": {
+        "minimum": 108000,
+        "maximum": 169000
+      },
+      "work_skill_id": "skill:graphics-design",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 0,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    },
+    {
+      "id": "community-consultant",
+      "title": "Community Consultant",
+      "industry_id": "self-employment",
+      "track_id": "independent-consulting",
+      "career_level": 2,
+      "description": "Provides limited fictional consulting sessions based on prior experience; no business entity is created.",
+      "duties": "Provides limited fictional consulting sessions based on prior experience; no business entity is created.",
+      "minimum_age": 18,
+      "maximum_weekly_hours": 20,
+      "minimum_education": "tertiary",
+      "required_qualifications": [],
+      "required_qualification_groups": [
+        [
+          "qualification:imu-accounting-bsc",
+          "qualification:imu-computer-science-bsc",
+          "qualification:imu-education-bsc",
+          "qualification:ice-primary-education-nce"
+        ]
+      ],
+      "required_licenses": [],
+      "required_skills": [
+        {
+          "skill_id": "skill:business-operations",
+          "minimum_level": 2
+        }
+      ],
+      "career_links": [
+        "future:consulting"
+      ],
+      "regulated": false,
+      "allow_retired": true,
+      "future_stage_only": false,
+      "employment_types": [
+        "contract",
+        "self_employed"
+      ],
+      "default_employment_type": "contract",
+      "schedule_id": "flexible-day",
+      "salary_range_monthly_ngn": {
+        "minimum": 168000,
+        "maximum": 263000
+      },
+      "work_skill_id": "skill:business-operations",
+      "work_skill_experience_per_session": 25,
+      "minimum_experience_sessions": 10,
+      "promotion_to": null,
+      "minimum_sessions_to_promote": 0,
+      "minimum_performance_to_promote": 0,
+      "npc_assignable": false
+    }
+  ],
+  "employers": [
+    {
+      "id": "idera-community-secondary-school",
+      "name": "Idera Community Secondary School",
+      "industry_id": "education-research",
+      "kind": "fictional_education_institution",
+      "location_id": "schoolyard",
+      "linked_institution_id": "idera_secondary_school",
+      "description": "Existing fictional Stage 4 school; employer details are a Stage 6 prototype extension.",
+      "prototype_fixture": true,
+      "capacity": 40,
+      "active": true
+    },
+    {
+      "id": "idera-community-skills-centre",
+      "name": "Idera Community Skills Centre",
+      "industry_id": "trades-crafts",
+      "kind": "fictional_education_institution",
+      "location_id": "training_center",
+      "linked_institution_id": "idera-community-skills-centre",
+      "description": "Existing fictional Stage 4 vocational centre; employer details are a Stage 6 prototype extension.",
+      "prototype_fixture": true,
+      "capacity": 20,
+      "active": true
+    },
+    {
+      "id": "idera-metropolitan-university",
+      "name": "Idera Metropolitan University",
+      "industry_id": "education-research",
+      "kind": "fictional_education_institution",
+      "location_id": "campus",
+      "linked_institution_id": "idera_metropolitan_university",
+      "description": "Existing fictional Stage 4 campus; employer details are a Stage 6 prototype extension.",
+      "prototype_fixture": true,
+      "capacity": 60,
+      "active": true
+    },
+    {
+      "id": "idera-community-clinic",
+      "name": "Idera Community Clinic (prototype fixture)",
+      "industry_id": "health-care",
+      "kind": "community_service_fixture",
+      "location_id": "clinic",
+      "linked_institution_id": null,
+      "description": "Fictional Stage 1 map location used only as a clearly marked hiring fixture; no real clinic or medical guidance is represented.",
+      "prototype_fixture": true,
+      "capacity": 25,
+      "active": true
+    },
+    {
+      "id": "idera-community-market",
+      "name": "Idera Community Market (prototype fixture)",
+      "industry_id": "trades-crafts",
+      "kind": "community_market_fixture",
+      "location_id": "market",
+      "linked_institution_id": null,
+      "description": "Fictional Stage 1 market location used only for prototype work records; no inventory or market-demand system is added.",
+      "prototype_fixture": true,
+      "capacity": 30,
+      "active": true
+    },
+    {
+      "id": "idera-digital-workshop",
+      "name": "Idera Digital Workshop (prototype fixture)",
+      "industry_id": "technology-digital",
+      "kind": "community_workshop_fixture",
+      "location_id": "community_hall",
+      "linked_institution_id": null,
+      "description": "Fictional prototype work location; not a production company or an independently operating business.",
+      "prototype_fixture": true,
+      "capacity": 20,
+      "active": true
+    },
+    {
+      "id": "idera-farmers-cooperative",
+      "name": "Idera Farmers Cooperative (prototype fixture)",
+      "industry_id": "agriculture-food-systems",
+      "kind": "cooperative_fixture",
+      "location_id": "town",
+      "linked_institution_id": null,
+      "description": "Fictional prototype cooperative fixture; no land, stock, production or market is simulated.",
+      "prototype_fixture": true,
+      "capacity": 30,
+      "active": true
+    },
+    {
+      "id": "idera-community-office",
+      "name": "Idera Community Office (prototype fixture)",
+      "industry_id": "government-civil-service",
+      "kind": "community_service_fixture",
+      "location_id": "community_hall",
+      "linked_institution_id": null,
+      "description": "Fictional prototype service location; it does not represent an actual government office or policy.",
+      "prototype_fixture": true,
+      "capacity": 20,
+      "active": true
+    },
+    {
+      "id": "idera-creative-collective",
+      "name": "Idera Creative Collective (prototype fixture)",
+      "industry_id": "creative-media",
+      "kind": "creative_collective_fixture",
+      "location_id": "community_hall",
+      "linked_institution_id": null,
+      "description": "Fictional prototype collective; creator businesses and audience demand are not simulated.",
+      "prototype_fixture": true,
+      "capacity": 18,
+      "active": true
+    },
+    {
+      "id": "idera-transport-depot",
+      "name": "Idera Transport Depot (prototype fixture)",
+      "industry_id": "transport-infrastructure",
+      "kind": "transport_fixture",
+      "location_id": "town",
+      "linked_institution_id": null,
+      "description": "Fictional prototype workplace only; no vehicles, routes or public transport are simulated.",
+      "prototype_fixture": true,
+      "capacity": 20,
+      "active": true
+    },
+    {
+      "id": "idera-market-administration",
+      "name": "Idera Market Administration (prototype fixture)",
+      "industry_id": "business-accounting",
+      "kind": "community_service_fixture",
+      "location_id": "market",
+      "linked_institution_id": null,
+      "description": "Fictional prototype work record fixture, not a separate business entity.",
+      "prototype_fixture": true,
+      "capacity": 20,
+      "active": true
+    },
+    {
+      "id": "independent-work",
+      "name": "Independent Work (self-employed)",
+      "industry_id": "self-employment",
+      "kind": "self_employment_record",
+      "location_id": "home",
+      "linked_institution_id": null,
+      "description": "A self-employment label only; it does not create a company, stock, clients or a separate economy.",
+      "prototype_fixture": true,
+      "capacity": 0,
+      "active": true
+    }
+  ],
+  "vacancies": [
+    {
+      "id": "vacancy-market-sales-assistant",
+      "employer_id": "idera-community-market",
+      "job_id": "community-market-sales-assistant",
+      "monthly_salary_ngn": 65000,
+      "employment_type": "part_time",
+      "pay_frequency": "monthly",
+      "openings": 2,
+      "status": "open"
+    },
+    {
+      "id": "vacancy-farm-support-worker",
+      "employer_id": "idera-farmers-cooperative",
+      "job_id": "farm-support-worker",
+      "monthly_salary_ngn": 100000,
+      "employment_type": "part_time",
+      "pay_frequency": "biweekly",
+      "openings": 2,
+      "status": "open"
+    },
+    {
+      "id": "vacancy-clinic-records-assistant",
+      "employer_id": "idera-community-clinic",
+      "job_id": "clinic-records-assistant",
+      "monthly_salary_ngn": 105000,
+      "employment_type": "full_time",
+      "pay_frequency": "monthly",
+      "openings": 1,
+      "status": "open"
+    },
+    {
+      "id": "vacancy-teaching-assistant",
+      "employer_id": "idera-community-secondary-school",
+      "job_id": "teaching-assistant",
+      "monthly_salary_ngn": 120000,
+      "employment_type": "full_time",
+      "pay_frequency": "monthly",
+      "openings": 1,
+      "status": "open"
+    },
+    {
+      "id": "vacancy-tailoring-assistant",
+      "employer_id": "idera-community-skills-centre",
+      "job_id": "tailoring-assistant",
+      "monthly_salary_ngn": 115000,
+      "employment_type": "full_time",
+      "pay_frequency": "biweekly",
+      "openings": 1,
+      "status": "open"
+    },
+    {
+      "id": "vacancy-junior-software-developer",
+      "employer_id": "idera-digital-workshop",
+      "job_id": "junior-software-developer",
+      "monthly_salary_ngn": 240000,
+      "employment_type": "full_time",
+      "pay_frequency": "monthly",
+      "openings": 1,
+      "status": "open"
+    },
+    {
+      "id": "vacancy-retail-shift-supervisor",
+      "employer_id": "idera-community-market",
+      "job_id": "retail-shift-supervisor",
+      "monthly_salary_ngn": 145000,
+      "employment_type": "part_time",
+      "pay_frequency": "monthly",
+      "openings": 1,
+      "status": "open"
+    },
+    {
+      "id": "vacancy-independent-writer",
+      "employer_id": null,
+      "job_id": "independent-writer",
+      "monthly_salary_ngn": 90000,
+      "employment_type": "freelance",
+      "pay_frequency": "weekly",
+      "openings": 10,
+      "status": "open"
+    },
+    {
+      "id": "vacancy-tailor-technician",
+      "employer_id": "idera-community-skills-centre",
+      "job_id": "tailor-technician",
+      "monthly_salary_ngn": 160000,
+      "employment_type": "full_time",
+      "pay_frequency": "biweekly",
+      "openings": 1,
+      "status": "open"
+    },
+    {
+      "id": "vacancy-senior-tailor-technician",
+      "employer_id": "idera-community-skills-centre",
+      "job_id": "senior-tailor-technician",
+      "monthly_salary_ngn": 220000,
+      "employment_type": "full_time",
+      "pay_frequency": "biweekly",
+      "openings": 1,
+      "status": "open"
+    }
+  ]
+}

@@ -26,6 +26,7 @@ var ui: PrototypeUI
 var playing: bool = false
 var multiplayer_client: Node
 var _online_mode: bool = false
+var _online_career_profile: Dictionary = {}
 var _online_input_accumulator: float = 0.0
 var _remote_players: Dictionary = {}
 var _time_accumulator: float = 0.0
@@ -67,6 +68,7 @@ func _ready() -> void:
 	ui.save_requested.connect(_on_manual_save_requested)
 	ui.load_requested.connect(_continue_game)
 	ui.education_action_requested.connect(_on_education_action_requested)
+	ui.career_action_requested.connect(_on_career_action_requested)
 	ui.answer_requested.connect(_on_quiz_answer)
 	ui.purchase_requested.connect(_purchase_item)
 	ui.consume_requested.connect(_consume_item)
@@ -228,6 +230,8 @@ func _on_online_session_ready(
 		clock.load_dictionary(raw_clock)
 	character = CharacterStateScript.new()
 	character.load_dictionary(character_data, clock.calendar_date())
+	var career_data: Variant = character_data.get("career_profile", {})
+	_online_career_profile = career_data.duplicate(true) if career_data is Dictionary else {}
 	playing = true
 	_time_accumulator = 0.0
 	_online_input_accumulator = 0.0
@@ -252,12 +256,20 @@ func _on_online_message(message: Dictionary) -> void:
 		"character.snapshot":
 			var character_data: Variant = message.get("character", {})
 			if character_data is Dictionary:
+				var career_data: Variant = character_data.get("career_profile", {})
+				if career_data is Dictionary:
+					_online_career_profile = career_data.duplicate(true)
+					ui.update_career_profile(_online_career_profile)
 				_apply_online_character_snapshot(character_data)
+				if clock != null:
+					ui.update_career_world_context(character, clock)
 		"world.snapshot":
 			var clock_data: Variant = message.get("clock", {})
 			if clock_data is Dictionary and clock != null:
 				clock.load_dictionary(clock_data)
 				world.update_daypart(clock.daypart())
+				if character != null:
+					ui.update_career_world_context(character, clock)
 			var players_data: Variant = message.get("players", [])
 			if players_data is Array:
 				_sync_remote_players(players_data)
@@ -302,6 +314,8 @@ func _on_online_message(message: Dictionary) -> void:
 			)
 		"education.result", "education.error":
 			ui.show_education_result(message)
+		"career.result", "career.error":
+			ui.show_career_response(message)
 		"school.complete":
 			(
 				ui
@@ -323,6 +337,8 @@ func _on_online_status_changed(status: String) -> void:
 func _on_online_error(code: String, description: String) -> void:
 	if code.begins_with("geography_") and world.geography_preview_enabled:
 		world.set_geographic_preview(false)
+	if code in ["character_deceased", "rate_limited"]:
+		ui.show_career_transport_error(description)
 	if playing:
 		ui.notify("%s: %s" % [code.replace("_", " ").capitalize(), description])
 	else:
@@ -988,6 +1004,23 @@ func _on_education_action_requested(action: String, payload: Dictionary = {}) ->
 	ui.show_education_result(result)
 
 
+func _on_career_action_requested(action: String, payload: Dictionary) -> void:
+	if not _online_mode:
+		ui.show_career_transport_error("Career actions require the connected shared world.")
+		return
+	if character == null or not character.can_take_active_action():
+		ui.show_career_transport_error(
+			"Deceased characters cannot start work, apply or earn future salary."
+		)
+		return
+	if not multiplayer_client.send_command(
+		"career.action", {"action": action, "payload": payload.duplicate(true)}
+	):
+		ui.show_career_transport_error(
+			"The career request could not reach the shared server. Reconnect before trying again."
+		)
+
+
 func _can_enter_education_location(destination: String) -> bool:
 	if _online_mode:
 		return true
@@ -1073,6 +1106,8 @@ func _open_panel(panel_id: String) -> void:
 			ui.show_inventory(character)
 		"school":
 			ui.show_education(character, clock, character.current_location, _online_mode)
+		"careers":
+			ui.show_careers(character, _online_career_profile, _online_mode, clock)
 		"chat":
 			if _online_mode:
 				ui.show_chat()

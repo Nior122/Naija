@@ -7,7 +7,9 @@ import { loadEducationCatalog } from "../education/catalog.js";
 import { isEducationStudentRecord, normalizeEducationRecord, syncLegacyEducation } from "../education/service.js";
 import { loadLifeCatalog, normalizeWorldClock, isValidDate } from "../life/calendar.js";
 import { normalizeLifeWorldState } from "../life/service.js";
+import { initializeCareerWorldState } from "../careers/service.js";
 import type { LifeCatalog } from "../life/types.js";
+import type { PersistentCareerMaps } from "../careers/types.js";
 import {
   WORLD_ID,
   isFiniteNumber,
@@ -161,6 +163,171 @@ function isInheritanceEvent(value: unknown, key: string): boolean {
     typeof value.life_event_id === "string";
 }
 
+const CAREER_EMPLOYMENT_STATUSES = new Set([
+  "active", "on_leave", "suspended", "resigned", "terminated", "contract_completed", "retired", "deceased",
+]);
+const CAREER_APPLICATION_STATUSES = new Set([
+  "draft", "submitted", "under_review", "interview_requested", "accepted", "rejected", "withdrawn", "expired",
+]);
+const CAREER_SESSION_STATUSES = new Set(["in_progress", "completed", "invalidated", "cancelled"]);
+const CAREER_PAY_FREQUENCIES = new Set(["weekly", "biweekly", "monthly"]);
+const CAREER_EMPLOYMENT_TYPES = new Set([
+  "full_time", "part_time", "shift", "contract", "temporary", "seasonal", "casual", "apprenticeship", "freelance", "self_employed",
+]);
+
+function isCareerEmployer(value: unknown, key: string): boolean {
+  return isRecord(value) && value.employer_id === key && typeof value.name === "string" &&
+    typeof value.industry_id === "string" && typeof value.kind === "string" && typeof value.location_id === "string" &&
+    (value.linked_institution_id === null || typeof value.linked_institution_id === "string") &&
+    typeof value.description === "string" && value.prototype_fixture === true &&
+    Number.isSafeInteger(value.capacity) && isFiniteNumber(value.capacity) && value.capacity >= 0 &&
+    typeof value.active === "boolean" && isStringArray(value.employee_character_ids) &&
+    value.employee_character_ids.length <= 50_000 && typeof value.created_at === "string" && typeof value.updated_at === "string";
+}
+
+function isCareerVacancy(value: unknown, key: string): boolean {
+  return isRecord(value) && value.vacancy_id === key &&
+    (value.employer_id === null || typeof value.employer_id === "string") && typeof value.job_id === "string" &&
+    isFiniteNumber(value.monthly_salary_ngn) && Number.isSafeInteger(value.monthly_salary_ngn) && value.monthly_salary_ngn >= 0 &&
+    typeof value.employment_type === "string" && CAREER_EMPLOYMENT_TYPES.has(value.employment_type) &&
+    typeof value.pay_frequency === "string" && CAREER_PAY_FREQUENCIES.has(value.pay_frequency) &&
+    Number.isSafeInteger(value.openings_total) && isFiniteNumber(value.openings_total) && value.openings_total > 0 &&
+    Number.isSafeInteger(value.openings_remaining) && isFiniteNumber(value.openings_remaining) &&
+    value.openings_remaining >= 0 && value.openings_remaining <= value.openings_total &&
+    ["open", "filled", "closed"].includes(String(value.status)) && value.prototype_fixture === true &&
+    typeof value.created_at === "string" && typeof value.updated_at === "string";
+}
+
+function isCareerApplication(value: unknown, key: string): boolean {
+  return isRecord(value) && value.application_id === key && typeof value.character_id === "string" &&
+    typeof value.vacancy_id === "string" && typeof value.job_id === "string" &&
+    (value.employer_id === null || typeof value.employer_id === "string") &&
+    typeof value.status === "string" && CAREER_APPLICATION_STATUSES.has(value.status) &&
+    typeof value.created_at === "string" && isValidDate(value.submitted_world_date) && isValidDate(value.review_due_date) &&
+    Number.isSafeInteger(value.eligibility_score) && isFiniteNumber(value.eligibility_score) &&
+    value.eligibility_score >= 0 && value.eligibility_score <= 100 && typeof value.updated_at === "string" &&
+    typeof value.decision_reason === "string" && value.decision_reason.length <= 500 &&
+    (value.employment_id === undefined || typeof value.employment_id === "string");
+}
+
+function isCareerEmployment(value: unknown, key: string): boolean {
+  return isRecord(value) && value.employment_id === key && typeof value.character_id === "string" &&
+    typeof value.application_id === "string" && typeof value.vacancy_id === "string" &&
+    (value.employer_id === null || typeof value.employer_id === "string") &&
+    typeof value.employer_name_at_start === "string" && typeof value.job_id === "string" &&
+    typeof value.employment_type === "string" && CAREER_EMPLOYMENT_TYPES.has(value.employment_type) &&
+    typeof value.status === "string" && CAREER_EMPLOYMENT_STATUSES.has(value.status) &&
+    Number.isSafeInteger(value.salary_ngn_monthly) && isFiniteNumber(value.salary_ngn_monthly) &&
+    value.salary_ngn_monthly >= 0 && value.salary_ngn_monthly <= 5_000_000 &&
+    typeof value.pay_frequency === "string" && CAREER_PAY_FREQUENCIES.has(value.pay_frequency) &&
+    typeof value.work_schedule_id === "string" && isValidDate(value.start_date) && isValidDate(value.pay_period_start_date) &&
+    isValidDate(value.next_payment_date) && Number.isSafeInteger(value.completed_sessions) &&
+    isFiniteNumber(value.completed_sessions) && value.completed_sessions >= 0 &&
+    Number.isSafeInteger(value.performance_score) && isFiniteNumber(value.performance_score) &&
+    value.performance_score >= 0 && value.performance_score <= 100 &&
+    (value.current_work_session_id === undefined || typeof value.current_work_session_id === "string") &&
+    (value.end_date === undefined || isValidDate(value.end_date)) &&
+    (value.end_reason === undefined || (typeof value.end_reason === "string" && value.end_reason.length <= 200)) &&
+    typeof value.created_at === "string" && typeof value.updated_at === "string";
+}
+
+function isCareerWorkSession(value: unknown, key: string): boolean {
+  return isRecord(value) && value.session_id === key && typeof value.employment_id === "string" &&
+    typeof value.character_id === "string" && typeof value.job_id === "string" && isValidDate(value.world_date) &&
+    typeof value.schedule_id === "string" && typeof value.workplace_location_id === "string" &&
+    Number.isSafeInteger(value.scheduled_start_minute) && isFiniteNumber(value.scheduled_start_minute) &&
+    value.scheduled_start_minute >= 0 && value.scheduled_start_minute < 1440 &&
+    Number.isSafeInteger(value.scheduled_end_minute) && isFiniteNumber(value.scheduled_end_minute) &&
+    value.scheduled_end_minute > value.scheduled_start_minute && value.scheduled_end_minute <= 1440 &&
+    Number.isSafeInteger(value.started_at_minute) && isFiniteNumber(value.started_at_minute) &&
+    value.started_at_minute >= value.scheduled_start_minute && value.started_at_minute < 1440 &&
+    typeof value.status === "string" && CAREER_SESSION_STATUSES.has(value.status) &&
+    Number.isSafeInteger(value.worked_minutes) && isFiniteNumber(value.worked_minutes) && value.worked_minutes >= 0 && value.worked_minutes <= 1440 &&
+    Number.isSafeInteger(value.gross_earned_ngn) && isFiniteNumber(value.gross_earned_ngn) && value.gross_earned_ngn >= 0 &&
+    Number.isSafeInteger(value.performance_score) && isFiniteNumber(value.performance_score) && value.performance_score >= 0 && value.performance_score <= 100 &&
+    typeof value.skill_id === "string" && Number.isSafeInteger(value.skill_experience_awarded) &&
+    isFiniteNumber(value.skill_experience_awarded) && value.skill_experience_awarded >= 0 &&
+    typeof value.started_at === "string" && typeof value.updated_at === "string" &&
+    (value.completed_at_minute === undefined || (Number.isSafeInteger(value.completed_at_minute) &&
+      isFiniteNumber(value.completed_at_minute) && value.completed_at_minute >= 0 && value.completed_at_minute < 1440)) &&
+    (value.payroll_payment_id === undefined || typeof value.payroll_payment_id === "string") &&
+    (value.invalidation_reason === undefined || typeof value.invalidation_reason === "string");
+}
+
+function isCareerSkill(value: unknown, key: string): boolean {
+  return isRecord(value) && typeof key === "string" && typeof value.skill_record_id === "string" &&
+    typeof value.character_id === "string" && typeof value.skill_id === "string" &&
+    Number.isSafeInteger(value.level) && isFiniteNumber(value.level) && value.level >= 0 && value.level <= 100 &&
+    Number.isSafeInteger(value.experience) && isFiniteNumber(value.experience) && value.experience >= 0 &&
+    isStringArray(value.sources) && isValidDate(value.last_updated_world_date) && typeof value.last_updated_at === "string";
+}
+
+function isCareerLicense(value: unknown, key: string): boolean {
+  return isRecord(value) && typeof key === "string" && typeof value.license_record_id === "string" &&
+    typeof value.character_id === "string" && typeof value.license_id === "string" && typeof value.issuer === "string" &&
+    typeof value.issued_at === "string" && isValidDate(value.world_date) &&
+    ["active", "suspended", "revoked"].includes(String(value.status));
+}
+
+function isCareerReview(value: unknown, key: string): boolean {
+  return isRecord(value) && typeof key === "string" && typeof value.review_id === "string" &&
+    typeof value.employment_id === "string" && typeof value.character_id === "string" && isValidDate(value.world_date) &&
+    Number.isSafeInteger(value.completed_sessions) && isFiniteNumber(value.completed_sessions) && value.completed_sessions >= 1 &&
+    Number.isSafeInteger(value.performance_score) && isFiniteNumber(value.performance_score) && value.performance_score >= 0 &&
+    value.performance_score <= 100 && typeof value.summary === "string" && typeof value.created_at === "string";
+}
+
+function isCareerLeaveRequest(value: unknown, key: string): boolean {
+  return isRecord(value) && typeof key === "string" && typeof value.leave_request_id === "string" &&
+    typeof value.employment_id === "string" && typeof value.character_id === "string" &&
+    ["personal", "vacation"].includes(String(value.leave_type)) && isValidDate(value.start_date) && isValidDate(value.end_date) &&
+    ["pending", "approved", "rejected", "cancelled", "completed"].includes(String(value.status)) &&
+    typeof value.reason === "string" && value.reason.length <= 120 && typeof value.decision_reason === "string" &&
+    value.decision_reason.length <= 300 && typeof value.created_at === "string" && typeof value.updated_at === "string";
+}
+
+function isCareerEvent(value: unknown, key: string): boolean {
+  return isRecord(value) && typeof key === "string" && typeof value.event_id === "string" &&
+    typeof value.character_id === "string" && typeof value.type === "string" && isValidDate(value.world_date) &&
+    Number.isSafeInteger(value.minute_of_day) && isFiniteNumber(value.minute_of_day) &&
+    value.minute_of_day >= 0 && value.minute_of_day < 1440 && typeof value.summary === "string" &&
+    isRecord(value.details) && Object.values(value.details).every((entry) => entry === null ||
+      typeof entry === "string" || typeof entry === "number" || typeof entry === "boolean") &&
+    typeof value.created_at === "string" &&
+    (value.employment_id === undefined || typeof value.employment_id === "string") &&
+    (value.application_id === undefined || typeof value.application_id === "string");
+}
+
+function isSalaryPayment(value: unknown, key: string): boolean {
+  return isRecord(value) && typeof value.payment_id === "string" && value.payment_id === key &&
+    typeof value.employment_id === "string" && typeof value.character_id === "string" &&
+    (value.employer_id === null || typeof value.employer_id === "string") &&
+    Number.isSafeInteger(value.amount_ngn) && isFiniteNumber(value.amount_ngn) && value.amount_ngn > 0 &&
+    typeof value.pay_frequency === "string" && CAREER_PAY_FREQUENCIES.has(value.pay_frequency) &&
+    isValidDate(value.pay_period_start_date) && isValidDate(value.pay_period_end_date) &&
+    isValidDate(value.paid_at_world_date) && typeof value.final_payment === "boolean" &&
+    isStringArray(value.work_session_ids) && value.work_session_ids.length > 0 && typeof value.posted_at === "string";
+}
+
+function isNpcCareer(value: unknown, key: string): boolean {
+  return isRecord(value) && value.person_id === key &&
+    (value.job_id === null || typeof value.job_id === "string") &&
+    (value.employer_id === null || typeof value.employer_id === "string") &&
+    (value.schedule_id === null || typeof value.schedule_id === "string") &&
+    ["student", "employed", "unemployed", "retired", "deceased"].includes(String(value.status)) &&
+    value.prototype_fixture === true && value.profile_source === "deterministic_household_fixture" &&
+    (value.start_date === undefined || isValidDate(value.start_date)) &&
+    isValidDate(value.last_processed_date) && typeof value.updated_at === "string";
+}
+
+function emptyCareerMaps(): PersistentCareerMaps {
+  return {
+    careerEmployers: {}, careerVacancies: {}, careerApplications: {}, employments: {}, workSessions: {},
+    careerSkills: {}, careerLicenses: {}, careerReviews: {}, careerLeaveRequests: {}, careerEvents: {},
+    salaryPayments: {}, npcCareers: {},
+  };
+}
+
 function emptyLifeMaps(): Pick<
   PersistentWorldState,
   "people" | "households" | "families" | "relationships" | "lifeEvents" | "marriages" | "inheritanceEvents"
@@ -171,7 +338,7 @@ function emptyLifeMaps(): Pick<
 }
 
 function validateState(value: unknown, now: number): PersistentWorldState {
-  if (!isRecord(value) || (value.schemaVersion !== 1 && value.schemaVersion !== 2) ||
+  if (!isRecord(value) || (value.schemaVersion !== 1 && value.schemaVersion !== 2 && value.schemaVersion !== 3) ||
     value.worldId !== WORLD_ID || !isRecord(value.worldClock) || !isRecord(value.players)) {
     throw new Error("World data has an invalid schema; refusing to start with reset state.");
   }
@@ -182,7 +349,7 @@ function validateState(value: unknown, now: number): PersistentWorldState {
     clock.minute_of_day < 0 || clock.minute_of_day >= 1440 || typeof clock.updated_at !== "string") {
     throw new Error("World data has an invalid clock; refusing to start with reset state.");
   }
-  if (schemaVersion === 2) {
+  if (schemaVersion >= 2) {
     const mapNames = ["people", "households", "families", "relationships", "lifeEvents", "marriages", "inheritanceEvents"] as const;
     if (mapNames.some((name) => !isRecord(value[name]))) {
       throw new Error("World data is missing Stage 5 lifecycle records; refusing to start with reset state.");
@@ -198,14 +365,52 @@ function validateState(value: unknown, now: number): PersistentWorldState {
       throw new Error("World data contains an invalid Stage 5 lifecycle record.");
     }
   }
+  if (schemaVersion === 3) {
+    const careerMapNames = [
+      "careerEmployers", "careerVacancies", "careerApplications", "employments", "workSessions", "careerSkills",
+      "careerLicenses", "careerReviews", "careerLeaveRequests", "careerEvents", "salaryPayments", "npcCareers",
+    ] as const;
+    if (careerMapNames.some((name) => !isRecord(value[name]))) {
+      throw new Error("World data is missing Stage 6 career records; refusing to start with reset state.");
+    }
+    const careerMap = (name: typeof careerMapNames[number]): Record<string, unknown> => value[name] as Record<string, unknown>;
+    if (Object.entries(careerMap("careerEmployers")).some(([id, entry]) => !isCareerEmployer(entry, id)) ||
+      Object.entries(careerMap("careerVacancies")).some(([id, entry]) => !isCareerVacancy(entry, id)) ||
+      Object.entries(careerMap("careerApplications")).some(([id, entry]) => !isCareerApplication(entry, id)) ||
+      Object.entries(careerMap("employments")).some(([id, entry]) => !isCareerEmployment(entry, id)) ||
+      Object.entries(careerMap("workSessions")).some(([id, entry]) => !isCareerWorkSession(entry, id)) ||
+      Object.entries(careerMap("careerSkills")).some(([id, entry]) => !isCareerSkill(entry, id)) ||
+      Object.entries(careerMap("careerLicenses")).some(([id, entry]) => !isCareerLicense(entry, id)) ||
+      Object.entries(careerMap("careerReviews")).some(([id, entry]) => !isCareerReview(entry, id)) ||
+      Object.entries(careerMap("careerLeaveRequests")).some(([id, entry]) => !isCareerLeaveRequest(entry, id)) ||
+      Object.entries(careerMap("careerEvents")).some(([id, entry]) => !isCareerEvent(entry, id)) ||
+      Object.entries(careerMap("salaryPayments")).some(([id, entry]) => !isSalaryPayment(entry, id)) ||
+      Object.entries(careerMap("npcCareers")).some(([id, entry]) => !isNpcCareer(entry, id))) {
+      throw new Error("World data contains an invalid Stage 6 career record.");
+    }
+  }
 
   const catalog: LifeCatalog = loadLifeCatalog();
+  const careerMaps: PersistentCareerMaps = schemaVersion === 3 ? {
+    careerEmployers: value.careerEmployers as PersistentCareerMaps["careerEmployers"],
+    careerVacancies: value.careerVacancies as PersistentCareerMaps["careerVacancies"],
+    careerApplications: value.careerApplications as PersistentCareerMaps["careerApplications"],
+    employments: value.employments as PersistentCareerMaps["employments"],
+    workSessions: value.workSessions as PersistentCareerMaps["workSessions"],
+    careerSkills: value.careerSkills as PersistentCareerMaps["careerSkills"],
+    careerLicenses: value.careerLicenses as PersistentCareerMaps["careerLicenses"],
+    careerReviews: value.careerReviews as PersistentCareerMaps["careerReviews"],
+    careerLeaveRequests: value.careerLeaveRequests as PersistentCareerMaps["careerLeaveRequests"],
+    careerEvents: value.careerEvents as PersistentCareerMaps["careerEvents"],
+    salaryPayments: value.salaryPayments as PersistentCareerMaps["salaryPayments"],
+    npcCareers: value.npcCareers as PersistentCareerMaps["npcCareers"],
+  } : emptyCareerMaps();
   const state = {
-    schemaVersion: 2 as const,
+    schemaVersion: 3 as const,
     worldId: WORLD_ID,
     worldClock: normalizeWorldClock(clock, now, catalog),
     players: {} as Record<string, PersistentPlayer>,
-    ...(schemaVersion === 2 ? {
+    ...(schemaVersion >= 2 ? {
       people: value.people as PersistentWorldState["people"],
       households: value.households as PersistentWorldState["households"],
       families: value.families as PersistentWorldState["families"],
@@ -214,6 +419,7 @@ function validateState(value: unknown, now: number): PersistentWorldState {
       marriages: value.marriages as PersistentWorldState["marriages"],
       inheritanceEvents: value.inheritanceEvents as PersistentWorldState["inheritanceEvents"],
     } : emptyLifeMaps()),
+    ...careerMaps,
   } satisfies PersistentWorldState;
 
   for (const [playerId, rawPlayer] of Object.entries(value.players)) {
@@ -225,7 +431,7 @@ function validateState(value: unknown, now: number): PersistentWorldState {
       throw new Error(`World data contains an invalid legacy player age (${playerId}).`);
     }
     const character = rawPlayer.character as unknown as PersistentPlayer["character"];
-    if (schemaVersion === 2 && (!isRecord(rawPlayer.character) || !hasLifeFields(rawPlayer.character))) {
+    if (schemaVersion >= 2 && (!isRecord(rawPlayer.character) || !hasLifeFields(rawPlayer.character))) {
       throw new Error(`World data contains an invalid life record (${playerId}).`);
     }
     if (character.geographic_location === undefined) character.geographic_location = null;
@@ -243,13 +449,14 @@ function validateState(value: unknown, now: number): PersistentWorldState {
     state.players[playerId] = rawPlayer as unknown as PersistentPlayer;
   }
   normalizeLifeWorldState(state, now);
+  initializeCareerWorldState(state, now);
   return state;
 }
 
 function initialState(now: number): PersistentWorldState {
   const catalog = loadLifeCatalog();
-  return {
-    schemaVersion: 2,
+  const state: PersistentWorldState = {
+    schemaVersion: 3,
     worldId: WORLD_ID,
     worldClock: normalizeWorldClock({
       day: catalog.calendar.starting_world_day,
@@ -259,7 +466,10 @@ function initialState(now: number): PersistentWorldState {
     }, now, catalog),
     players: {},
     ...emptyLifeMaps(),
+    ...emptyCareerMaps(),
   };
+  initializeCareerWorldState(state, now);
+  return state;
 }
 
 export class WorldStore {

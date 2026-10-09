@@ -14,11 +14,13 @@ signal purchase_requested(item_id: String)
 signal consume_requested(item_id: String)
 signal attend_requested
 signal education_action_requested(action: String, payload: Dictionary)
+signal career_action_requested(action: String, payload: Dictionary)
 signal modal_changed(is_open: bool)
 
 const SCHOOL_SERVICE = preload("res://scripts/domain/school_service.gd")
 const EducationServiceScript = preload("res://scripts/domain/education_service.gd")
 const LifeSimulationServiceScript = preload("res://scripts/domain/life_simulation_service.gd")
+const CareerPanelScript = preload("res://scripts/ui/career_panel.gd")
 const SKIN_TONES: Array[Dictionary] = [
 	{"label": "Warm brown", "hex": "#9b654d"},
 	{"label": "Deep brown", "hex": "#70452f"},
@@ -48,6 +50,7 @@ var _chat_input: LineEdit
 var _showing_chat: bool = false
 var _quiz_id: String = ""
 var _quiz_mode: String = "school"
+var _career_panel: CareerPanel
 
 
 func _ready() -> void:
@@ -174,6 +177,7 @@ func show_game(character: CharacterState, clock: WorldClock, location_name: Stri
 	_add_menu_button(menu_grid, "Character", "profile")
 	_add_menu_button(menu_grid, "Inventory", "inventory")
 	_add_menu_button(menu_grid, "Education", "school")
+	_add_menu_button(menu_grid, "Careers", "careers")
 	_add_menu_button(menu_grid, "Nearby chat", "chat")
 	_add_menu_button(menu_grid, "Save / Load", "save")
 	_add_menu_button(menu_grid, "Settings", "settings")
@@ -453,6 +457,77 @@ func show_inventory(character: CharacterState, message: String = "") -> void:
 			eat_button.pressed.connect(_on_consume_pressed.bind(str(item.get("id", ""))))
 			row.add_child(eat_button)
 	_add_modal_close(card)
+
+
+func show_careers(
+	character: CharacterState, career_profile: Dictionary, is_online: bool, clock: WorldClock
+) -> void:
+	var card := _open_modal(
+		"Careers & employment",
+		"Server-checked vacancies, skills, shifts, leave, progression and Naira salary records"
+	)
+	_career_panel = CareerPanelScript.new()
+	_career_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_career_panel.career_action_requested.connect(_on_career_action_requested)
+	card.add_child(_career_panel)
+	(
+		_career_panel
+		. configure(
+			{
+				"character_id": character.character_id,
+				"age": character.age,
+				"life_status": character.life_status,
+				"money": character.money,
+				"current_location": character.current_location,
+			},
+			career_profile,
+			is_online,
+			clock.calendar_date(),
+			clock.minute_of_day,
+			clock.weekday_name()
+		)
+	)
+	_add_modal_close(card)
+	_career_panel.request_initial_search()
+
+
+func show_career_response(message: Dictionary) -> void:
+	if is_instance_valid(_career_panel):
+		_career_panel.apply_server_response(message)
+
+
+func show_career_transport_error(message: String) -> void:
+	if is_instance_valid(_career_panel):
+		_career_panel.show_transport_error(message)
+
+
+func update_career_profile(career_profile: Dictionary) -> void:
+	if is_instance_valid(_career_panel):
+		_career_panel.update_profile(career_profile)
+
+
+func update_career_world_context(character: CharacterState, clock: WorldClock) -> void:
+	if not is_instance_valid(_career_panel):
+		return
+	(
+		_career_panel
+		. update_world_context(
+			{
+				"character_id": character.character_id,
+				"age": character.age,
+				"life_status": character.life_status,
+				"money": character.money,
+				"current_location": character.current_location,
+			},
+			clock.calendar_date(),
+			clock.minute_of_day,
+			clock.weekday_name()
+		)
+	)
+
+
+func _on_career_action_requested(action: String, payload: Dictionary) -> void:
+	career_action_requested.emit(action, payload.duplicate(true))
 
 
 func show_education(
@@ -1263,12 +1338,14 @@ func _on_purchase_pressed(item_id: String) -> void:
 
 func _close_modal() -> void:
 	if not _modal_open:
+		_career_panel = null
 		return
 	if is_instance_valid(_modal_layer):
 		_modal_layer.queue_free()
 	_modal_layer = null
 	_modal_open = false
 	_showing_chat = false
+	_career_panel = null
 	modal_changed.emit(false)
 
 
@@ -1282,6 +1359,7 @@ func _clear_screen() -> void:
 	_chat_input = null
 	_showing_chat = false
 	_quiz_id = ""
+	_career_panel = null
 
 
 func _add_label(parent: Node, text_value: String, size: int, color: Color, alignment: int) -> Label:

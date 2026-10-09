@@ -4,17 +4,17 @@
 
 | Layer | Selected direction | Current use |
 |---|---|---|
-| Game client | **Godot 4.7.2 stable + GDScript** | Preserved Stage 1 offline prototype plus optional Stage 2 WebSocket client; engine/runtime verification is pending. |
+| Game client | **Godot 4.7.2 stable + GDScript** | Preserved Stage 1 offline prototype plus optional Stage 2–6 WebSocket client/UI; engine/runtime verification is pending. |
 | Backend/API | **Node.js 22.x + TypeScript 5.9** | HTTP health/world metadata and server-authoritative prototype multiplayer service. |
 | Multiplayer transport | **JSON over WebSocket** (`ws` server, Godot `WebSocketPeer`) | Cross-platform prototype at `/ws`; browser WSS proxy/export is not tested. |
 | Package management | **npm workspaces + lockfile** | Root scripts for build, test, lint, and development. |
-| Testing | **Node built-in test runner, `fetch`, and `ws` clients** | Integration tests include two simultaneous real WebSocket clients and state-file restart/reconnect. |
+| Testing | **Node built-in test runner, `fetch`, and `ws` clients** | `npm run check` covers 48 Node tests, including real WebSocket clients, career authority/privacy, payroll idempotency and state-file migration/restart. |
 | Linting | **ESLint 10 + typescript-eslint 8** | TypeScript service source. |
 | Source control / automation | **Git + GitHub Actions** | CI runs Node build, lint, and tests (`npm run check`). |
-| Prototype persistence | **Versioned local JSON file** | One-process server snapshot for the shared clock and player records; no DB or multi-process coordination. |
+| Prototype persistence | **Versioned local JSON file** | Schema-version-3 one-process snapshot for the shared clock, character/lifecycle data and career/payroll maps; no DB or multi-process coordination. |
 | Future persistence candidate | **PostgreSQL** | Not configured or connected; evaluate before production persistence. |
 
-Versions above are project baselines, not proof every platform export has been validated. Godot 4.7.2 is the project target, but the engine binary is unavailable in the current workspace; neither Stage 1 nor the Stage 2 Godot client has been runtime-tested here. Node 22.22.3 is the available/tested runtime baseline.
+Versions above are project baselines, not proof every platform export has been validated. Godot 4.7.2 is the project target, but the engine binary is unavailable in the current workspace; the Stage 1–6 Godot client, including the new careers panel, has not been runtime-tested here. Node 22.22.3 is the available/tested runtime baseline.
 
 ## Requirements assessment
 
@@ -23,16 +23,16 @@ Versions above are project baselines, not proof every platform export has been v
 | Free/open source and low cost | Godot is MIT-licensed; Node.js, TypeScript, npm tooling, and the future PostgreSQL option are open source. Self-hosting is possible. Hosting, app-store fees, and operations still have real costs. |
 | Cross-platform, mobile, and PC | Godot provides desktop and Android/iOS export paths. The standard WebSocket protocol is intended to work with native clients and a browser WSS proxy, but exports and deployment paths need separate testing. |
 | Browser where practical | Godot web export is an optional target, not guaranteed parity. Browser memory, threading, graphics, origin checks, TLS, and proxy/networking need validation. No web export is included or tested. |
-| Multiplayer and persistence | Stage 2 now has a bounded server-authoritative prototype over JSON WebSocket, with a single local JSON state file. It is not a production identity system, database, or distributed server architecture. |
+| Multiplayer and persistence | Stages 2–6 have a bounded server-authoritative prototype over JSON WebSocket and one shared schema-version-3 JSON state file. Career payroll adapts to the existing character balance; this is not a production identity system, canonical economy ledger, database, or distributed server architecture. |
 | Small prototype that can evolve toward 3D | Godot supports quick GDScript iteration and both 2D/3D in the same project, avoiding an early engine migration if the prototype grows. |
 | Maintainability and AI-agent compatibility | GDScript is the native client language; TypeScript gives explicit backend contracts and strict checks. Keep boundaries small to manage the two-language cost. |
 | Scalability | No stack choice guarantees millions of concurrent lives. Start with one modular backend and one logical world; measure workloads and correctness before adding workers, partitions, replicas, or more languages. |
 
 ## Why Godot for the client
 
-Godot is open source under the MIT license, has integrated 2D/3D tooling, supports GDScript with a short edit/test loop, and has export paths for desktop, Android, iOS, and web. The existing project keeps Stage 1 offline play while providing an optional Stage 2 client that sends intent to the backend and renders server presence/state.
+Godot is open source under the MIT license, has integrated 2D/3D tooling, supports GDScript with a short edit/test loop, and has export paths for desktop, Android, iOS, and web. The existing project keeps Stage 1 offline play while providing an optional Stage 2–6 client that sends intent to the backend and renders server presence/state, education/life data, and career profiles.
 
-The client is not the online simulation authority. Online position, money, inventory, needs, school outcomes, and world time come from server snapshots. The client transport uses Godot's `WebSocketPeer`; server rules and JSON contracts live in the separate TypeScript service.
+The client is not the online simulation authority. Online position, money, inventory, needs, school outcomes, life status, work sessions, salary and world time come from server-owned rules/snapshots. The client transport uses Godot's `WebSocketPeer`; server rules and JSON contracts live in the separate TypeScript service.
 
 ### Trade-offs to keep visible
 
@@ -43,13 +43,13 @@ The client is not the online simulation authority. Online position, money, inven
 
 ## Why Node.js and TypeScript for the backend
 
-Node.js is available in the environment, can be self-hosted cheaply, and has a broad ecosystem. TypeScript's types make contracts and domain boundaries easier to inspect. The built-in HTTP server retains the small Stage 0 API surface; the `ws` dependency handles the Stage 2 WebSocket endpoint. The `ws` transport works with Godot's standard WebSocket client and can be proxied as WSS for browser clients.
+Node.js is available in the environment, can be self-hosted cheaply, and has a broad ecosystem. TypeScript's types make contracts and domain boundaries easier to inspect. The built-in HTTP server retains the small Stage 0 API surface; the `ws` dependency handles the shared Stage 2–6 WebSocket endpoint. The `ws` transport works with Godot's standard WebSocket client and can be proxied as WSS for browser clients.
 
-This is an initial service boundary, not a guarantee that every future CPU-intensive simulation should run in one Node process. Stage 2 assumes a single process owns one state file. Split workloads only when profiling, load tests, durability, and ownership boundaries justify it; any workers must still preserve one canonical logical Nigeria.
+This is an initial service boundary, not a guarantee that every future CPU-intensive simulation should run in one Node process. Stages 2–6 assume a single process owns one state file. Split workloads only when profiling, load tests, durability, and ownership boundaries justify it; any workers must still preserve one canonical logical Nigeria.
 
 ## Future persistence and operations direction
 
-PostgreSQL is the leading candidate for durable shared state and relational constraints, but no production DB is configured. The current `world-state.json` file is versioned, size-bounded, and atomically replaced for a single server process. It stores prototype personal character records and one shared clock; it has no transaction log, multi-writer coordination, migrations, backups, or encryption. It is not a production persistence design.
+PostgreSQL is the leading candidate for durable shared state and relational constraints, but no production DB is configured. The current `world-state.json` file is versioned, size-bounded, and atomically replaced for a single server process. It stores prototype character/life/career records and one shared clock; it has no transaction log, multi-writer coordination, production migration framework, backups, or encryption. Career payroll still credits the existing prototype character balance through an idempotent adapter; Stage 7 must connect that seam to an atomic canonical Naira ledger. This is not a production persistence/economy design.
 
 Geographic support (for example, a spatial extension) should be selected only after source datasets, query patterns, hosting cost, and portability are evaluated. Caches, queues, analytics stores, and separate simulation workers are later decisions.
 

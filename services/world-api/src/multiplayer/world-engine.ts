@@ -10,7 +10,26 @@ import {
 } from "../geography/catalog.js";
 import type { GeographicRegion } from "../geography/types.js";
 import { loadEducationCatalog } from "../education/catalog.js";
-import { loadLifeCatalog, dateForWorldDay, worldClockSnapshot } from "../life/calendar.js";
+import { loadCareerCatalog } from "../careers/catalog.js";
+import {
+  buildCareerProfile,
+  careerErrorMessage,
+  completeCareerWorkSession,
+  endCareerAtDeath,
+  processCareerWorldDate,
+  processCareerWorldMinute,
+  prototypeSalaryAccountPort,
+  requestCareerLeave,
+  requestCareerPromotion,
+  requestCareerRetirement,
+  resignCareerEmployment,
+  searchCareerJobsForCharacter,
+  startCareerWorkSession,
+  submitCareerApplication,
+  withdrawCareerApplication,
+} from "../careers/service.js";
+import type { CareerCatalog } from "../careers/types.js";
+import { loadLifeCatalog, dateForWorldDay, isValidDate, worldClockSnapshot } from "../life/calendar.js";
 import {
   advanceWorldLife,
   buildLifeProfile,
@@ -84,6 +103,7 @@ const IDEMPOTENT_COMMANDS = new Set([
   "character.rest",
   "school.answer",
   "education.action",
+  "career.action",
   "relationship.progress",
   "family.childbirth",
 ]);
@@ -352,6 +372,7 @@ export class MultiplayerWorld {
   private readonly connectionAttemptsPerMinute: number;
   private readonly geographyRegion: GeographicRegion;
   private readonly educationCatalog: EducationCatalog;
+  private readonly careerCatalog: CareerCatalog = loadCareerCatalog();
   private readonly lifeCatalog = loadLifeCatalog();
   private lastTickAt: number;
   private lastBroadcastAt = 0;
@@ -386,9 +407,12 @@ export class MultiplayerWorld {
   ): Promise<ReturnType<typeof recordDeath>> {
     if (!isDeathCauseCategory(cause)) throw new Error("death_cause_invalid");
     const result = recordDeath(this.store.state, characterId, cause);
+    const timestamp = new Date(this.now()).toISOString();
+    endCareerAtDeath(this.store.state, characterId, this.store.state.worldClock.world_date,
+      this.store.state.worldClock.minute_of_day, this.now());
+    this.dirty = true;
     if (!result.alreadyDeceased) {
       this.dirty = true;
-      const timestamp = new Date(this.now()).toISOString();
       const player = Object.values(this.store.state.players).find((entry) => entry.character.character_id === characterId);
       if (player) {
         player.character.updated_at = timestamp;
@@ -409,9 +433,14 @@ export class MultiplayerWorld {
   }
 
   async recordRetirementEvent(characterId: string): Promise<LifeEventRecord> {
+    const now = this.now();
+    const date = { ...this.store.state.worldClock.world_date };
+    const minuteOfDay = this.store.state.worldClock.minute_of_day;
     const event = recordRetirement(this.store.state, characterId);
+    requestCareerRetirement(this.store.state, characterId, date, minuteOfDay, now,
+      prototypeSalaryAccountPort(this.store.state, this.careerCatalog));
     this.dirty = true;
-    const timestamp = new Date(this.now()).toISOString();
+    const timestamp = new Date(now).toISOString();
     const player = Object.values(this.store.state.players).find((entry) => entry.character.character_id === characterId);
     if (player) {
       player.character.updated_at = timestamp;
@@ -626,6 +655,7 @@ export class MultiplayerWorld {
       case "school.begin": this.beginLesson(context, player, requestId); return;
       case "school.answer": await this.answerLesson(context, player, message, requestId); return;
       case "education.action": await this.educationAction(context, player, message, requestId); return;
+      case "career.action": await this.careerAction(context, player, message, requestId); return;
       case "chat.send": this.handleChat(context, player, message, requestId); return;
       case "player.interact": this.handlePlayerInteraction(context, player, message, requestId); return;
       case "relationship.progress": await this.progressRelationship(context, player, message, requestId); return;
@@ -767,6 +797,10 @@ export class MultiplayerWorld {
       return;
     }
     advanceWorldLife(this.store.state, this.store.state.worldClock.world_date);
+    processCareerWorldDate(this.store.state, this.store.state.worldClock.world_date, this.now(), this.careerCatalog,
+      prototypeSalaryAccountPort(this.store.state, this.careerCatalog));
+    processCareerWorldMinute(this.store.state, this.store.state.worldClock.world_date,
+      this.store.state.worldClock.minute_of_day, this.now(), this.careerCatalog);
     context.playerId = playerId;
     this.online.set(playerId, context);
     const timestamp = new Date(this.now()).toISOString();
@@ -1243,6 +1277,149 @@ export class MultiplayerWorld {
     }, requestId));
   }
 
+  private async careerAction(
+    context: ConnectionContext,
+    player: PersistentPlayer,
+    message: Record<string, unknown>,
+    requestId?: string,
+  ): Promise<void> {
+    if (typeof message.action !== "string" || message.action.length > 48) {
+      this.send(context, appendOptionalRequestId({
+        type: "career.error", action: "", code: "career_action_invalid",
+        message: "Choose a supported career action.",
+      }, requestId));
+      return;
+    }
+    const action = message.action;
+    const payload = isRecord(message.payload) ? message.payload : {};
+    const state = this.store.state;
+    const characterId = player.character.character_id;
+    const date = { ...state.worldClock.world_date };
+    const minuteOfDay = state.worldClock.minute_of_day;
+    const now = this.now();
+    const data: Record<string, unknown> = {};
+    let messageText = "Career records were refreshed from the shared server.";
+    const requiredString = (key: string, maximumLength = 120): string => {
+      const value = payload[key];
+      if (typeof value !== "string" || value.trim().length === 0 || value.length > maximumLength) {
+        throw new Error("career_action_invalid");
+      }
+      return value.trim();
+    };
+
+    try {
+      switch (action) {
+        case "search_jobs": {
+          const query: { text?: string; industry_id?: string; location_id?: string } = {};
+          for (const key of ["text", "industry_id", "location_id"] as const) {
+            const value = payload[key];
+            if (value === undefined || value === "") continue;
+            if (typeof value !== "string" || value.length > (key === "text" ? 80 : 120)) {
+              throw new Error("career_query_invalid");
+            }
+            query[key] = value;
+          }
+          data.jobs = searchCareerJobsForCharacter(state, characterId, query, this.careerCatalog);
+          messageText = `${(data.jobs as unknown[]).length} open prototype vacancy records matched this search.`;
+          break;
+        }
+        case "apply": {
+          const application = submitCareerApplication(state, characterId, requiredString("vacancy_id"), date, now, this.careerCatalog);
+          data.application = application;
+          messageText = `Application submitted for server review on ${application.review_due_date.year}-${String(application.review_due_date.month).padStart(2, "0")}-${String(application.review_due_date.day).padStart(2, "0")}.`;
+          break;
+        }
+        case "withdraw_application": {
+          const application = withdrawCareerApplication(state, characterId, requiredString("application_id"), date, now);
+          data.application = application;
+          messageText = "The application was withdrawn before the server decision.";
+          break;
+        }
+        case "start_shift": {
+          const session = startCareerWorkSession(state, characterId, date, minuteOfDay,
+            player.character.current_location, now, this.careerCatalog);
+          data.work_session = session;
+          messageText = `Clocked in for ${this.careerCatalog.jobs.find((job) => job.id === session.job_id)?.title ?? session.job_id}.`;
+          break;
+        }
+        case "complete_shift": {
+          const session = completeCareerWorkSession(state, characterId, date, minuteOfDay,
+            player.character.current_location, now, this.careerCatalog);
+          data.work_session = session;
+          messageText = `Session recorded: ₦${session.gross_earned_ngn.toLocaleString("en-NG")} gross earned; payment is scheduled through the existing character balance adapter.`;
+          break;
+        }
+        case "request_leave": {
+          const startDateValue = payload.start_date;
+          let startDate = date;
+          if (startDateValue !== undefined) {
+            if (!isRecord(startDateValue) || !Number.isSafeInteger(startDateValue.year) ||
+              !Number.isSafeInteger(startDateValue.month) || !Number.isSafeInteger(startDateValue.day)) {
+              throw new Error("career_leave_request_invalid");
+            }
+            startDate = {
+              year: startDateValue.year as number,
+              month: startDateValue.month as number,
+              day: startDateValue.day as number,
+            };
+            if (!isValidDate(startDate)) throw new Error("career_leave_request_invalid");
+          }
+          const days = payload.days === undefined ? 1 : payload.days;
+          if (!Number.isSafeInteger(days)) throw new Error("career_leave_request_invalid");
+          const leave = requestCareerLeave(state, characterId, requiredString("employment_id"),
+            payload.leave_type, startDate, days as number, date, now, this.careerCatalog);
+          data.leave_request = leave;
+          messageText = `${leave.leave_type === "vacation" ? "Vacation" : "Personal"} leave is recorded as approved and unpaid in this prototype.`;
+          break;
+        }
+        case "request_promotion": {
+          const employment = requestCareerPromotion(state, characterId, requiredString("employment_id"),
+            date, now, this.careerCatalog);
+          data.employment = employment;
+          messageText = `Promotion recorded: ${this.careerCatalog.jobs.find((job) => job.id === employment.job_id)?.title ?? employment.job_id}.`;
+          break;
+        }
+        case "resign": {
+          const employment = resignCareerEmployment(state, characterId, requiredString("employment_id"),
+            date, minuteOfDay, now, prototypeSalaryAccountPort(state, this.careerCatalog));
+          data.employment = employment;
+          messageText = "Resignation recorded. Completed eligible work sessions were reconciled through payroll.";
+          break;
+        }
+        case "retire": {
+          const lifeEvent = recordRetirement(state, characterId);
+          const employmentsEnded = requestCareerRetirement(state, characterId, date, minuteOfDay, now,
+            prototypeSalaryAccountPort(state, this.careerCatalog));
+          data.life_event = lifeEvent;
+          data.employments_ended = employmentsEnded;
+          messageText = `Retirement recorded at the Stage 5 age threshold; ${employmentsEnded} employment record(s) closed.`;
+          break;
+        }
+        default:
+          throw new Error("career_action_unknown");
+      }
+    } catch (error) {
+      const code = this.errorCode(error);
+      this.send(context, appendOptionalRequestId({
+        type: "career.error",
+        action,
+        code,
+        message: careerErrorMessage(code),
+        career_profile: buildCareerProfile(state, player.character, this.careerCatalog),
+      }, requestId));
+      return;
+    }
+
+    this.markRequestProcessed(player, requestId);
+    if (action !== "search_jobs") this.touchPlayer(player);
+    data.career_profile = buildCareerProfile(state, player.character, this.careerCatalog);
+    this.send(context, appendOptionalRequestId({
+      type: "career.result", action, ok: true, message: messageText, data,
+    }, requestId));
+    this.sendCharacterSnapshot(context);
+    await this.flushDirty();
+  }
+
   private programSeatCount(programId: string): number {
     if (!programId) return 0;
     const occupied = new Set<string>();
@@ -1463,7 +1640,14 @@ export class MultiplayerWorld {
       dateChanged = true;
     } else clock.minute_of_day += 1;
     clock.updated_at = new Date(now).toISOString();
-    if (dateChanged) advanceWorldLife(this.store.state, clock.world_date);
+    if (dateChanged) {
+      advanceWorldLife(this.store.state, clock.world_date);
+      processCareerWorldDate(this.store.state, clock.world_date, now, this.careerCatalog,
+        prototypeSalaryAccountPort(this.store.state, this.careerCatalog));
+    }
+    if (processCareerWorldMinute(this.store.state, clock.world_date, clock.minute_of_day, now, this.careerCatalog) > 0) {
+      this.dirty = true;
+    }
     const attendanceDeadlinePassed = this.educationCatalog.timetable.some((entry) =>
       entry.kind !== "break" &&
       entry.start_minute + entry.duration_minutes + this.educationCatalog.calendar.late_grace_minutes + 1 === clock.minute_of_day);
@@ -1505,6 +1689,7 @@ export class MultiplayerWorld {
   private characterSnapshot(player: PersistentPlayer): CharacterRecord {
     const snapshot = safeClone(player.character);
     snapshot.life_profile = buildLifeProfile(this.store.state, player.character);
+    snapshot.career_profile = buildCareerProfile(this.store.state, player.character, this.careerCatalog);
     return snapshot;
   }
 

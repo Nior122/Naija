@@ -1,6 +1,7 @@
 import type { GeographicLocation } from "../geography/types.js";
 import type { StudentEducationRecord } from "../education/types.js";
 import type { WorldClockState } from "../life/calendar.js";
+import type { CareerProfileSnapshot, PersistentCareerMaps } from "../careers/types.js";
 import type {
   FamilyPersonRecord,
   FamilyRecord,
@@ -61,6 +62,8 @@ export interface CharacterRecord extends CharacterLifeFields {
   created_at: string;
   updated_at: string;
   life_profile?: LifeProfileSnapshot;
+  /** Private projection of employment data for this character's authenticated session only. */
+  career_profile?: CareerProfileSnapshot;
 }
 
 export interface PersistentPlayer {
@@ -73,8 +76,8 @@ export interface PersistentPlayer {
   character: CharacterRecord;
 }
 
-export interface PersistentWorldState {
-  schemaVersion: 2;
+export interface PersistentWorldState extends PersistentCareerMaps {
+  schemaVersion: 3;
   worldId: typeof WORLD_ID;
   worldClock: WorldClockState;
   players: Record<string, PersistentPlayer>;
