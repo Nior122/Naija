@@ -8,8 +8,10 @@ import { isEducationStudentRecord, normalizeEducationRecord, syncLegacyEducation
 import { loadLifeCatalog, normalizeWorldClock, isValidDate } from "../life/calendar.js";
 import { normalizeLifeWorldState } from "../life/service.js";
 import { initializeCareerWorldState } from "../careers/service.js";
+import { initializeEconomyWorldState } from "../economy/service.js";
 import type { LifeCatalog } from "../life/types.js";
 import type { PersistentCareerMaps } from "../careers/types.js";
+import type { PersistentEconomyMaps } from "../economy/types.js";
 import {
   WORLD_ID,
   isFiniteNumber,
@@ -328,6 +330,12 @@ function emptyCareerMaps(): PersistentCareerMaps {
   };
 }
 
+function emptyEconomyMaps(): PersistentEconomyMaps {
+  return {
+    economyAccounts: {}, economyTransactions: {}, economyLoans: {}, economyCreditScores: {}, economyEvents: {},
+  };
+}
+
 function emptyLifeMaps(): Pick<
   PersistentWorldState,
   "people" | "households" | "families" | "relationships" | "lifeEvents" | "marriages" | "inheritanceEvents"
@@ -337,8 +345,80 @@ function emptyLifeMaps(): Pick<
   };
 }
 
+const ECONOMY_ACCOUNT_KINDS = new Set(["cash", "savings", "current", "fixed_deposit"]);
+const ECONOMY_ACCOUNT_STATUSES = new Set(["active", "frozen", "closed"]);
+const ECONOMY_LOAN_STATUSES = new Set(["active", "paid_off", "defaulted", "cancelled"]);
+const ECONOMY_TRANSACTION_KINDS = new Set([
+  "salary_credit", "market_purchase", "bank_deposit", "bank_withdrawal", "bank_transfer", "bank_fee",
+  "bank_interest", "tax_payment", "loan_disbursement", "loan_repayment", "loan_origination_fee",
+  "loan_late_fee", "initial_credit", "clinic_payment", "bus_fare",
+]);
+
+function isEconomyAccount(value: unknown, key: string): boolean {
+  return isRecord(value) && value.account_id === key && typeof value.character_id === "string" &&
+    typeof value.kind === "string" && ECONOMY_ACCOUNT_KINDS.has(value.kind) &&
+    (value.bank_product_id === null || typeof value.bank_product_id === "string") &&
+    isFiniteNumber(value.balance_ngn) && value.balance_ngn >= 0 &&
+    typeof value.status === "string" && ECONOMY_ACCOUNT_STATUSES.has(value.status) &&
+    isValidDate(value.created_world_date) && typeof value.created_at === "string" && typeof value.updated_at === "string" &&
+    isValidDate(value.opened_world_date) &&
+    (value.last_interest_date === null || isValidDate(value.last_interest_date)) &&
+    isFiniteNumber(value.total_deposited_ngn) && isFiniteNumber(value.total_withdrawn_ngn) &&
+    isFiniteNumber(value.total_fees_paid_ngn) && isFiniteNumber(value.total_interest_earned_ngn) &&
+    isFiniteNumber(value.daily_withdrawal_total_ngn) &&
+    (value.daily_withdrawal_date === null || isValidDate(value.daily_withdrawal_date));
+}
+
+function isEconomyTransaction(value: unknown, key: string): boolean {
+  return isRecord(value) && value.transaction_id === key && typeof value.account_id === "string" &&
+    typeof value.character_id === "string" && typeof value.kind === "string" &&
+    ECONOMY_TRANSACTION_KINDS.has(value.kind) &&
+    isFiniteNumber(value.amount_ngn) && value.amount_ngn >= 0 &&
+    isFiniteNumber(value.balance_before_ngn) && isFiniteNumber(value.balance_after_ngn) &&
+    isFiniteNumber(value.fee_ngn) && typeof value.description === "string" &&
+    isValidDate(value.world_date) && isFiniteNumber(value.minute_of_day) &&
+    value.minute_of_day >= 0 && value.minute_of_day < 1440 &&
+    typeof value.posted_at === "string" &&
+    (value.reference_id === null || typeof value.reference_id === "string") &&
+    (value.counterparty_account_id === null || typeof value.counterparty_account_id === "string") &&
+    typeof value.idempotency_key === "string";
+}
+
+function isEconomyLoan(value: unknown, key: string): boolean {
+  return isRecord(value) && value.loan_id === key && typeof value.character_id === "string" &&
+    typeof value.loan_product_id === "string" &&
+    isFiniteNumber(value.principal_ngn) && value.principal_ngn >= 0 &&
+    isFiniteNumber(value.remaining_principal_ngn) && value.remaining_principal_ngn >= 0 &&
+    typeof value.interest_rate_monthly_percent === "number" &&
+    isFiniteNumber(value.term_months) && Number.isSafeInteger(value.term_months) &&
+    isFiniteNumber(value.monthly_payment_ngn) && isFiniteNumber(value.origination_fee_ngn) &&
+    typeof value.status === "string" && ECONOMY_LOAN_STATUSES.has(value.status) &&
+    isValidDate(value.start_date) && isValidDate(value.end_date) && isValidDate(value.next_payment_date) &&
+    isFiniteNumber(value.payments_made) && isFiniteNumber(value.payments_missed) &&
+    isFiniteNumber(value.total_paid_ngn) && typeof value.created_at === "string" &&
+    typeof value.updated_at === "string" && typeof value.disbursement_account_id === "string";
+}
+
+function isEconomyCreditScore(value: unknown, key: string): boolean {
+  return isRecord(value) && value.character_id === key &&
+    isFiniteNumber(value.score) && Number.isSafeInteger(value.score) &&
+    Array.isArray(value.history) && typeof value.updated_at === "string" &&
+    isValidDate(value.updated_world_date);
+}
+
+function isEconomyEvent(value: unknown, key: string): boolean {
+  return isRecord(value) && value.event_id === key && typeof value.character_id === "string" &&
+    typeof value.type === "string" && isValidDate(value.world_date) &&
+    isFiniteNumber(value.minute_of_day) && value.minute_of_day >= 0 && value.minute_of_day < 1440 &&
+    typeof value.summary === "string" && isRecord(value.details) &&
+    typeof value.created_at === "string" &&
+    (value.account_id === undefined || typeof value.account_id === "string") &&
+    (value.loan_id === undefined || typeof value.loan_id === "string") &&
+    (value.transaction_id === undefined || typeof value.transaction_id === "string");
+}
+
 function validateState(value: unknown, now: number): PersistentWorldState {
-  if (!isRecord(value) || (value.schemaVersion !== 1 && value.schemaVersion !== 2 && value.schemaVersion !== 3) ||
+  if (!isRecord(value) || (value.schemaVersion !== 1 && value.schemaVersion !== 2 && value.schemaVersion !== 3 && value.schemaVersion !== 4) ||
     value.worldId !== WORLD_ID || !isRecord(value.worldClock) || !isRecord(value.players)) {
     throw new Error("World data has an invalid schema; refusing to start with reset state.");
   }
@@ -365,7 +445,7 @@ function validateState(value: unknown, now: number): PersistentWorldState {
       throw new Error("World data contains an invalid Stage 5 lifecycle record.");
     }
   }
-  if (schemaVersion === 3) {
+  if (schemaVersion === 3 || schemaVersion === 4) {
     const careerMapNames = [
       "careerEmployers", "careerVacancies", "careerApplications", "employments", "workSessions", "careerSkills",
       "careerLicenses", "careerReviews", "careerLeaveRequests", "careerEvents", "salaryPayments", "npcCareers",
@@ -389,9 +469,25 @@ function validateState(value: unknown, now: number): PersistentWorldState {
       throw new Error("World data contains an invalid Stage 6 career record.");
     }
   }
+  if (schemaVersion === 4) {
+    const economyMapNames = [
+      "economyAccounts", "economyTransactions", "economyLoans", "economyCreditScores", "economyEvents",
+    ] as const;
+    if (economyMapNames.some((name) => !isRecord(value[name]))) {
+      throw new Error("World data is missing Stage 7 economy records; refusing to start with reset state.");
+    }
+    const economyMap = (name: typeof economyMapNames[number]): Record<string, unknown> => value[name] as Record<string, unknown>;
+    if (Object.entries(economyMap("economyAccounts")).some(([id, entry]) => !isEconomyAccount(entry, id)) ||
+      Object.entries(economyMap("economyTransactions")).some(([id, entry]) => !isEconomyTransaction(entry, id)) ||
+      Object.entries(economyMap("economyLoans")).some(([id, entry]) => !isEconomyLoan(entry, id)) ||
+      Object.entries(economyMap("economyCreditScores")).some(([id, entry]) => !isEconomyCreditScore(entry, id)) ||
+      Object.entries(economyMap("economyEvents")).some(([id, entry]) => !isEconomyEvent(entry, id))) {
+      throw new Error("World data contains an invalid Stage 7 economy record.");
+    }
+  }
 
   const catalog: LifeCatalog = loadLifeCatalog();
-  const careerMaps: PersistentCareerMaps = schemaVersion === 3 ? {
+  const careerMaps: PersistentCareerMaps = (schemaVersion === 3 || schemaVersion === 4) ? {
     careerEmployers: value.careerEmployers as PersistentCareerMaps["careerEmployers"],
     careerVacancies: value.careerVacancies as PersistentCareerMaps["careerVacancies"],
     careerApplications: value.careerApplications as PersistentCareerMaps["careerApplications"],
@@ -405,8 +501,15 @@ function validateState(value: unknown, now: number): PersistentWorldState {
     salaryPayments: value.salaryPayments as PersistentCareerMaps["salaryPayments"],
     npcCareers: value.npcCareers as PersistentCareerMaps["npcCareers"],
   } : emptyCareerMaps();
+  const economyMaps: PersistentEconomyMaps = schemaVersion === 4 ? {
+    economyAccounts: value.economyAccounts as PersistentEconomyMaps["economyAccounts"],
+    economyTransactions: value.economyTransactions as PersistentEconomyMaps["economyTransactions"],
+    economyLoans: value.economyLoans as PersistentEconomyMaps["economyLoans"],
+    economyCreditScores: value.economyCreditScores as PersistentEconomyMaps["economyCreditScores"],
+    economyEvents: value.economyEvents as PersistentEconomyMaps["economyEvents"],
+  } : emptyEconomyMaps();
   const state = {
-    schemaVersion: 3 as const,
+    schemaVersion: 4 as const,
     worldId: WORLD_ID,
     worldClock: normalizeWorldClock(clock, now, catalog),
     players: {} as Record<string, PersistentPlayer>,
@@ -420,6 +523,7 @@ function validateState(value: unknown, now: number): PersistentWorldState {
       inheritanceEvents: value.inheritanceEvents as PersistentWorldState["inheritanceEvents"],
     } : emptyLifeMaps()),
     ...careerMaps,
+    ...economyMaps,
   } satisfies PersistentWorldState;
 
   for (const [playerId, rawPlayer] of Object.entries(value.players)) {
@@ -450,13 +554,14 @@ function validateState(value: unknown, now: number): PersistentWorldState {
   }
   normalizeLifeWorldState(state, now);
   initializeCareerWorldState(state, now);
+  initializeEconomyWorldState(state, now);
   return state;
 }
 
 function initialState(now: number): PersistentWorldState {
   const catalog = loadLifeCatalog();
   const state: PersistentWorldState = {
-    schemaVersion: 3,
+    schemaVersion: 4,
     worldId: WORLD_ID,
     worldClock: normalizeWorldClock({
       day: catalog.calendar.starting_world_day,
@@ -467,8 +572,10 @@ function initialState(now: number): PersistentWorldState {
     players: {},
     ...emptyLifeMaps(),
     ...emptyCareerMaps(),
+    ...emptyEconomyMaps(),
   };
   initializeCareerWorldState(state, now);
+  initializeEconomyWorldState(state, now);
   return state;
 }
 

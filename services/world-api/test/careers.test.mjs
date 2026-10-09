@@ -592,11 +592,14 @@ test("Stage 5 schema version 2 migrates to Stage 6 version 3 without dropping li
   await writeFile(stateFile, JSON.stringify(legacy), "utf8");
 
   const migrated = new WorldStore(stateFile, Date.UTC(2025, 0, 2));
-  assert.equal(migrated.state.schemaVersion, 3);
+  assert.equal(migrated.state.schemaVersion, 4);
   assert.equal(migrated.state.people[preservedPersonId].name, preservedPersonName);
   assert.ok(Object.keys(migrated.state.careerEmployers).length >= 12);
   assert.ok(Object.keys(migrated.state.careerVacancies).length >= 10);
   assert.ok(migrated.state.npcCareers[preservedPersonId]);
+  assert.ok(typeof migrated.state.economyAccounts === "object");
+  assert.ok(typeof migrated.state.economyTransactions === "object");
+  assert.ok(typeof migrated.state.economyLoans === "object");
   await migrated.flush();
 });
 

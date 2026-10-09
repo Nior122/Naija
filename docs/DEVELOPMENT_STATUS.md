@@ -4,7 +4,7 @@
 
 ## Current stage and verification gate
 
-**Stage 6 — Careers & Employment: backend implementation and Node tests pass; the careers UI is source-integrated and gdtoolkit-parsed/formatted; Godot client/runtime verification is blocked.** Stages 0–5 remain preserved on the same `nigeria-main` world. The server still owns one shared online timeline. The earlier Stage 5 Godot limitation is still open; Stage 6 does not resolve it.
+**Stage 7 — Full Nigerian Economy: backend implementation and Node tests pass; the economy replaces the Stage 6 salary adapter with a canonical Naira ledger; Godot client/runtime verification is blocked.** Stages 0–6 remain preserved on the same `nigeria-main` world. The server still owns one shared online timeline. The earlier Stage 5 Godot limitation is still open; Stages 6–7 do not resolve it.
 
 Godot 4.7.2 is not installed (`godot: command not found`). Project import, engine type-checking, scenes, rendered careers UI, clicks through work/application flows, offline client journeys, and Godot multiplayer/reconnect/save runtime behavior have not been run. Do not infer client success from Node tests or gdtoolkit.
 
@@ -43,6 +43,45 @@ Player commands use `career.action` with the existing authenticated session and 
 
 See [`CAREERS_AND_EMPLOYMENT_PLAN.md`](CAREERS_AND_EMPLOYMENT_PLAN.md) for full catalogue, contract, payroll, NPC, persistence and scope details.
 
+## Stage 7 implementation
+
+### Canonical Naira ledger and banking
+
+- `game/data/economy/catalog.json` configures six progressive PAYE tax bands, three bank products (savings/current/fixed-deposit), three loan products (personal/student/business), and 12 market goods across food, health, transport, utilities, and clothing categories.
+- The `economyAccountPort` replaces the Stage 6 `prototypeSalaryAccountPort` as the career-to-economy integration seam. Salary credits from payroll flow into the character's cash-ledger account with idempotent deduplication.
+- Bank accounts support deposits, withdrawals, inter-account transfers, interest accrual, monthly fees, and daily withdrawal limits. Each transaction is an atomic ledger entry with before/after balances and idempotency keys.
+- Market goods purchases deduct from the cash account, restore hunger for food items, and record transactions against the good's location availability.
+
+### Credit, loans, and tax estimation
+
+- Per-character credit scores (300–850 range) are initialized at 500 and adjusted on loan approval, repayment, and default events.
+- Loan requests validate credit score, employment status (for personal/business loans), active-loan limits, and term constraints. Origination fees are deducted at disbursement.
+- Progressive PAYE income tax estimation uses configurable bands but does not auto-deduct — it is display-only.
+
+### Schema and client integration
+
+`services/world-api/src/economy/` contains typed catalogue validation, the economy service, and the canonical ledger. `services/world-api/src/multiplayer/persistence.ts` validates/migrates schema version 4 and stores economy accounts, transactions, loans, credit scores, and events. `services/world-api/src/multiplayer/world-engine.ts` integrates `economy.action` commands, the economy profile in private character snapshots, and the shared-clock economy processing (interest, fees, loan payments).
+
+The Godot client path has not been engine-tested in this workspace. See [`docs/ECONOMY_PLAN.md`](ECONOMY_PLAN.md) for full catalogue, contract, persistence, and scope details.
+
+## Stage 7 acceptance coverage
+
+| Area | Evidence | Result |
+|---|---|---|
+| Catalogue bounds, tax bands, bank/loan products, market goods | `services/world-api/test/economy.test.mjs` | **Passed (Node)** |
+| Cash account initialization from character money | Economy service tests | **Passed (Node)** |
+| Bank account opening, deposits, withdrawals, transfers | Economy service tests | **Passed (Node)** |
+| Market purchase, hunger restoration, location filtering | Economy service tests | **Passed (Node)** |
+| Loan request, repayment, credit-score adjustments | Economy service tests | **Passed (Node)** |
+| Loan rejection for low credit score or no employment | Economy service tests | **Passed (Node)** |
+| Interest accrual, monthly fees, loan default processing | Economy service tests | **Passed (Node)** |
+| economyAccountPort salary credit with idempotency | Economy service tests | **Passed (Node)** |
+| Income tax estimation across progressive bands | Economy service tests | **Passed (Node)** |
+| Schema-v3 to v4 migration preserving career/lifecycle records | Persistence test | **Passed (Node)** |
+| WebSocket economy commands (profile, purchase) | Two-client WebSocket test | **Passed (Node)** |
+| Private economy profile in character snapshot | WebSocket snapshot test | **Passed (Node)** |
+| Godot project import, engine typing, client economy UI | Godot unavailable | **Blocked / not run** |
+
 ## Stage 6 acceptance coverage
 
 | Area | Evidence | Result |
@@ -60,7 +99,7 @@ See [`CAREERS_AND_EMPLOYMENT_PLAN.md`](CAREERS_AND_EMPLOYMENT_PLAN.md) for full 
 
 | Check | Result |
 |---|---|
-| `npm run check` | **Passed** — ESLint, TypeScript build and 48 Node tests, 0 failures. Includes 11 Stage 6 career tests and retained Stage 1–5/backend/geography regressions. |
+| `npm run check` | **Passed** — ESLint, TypeScript build and 64 Node tests, 0 failures. Includes 16 Stage 7 economy tests, 11 Stage 6 career tests, and retained Stage 1–5/backend/geography regressions. |
 | `npm run geography:check` | **Passed** — 3 processed geography files match pinned sources. |
 | `./.venv/bin/gdformat --check $(find game -name '*.gd' -print)` (gdtoolkit 4.5.0) | **Passed** — all 21 GDScript files parse and would be left unchanged by gdformat. This is not a Godot engine check. |
 | `./.venv/bin/gdlint $(find game -name '*.gd' -print)` | **Not clean** — 7 structural findings in existing Stage 1–5 files, listed below; `career_panel.gd` has no gdtoolkit lint findings. |
@@ -84,6 +123,7 @@ npm ci
 npm run check
 npm run geography:check
 node --test services/world-api/test/careers.test.mjs  # after build, focused Stage 6 suite
+node --test services/world-api/test/economy.test.mjs  # after build, focused Stage 7 suite
 node --test services/world-api/test/life.test.mjs     # after build, focused Stage 5 suite
 # If gdtoolkit is installed:
 gdformat --check $(find game -name '*.gd' -print)
@@ -98,7 +138,7 @@ When Godot 4.7.2 is available, run the import check and retained client tests in
 2. Offline Godot mode keeps its existing local save/clock and does not synchronize to online server time or accrue elapsed time while closed.
 3. The current online JSON store is single-process, atomically replaced and limited to 16 MiB; it has no database transaction isolation, multi-writer coordination, backups, or production recovery.
 4. Career employers, salaries, leave, licences, and eligibility rules are fictional configurable fixtures, not official Nigerian economic/legal data. No real employer identity, role authorization, job marketplace, professional credentialing, or labor-law system is implemented.
-5. Stage 6 pay credits the existing balance through a prototype idempotent adapter. Stage 7 must replace it with the canonical ledger; no taxes, banks, transfers, businesses or estate wage settlement are implemented.
-6. Godot 4.7.2 client/runtime verification for Stages 1–6 remains blocked. Node tests and gdformat do not substitute for engine/runtime checks.
+5. Stage 7 replaces the Stage 6 prototype salary adapter with the canonical Naira ledger. Tax estimation is display-only; no automatic tax deduction, inter-player transfers, businesses, property, or estate wage settlement are implemented.
+6. Godot 4.7.2 client/runtime verification for Stages 1–7 remains blocked. Node tests and gdformat do not substitute for engine/runtime checks.
 7. Preserve Stage 5 life status and age as the sole authority for death and retirement; do not enable work or future wages for deceased characters.
-8. **Next planned stage: Stage 7 — Full Nigerian Economy.** Keep it inside the same world and connect to the existing salary adapter seam rather than introducing a duplicate economy.
+8. **Next planned stage: Stage 8 — Player Businesses.** Keep it inside the same world and use Stage 7 as the economic authority for business costs, revenue, and compliance.

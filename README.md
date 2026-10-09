@@ -6,13 +6,13 @@ Naija: One World is a long-term Nigerian life-simulation game project. The inten
 
 ## Current status
 
-The repository implements **Stages 0–6** on the same `nigeria-main` world. Offline local saves remain separate from the server-owned online character/world state; there is one shared authoritative online timeline, not regional or player-specific online clocks.
+The repository implements **Stages 0–7** on the same `nigeria-main` world. Offline local saves remain separate from the server-owned online character/world state; there is one shared authoritative online timeline, not regional or player-specific online clocks.
 
-Stage 3 includes a canonical registry for 36 states plus FCT and 774 LGAs, a reproducible geographic import pipeline, and a small 200-feature OpenStreetMap preview sample for Akure South, Ondo State. The sample is not full city, LGA, state, or national coverage. Stage 4 includes configurable secondary schooling, subjects/timetable/attendance, assessment/progression, fictional exams and post-secondary/trade pathways. Stage 5 adds a configurable Gregorian calendar/time scale, DOB-derived age and life stages, birthday/offline catch-up, persistent family/relationship/history records, safe adult relationship progression, marriage/child NPCs, retirement/death records and inheritance-reference hooks. Stage 6 adds a configurable career catalogue, server-checked eligibility and job applications, persistent employers/vacancies/employment/work history, scheduled work sessions, performance/skills, idempotent salary postings to the existing prototype balance, leave, progression, resignation/termination/retirement and deterministic household-NPC career foundations.
+Stage 3 includes a canonical registry for 36 states plus FCT and 774 LGAs, a reproducible geographic import pipeline, and a small 200-feature OpenStreetMap preview sample for Akure South, Ondo State. The sample is not full city, LGA, state, or national coverage. Stage 4 includes configurable secondary schooling, subjects/timetable/attendance, assessment/progression, fictional exams and post-secondary/trade pathways. Stage 5 adds a configurable Gregorian calendar/time scale, DOB-derived age and life stages, birthday/offline catch-up, persistent family/relationship/history records, safe adult relationship progression, marriage/child NPCs, retirement/death records and inheritance-reference hooks. Stage 6 adds a configurable career catalogue, server-checked eligibility and job applications, persistent employers/vacancies/employment/work history, scheduled work sessions, performance/skills, idempotent salary postings to the existing prototype balance, leave, progression, resignation/termination/retirement and deterministic household-NPC career foundations. Stage 7 replaces the Stage 6 prototype salary adapter with an atomic canonical Naira-denominated ledger, adds configurable bank accounts (savings/current/fixed-deposit), deposits/withdrawals/transfers, market goods with hunger restoration, progressive PAYE income tax estimation, credit scoring, and personal/student/business loan products with origination fees and repayment tracking.
 
-Backend lint/build and all 48 Node tests pass; the deterministic geography check and GDScript formatting/parser check pass. Static GDScript lint retains seven structural findings in existing large files. **Godot 4.7.2 is not installed in the current workspace**, so project import, offline/online client gameplay, UI and local save/restart behavior—including the new career panel—remain unverified. Stage 5's earlier Godot verification limitation remains open. See [`docs/DEVELOPMENT_STATUS.md`](docs/DEVELOPMENT_STATUS.md), [`docs/LIFE_SIMULATION_PLAN.md`](docs/LIFE_SIMULATION_PLAN.md), and [`docs/CAREERS_AND_EMPLOYMENT_PLAN.md`](docs/CAREERS_AND_EMPLOYMENT_PLAN.md) for evidence and limits.
+Backend lint/build and all 64 Node tests pass; the deterministic geography check and GDScript formatting/parser check pass. Static GDScript lint retains seven structural findings in existing large files. **Godot 4.7.2 is not installed in the current workspace**, so project import, offline/online client gameplay, UI and local save/restart behavior—including the career panel and economy services—remain unverified. Stage 5's earlier Godot verification limitation remains open. See [`docs/DEVELOPMENT_STATUS.md`](docs/DEVELOPMENT_STATUS.md), [`docs/LIFE_SIMULATION_PLAN.md`](docs/LIFE_SIMULATION_PLAN.md), [`docs/CAREERS_AND_EMPLOYMENT_PLAN.md`](docs/CAREERS_AND_EMPLOYMENT_PLAN.md), and [`docs/ECONOMY_PLAN.md`](docs/ECONOMY_PLAN.md) for evidence and limits.
 
-Education, life-simulation and career content are configurable fictional prototype data—not official guidance, real-world demographic/pay claims, professional licensing, or employment law. Stage 5 has no sexual content, automatic old-age death, asset transfer, or legal inheritance. Stage 6 has no bank, full economy, real employer accounts, or production service.
+Education, life-simulation and career content are configurable fictional prototype data—not official guidance, real-world demographic/pay claims, professional licensing, or employment law. Stage 5 has no sexual content, automatic old-age death, asset transfer, or legal inheritance. Stage 6 has no real employer accounts or production service. Stage 7 economic data (prices, tax rates, interest rates, bank/loan products) is fictional and game-balanced—not official Nigerian economic data, tax guidance, or banking regulation.
 
 ## Stage 1 — first playable slice (retained)
 
@@ -69,6 +69,22 @@ The local profile/save and Godot world/NPC paths are source-implemented but **no
 The configurable career catalogue and server service integrate with Stage 4 education/skill/qualification records and Stage 5 DOB, age, retirement and death state. Authenticated players can search prototype vacancies, apply/withdraw, clock in and complete server-timed shifts, record unpaid leave, request eligible promotions, resign and retire. Employers/vacancies, applications, employment history, work sessions, career skills, reviews, leave, salary payments and NPC career fixtures persist in the shared server state. Career-profile data is returned to the owning session, not public player presence.
 
 Payroll uses an idempotent payment ID and the existing server-owned character balance through a narrow adapter; this is not a bank or general economy. Employer termination and professional registration are internal server foundations only because the prototype has no authenticated employer/credentialing role system. Career employers, salaries and rules are fictional fixtures, not verified real-world data. The Godot career UI is source-integrated and format/parser checked, but not engine-tested because Godot is unavailable. See [`docs/CAREERS_AND_EMPLOYMENT_PLAN.md`](docs/CAREERS_AND_EMPLOYMENT_PLAN.md).
+
+## Stage 7 — Full Nigerian Economy
+
+Stage 7 replaces the Stage 6 prototype salary adapter with an atomic canonical Naira ledger and adds banking, market goods, tax estimation, credit scoring, and loans — all inside the same `nigeria-main` world.
+
+- **Canonical Naira ledger:** Every character's cash balance is owned by a persistent `economyAccounts` cash-account record. The `economyAccountPort` credits Stage 6 payroll salary into this ledger with idempotent deduplication.
+- **Banking:** Configurable savings, current, and fixed-deposit products with interest rates, monthly fees, withdrawal/transfer fees, daily withdrawal limits, and minimum balances. Deposits, withdrawals, and inter-account transfers are atomic ledger entries.
+- **Market goods:** 12 configurable items across food, health, transport, utilities, and clothing. Food purchases restore hunger; each good has location availability.
+- **Tax estimation:** Six progressive PAYE income tax bands for display-only monthly income tax estimation.
+- **Credit scoring:** Per-character credit score (300–850) initialized at 500, adjusted on loan approval/repayment/default.
+- **Loans:** Personal, student, and business loan products with configurable interest rates, terms, origination fees, late-payment penalties, credit-score requirements, and employment checks.
+- **Schema v4:** `PersistentWorldState` upgraded from schema 3 to schema 4 with five new economy maps. Older schemas auto-migrate.
+
+`services/world-api/src/economy/` contains typed catalogue validation and server rules. `services/world-api/src/multiplayer/persistence.ts` validates/migrates schema version 4 and stores economy accounts, transactions, loans, credit scores, and events. The economy profile is included in the private `character.snapshot` — it is not part of public presence or world snapshots.
+
+The Godot client path has not been engine-tested in this workspace. The economy catalogue and all rules are fictional and game-balanced — no real Nigerian bank, tax authority, employer, or financial-regulation data is referenced. See [`docs/ECONOMY_PLAN.md`](docs/ECONOMY_PLAN.md).
 
 ## Technology
 
@@ -158,6 +174,7 @@ npm run check  # lint plus the complete test suite
 node --test services/world-api/test/education.test.mjs  # focused Stage 4 education tests (build first)
 node --test services/world-api/test/life.test.mjs       # focused Stage 5 life tests (build first)
 node --test services/world-api/test/careers.test.mjs    # focused Stage 6 career tests (build first)
+node --test services/world-api/test/economy.test.mjs    # focused Stage 7 economy tests (build first)
 npm run geography:import  # regenerate the deterministic processed geography catalog
 npm run geography:check   # verify that processed outputs match pinned source files
 ```
@@ -208,6 +225,7 @@ docs/                       Vision, plans, architecture, status, and agent guida
 - [Stage 4 education plan](docs/EDUCATION_PLAN.md)
 - [Stage 5 life simulation plan](docs/LIFE_SIMULATION_PLAN.md)
 - [Stage 6 careers and employment plan](docs/CAREERS_AND_EMPLOYMENT_PLAN.md)
+- [Stage 7 economy plan](docs/ECONOMY_PLAN.md)
 - [Multiplayer plan](docs/MULTIPLAYER_PLAN.md)
 - [World and time plan](docs/WORLD_PLAN.md)
 - [Geographic data sources and licenses](docs/DATA_SOURCES.md)
@@ -218,4 +236,4 @@ docs/                       Vision, plans, architecture, status, and agent guida
 
 ## Scope boundary
 
-Stage 3 provides a national administrative registry and one bounded Akure South map-data sample, not full national geography or simulation. Stages 4–6 implement fictional education, age/life, and career/employment foundations; backend checks pass, but Godot runtime/UI/save integration remains unverified until Godot 4.7.2 is available. Preserve one logical Nigeria and one shared online timeline; do not split the prototype into separately authoritative regional or player worlds. **Next roadmap stage: Stage 7 — Full Nigerian Economy.** Full national visual detail, account services, production database/operations, comprehensive anti-cheat/moderation, advanced NPC society, transport/weather simulation, and cross-platform client exports remain future work. Stage 7 must replace the career salary adapter with the canonical economy ledger before treating wages as durable or valuable state.
+Stage 3 provides a national administrative registry and one bounded Akure South map-data sample, not full national geography or simulation. Stages 4–7 implement fictional education, age/life, career/employment, and economy foundations; backend checks pass, but Godot runtime/UI/save integration remains unverified until Godot 4.7.2 is available. Preserve one logical Nigeria and one shared online timeline; do not split the prototype into separately authoritative regional or player worlds. **Next roadmap stage: Stage 8 — Player Businesses.** Full national visual detail, account services, production database/operations, comprehensive anti-cheat/moderation, advanced NPC society, transport/weather simulation, and cross-platform client exports remain future work. Stage 7's canonical Naira ledger is the economic authority for any future business, property, or financial simulation.

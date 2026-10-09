@@ -18,7 +18,6 @@ import {
   endCareerAtDeath,
   processCareerWorldDate,
   processCareerWorldMinute,
-  prototypeSalaryAccountPort,
   requestCareerLeave,
   requestCareerPromotion,
   requestCareerRetirement,
@@ -29,6 +28,24 @@ import {
   withdrawCareerApplication,
 } from "../careers/service.js";
 import type { CareerCatalog } from "../careers/types.js";
+import { loadEconomyCatalog } from "../economy/catalog.js";
+import {
+  buildEconomyProfile,
+  depositToAccount,
+  economyAccountPort,
+  economyErrorMessage,
+  initializeEconomyWorldState,
+  listMarketGoodsForLocation,
+  openEconomyAccount,
+  processEconomyWorldDate,
+  purchaseMarketGood,
+  repayLoan,
+  requestLoan,
+  syncCharacterCashFromEconomy,
+  transferBetweenAccounts,
+  withdrawFromAccount,
+} from "../economy/service.js";
+import type { EconomyCatalog } from "../economy/types.js";
 import { loadLifeCatalog, dateForWorldDay, isValidDate, worldClockSnapshot } from "../life/calendar.js";
 import {
   advanceWorldLife,
@@ -104,6 +121,7 @@ const IDEMPOTENT_COMMANDS = new Set([
   "school.answer",
   "education.action",
   "career.action",
+  "economy.action",
   "relationship.progress",
   "family.childbirth",
 ]);
@@ -373,6 +391,7 @@ export class MultiplayerWorld {
   private readonly geographyRegion: GeographicRegion;
   private readonly educationCatalog: EducationCatalog;
   private readonly careerCatalog: CareerCatalog = loadCareerCatalog();
+  private readonly economyCatalog: EconomyCatalog = loadEconomyCatalog();
   private readonly lifeCatalog = loadLifeCatalog();
   private lastTickAt: number;
   private lastBroadcastAt = 0;
@@ -438,7 +457,7 @@ export class MultiplayerWorld {
     const minuteOfDay = this.store.state.worldClock.minute_of_day;
     const event = recordRetirement(this.store.state, characterId);
     requestCareerRetirement(this.store.state, characterId, date, minuteOfDay, now,
-      prototypeSalaryAccountPort(this.store.state, this.careerCatalog));
+      economyAccountPort(this.store.state, this.economyCatalog));
     this.dirty = true;
     const timestamp = new Date(now).toISOString();
     const player = Object.values(this.store.state.players).find((entry) => entry.character.character_id === characterId);
@@ -656,6 +675,7 @@ export class MultiplayerWorld {
       case "school.answer": await this.answerLesson(context, player, message, requestId); return;
       case "education.action": await this.educationAction(context, player, message, requestId); return;
       case "career.action": await this.careerAction(context, player, message, requestId); return;
+      case "economy.action": await this.economyAction(context, player, message, requestId); return;
       case "chat.send": this.handleChat(context, player, message, requestId); return;
       case "player.interact": this.handlePlayerInteraction(context, player, message, requestId); return;
       case "relationship.progress": await this.progressRelationship(context, player, message, requestId); return;
@@ -752,6 +772,7 @@ export class MultiplayerWorld {
       this.sendError(context, this.errorCode(error), "The character family could not be created.", requestId);
       return;
     }
+    initializeEconomyWorldState(this.store.state, this.now());
     this.playerByTokenHash.set(tokenHash, playerId);
     this.playerByCreationKeyHash.set(creationKeyHash, playerId);
     // The upcoming snapshot includes all current changes; keep later concurrent dirtiness intact.
@@ -798,7 +819,8 @@ export class MultiplayerWorld {
     }
     advanceWorldLife(this.store.state, this.store.state.worldClock.world_date);
     processCareerWorldDate(this.store.state, this.store.state.worldClock.world_date, this.now(), this.careerCatalog,
-      prototypeSalaryAccountPort(this.store.state, this.careerCatalog));
+      economyAccountPort(this.store.state, this.economyCatalog));
+    processEconomyWorldDate(this.store.state, this.store.state.worldClock.world_date, this.now(), this.economyCatalog);
     processCareerWorldMinute(this.store.state, this.store.state.worldClock.world_date,
       this.store.state.worldClock.minute_of_day, this.now(), this.careerCatalog);
     context.playerId = playerId;
@@ -1381,7 +1403,7 @@ export class MultiplayerWorld {
         }
         case "resign": {
           const employment = resignCareerEmployment(state, characterId, requiredString("employment_id"),
-            date, minuteOfDay, now, prototypeSalaryAccountPort(state, this.careerCatalog));
+            date, minuteOfDay, now, economyAccountPort(state, this.economyCatalog));
           data.employment = employment;
           messageText = "Resignation recorded. Completed eligible work sessions were reconciled through payroll.";
           break;
@@ -1389,7 +1411,7 @@ export class MultiplayerWorld {
         case "retire": {
           const lifeEvent = recordRetirement(state, characterId);
           const employmentsEnded = requestCareerRetirement(state, characterId, date, minuteOfDay, now,
-            prototypeSalaryAccountPort(state, this.careerCatalog));
+            economyAccountPort(state, this.economyCatalog));
           data.life_event = lifeEvent;
           data.employments_ended = employmentsEnded;
           messageText = `Retirement recorded at the Stage 5 age threshold; ${employmentsEnded} employment record(s) closed.`;
@@ -1415,6 +1437,159 @@ export class MultiplayerWorld {
     data.career_profile = buildCareerProfile(state, player.character, this.careerCatalog);
     this.send(context, appendOptionalRequestId({
       type: "career.result", action, ok: true, message: messageText, data,
+    }, requestId));
+    this.sendCharacterSnapshot(context);
+    await this.flushDirty();
+  }
+
+  private async economyAction(
+    context: ConnectionContext,
+    player: PersistentPlayer,
+    message: Record<string, unknown>,
+    requestId?: string,
+  ): Promise<void> {
+    if (typeof message.action !== "string" || message.action.length > 48) {
+      this.send(context, appendOptionalRequestId({
+        type: "economy.error", action: "", code: "economy_action_invalid",
+        message: "Choose a supported economy action.",
+      }, requestId));
+      return;
+    }
+    const action = message.action;
+    const payload = isRecord(message.payload) ? message.payload : {};
+    const state = this.store.state;
+    const characterId = player.character.character_id;
+    const date = { ...state.worldClock.world_date };
+    const minuteOfDay = state.worldClock.minute_of_day;
+    const now = this.now();
+    const data: Record<string, unknown> = {};
+    let messageText = "Economy records were refreshed from the shared server.";
+    const requiredString = (key: string, maximumLength = 120): string => {
+      const value = payload[key];
+      if (typeof value !== "string" || value.trim().length === 0 || value.length > maximumLength) {
+        throw new Error("economy_action_invalid");
+      }
+      return value.trim();
+    };
+    const requiredInteger = (key: string, minimum = 0, maximum = 10_000_000_000): number => {
+      const value = payload[key];
+      if (!Number.isSafeInteger(value) || (value as number) < minimum || (value as number) > maximum) {
+        throw new Error("economy_action_invalid");
+      }
+      return value as number;
+    };
+
+    try {
+      switch (action) {
+        case "profile": {
+          data.economy_profile = buildEconomyProfile(state, characterId, this.economyCatalog);
+          messageText = "Economy profile loaded from the shared server.";
+          break;
+        }
+        case "list_goods": {
+          const locationId = typeof payload.location_id === "string" ? payload.location_id : player.character.current_location;
+          data.goods = listMarketGoodsForLocation(this.economyCatalog, locationId);
+          data.location_id = locationId;
+          messageText = `${(data.goods as unknown[]).length} market goods listed for ${locationId}.`;
+          break;
+        }
+        case "open_account": {
+          const account = openEconomyAccount(state, characterId, requiredString("bank_product_id"),
+            requiredInteger("initial_deposit_ngn", 0, this.economyCatalog.rules.maximum_transaction_amount_ngn),
+            date, minuteOfDay, now, this.economyCatalog);
+          data.account = account;
+          syncCharacterCashFromEconomy(state, characterId);
+          messageText = `Opened a ${this.economyCatalog.bank_products.find((product) => product.id === account.bank_product_id)?.label ?? account.bank_product_id ?? "account"}.`;
+          break;
+        }
+        case "deposit": {
+          const tx = depositToAccount(state, characterId, requiredString("account_id"),
+            requiredInteger("amount_ngn", this.economyCatalog.rules.minimum_transaction_amount_ngn, this.economyCatalog.rules.maximum_transaction_amount_ngn),
+            date, minuteOfDay, now, this.economyCatalog);
+          data.transaction = tx;
+          syncCharacterCashFromEconomy(state, characterId);
+          messageText = `Deposited ₦${tx.amount_ngn.toLocaleString("en-NG")}.`;
+          break;
+        }
+        case "withdraw": {
+          const tx = withdrawFromAccount(state, characterId, requiredString("account_id"),
+            requiredInteger("amount_ngn", this.economyCatalog.rules.minimum_transaction_amount_ngn, this.economyCatalog.rules.maximum_transaction_amount_ngn),
+            date, minuteOfDay, now, this.economyCatalog);
+          data.transaction = tx;
+          syncCharacterCashFromEconomy(state, characterId);
+          messageText = `Withdrew ₦${tx.amount_ngn.toLocaleString("en-NG")} to cash.`;
+          break;
+        }
+        case "transfer": {
+          const tx = transferBetweenAccounts(state, characterId,
+            requiredString("from_account_id"), requiredString("to_account_id"),
+            requiredInteger("amount_ngn", this.economyCatalog.rules.minimum_transaction_amount_ngn, this.economyCatalog.rules.maximum_transfer_amount_ngn),
+            date, minuteOfDay, now, this.economyCatalog);
+          data.transaction = tx;
+          messageText = `Transferred ₦${tx.amount_ngn.toLocaleString("en-NG")} between accounts.`;
+          break;
+        }
+        case "purchase": {
+          const goodId = requiredString("good_id");
+          const quantity = requiredInteger("quantity", 1, 100);
+          const locationId = typeof payload.location_id === "string" ? payload.location_id : player.character.current_location;
+          const result = purchaseMarketGood(state, characterId, goodId, quantity, locationId, date, minuteOfDay, now, this.economyCatalog);
+          data.transaction = result.transaction;
+          data.good = result.good;
+          data.total_cost_ngn = result.total_cost_ngn;
+          if (result.good.hunger_restore > 0 && quantity === 1) {
+            player.character.hunger = Math.min(100, player.character.hunger + result.good.hunger_restore);
+          }
+          messageText = `Purchased ${quantity} × ${result.good.label} for ₦${result.total_cost_ngn.toLocaleString("en-NG")}.`;
+          break;
+        }
+        case "request_loan": {
+          const loan = requestLoan(state, characterId, requiredString("loan_product_id"),
+            requiredInteger("amount_ngn", this.economyCatalog.rules.minimum_transaction_amount_ngn, this.economyCatalog.rules.maximum_loan_amount_ngn),
+            requiredInteger("term_months", 1, 360),
+            date, minuteOfDay, now, this.economyCatalog);
+          data.loan = loan;
+          syncCharacterCashFromEconomy(state, characterId);
+          messageText = `Approved ${this.economyCatalog.loan_products.find((product) => product.id === loan.loan_product_id)?.label ?? loan.loan_product_id} of ₦${loan.principal_ngn.toLocaleString("en-NG")}.`;
+          break;
+        }
+        case "repay_loan": {
+          const tx = repayLoan(state, characterId, requiredString("loan_id"),
+            requiredInteger("amount_ngn", this.economyCatalog.rules.minimum_transaction_amount_ngn, this.economyCatalog.rules.maximum_transaction_amount_ngn),
+            date, minuteOfDay, now, this.economyCatalog);
+          data.transaction = tx;
+          syncCharacterCashFromEconomy(state, characterId);
+          messageText = `Repaid ₦${tx.amount_ngn.toLocaleString("en-NG")} towards loan.`;
+          break;
+        }
+        case "estimate_tax": {
+          const monthlyIncome = requiredInteger("monthly_income_ngn", 0, this.economyCatalog.rules.maximum_account_balance_ngn);
+          const { estimateIncomeTax } = await import("../economy/service.js");
+          data.monthly_income_ngn = monthlyIncome;
+          data.estimated_tax_ngn = estimateIncomeTax(monthlyIncome, this.economyCatalog);
+          messageText = `Estimated monthly PAYE: ₦${(data.estimated_tax_ngn as number).toLocaleString("en-NG")}.`;
+          break;
+        }
+        default:
+          throw new Error("economy_action_unknown");
+      }
+    } catch (error) {
+      const code = this.errorCode(error);
+      this.send(context, appendOptionalRequestId({
+        type: "economy.error",
+        action,
+        code,
+        message: economyErrorMessage(code),
+        economy_profile: buildEconomyProfile(state, characterId, this.economyCatalog),
+      }, requestId));
+      return;
+    }
+
+    this.markRequestProcessed(player, requestId);
+    if (action !== "profile" && action !== "list_goods" && action !== "estimate_tax") this.touchPlayer(player);
+    if (action === "profile") data.economy_profile = buildEconomyProfile(state, characterId, this.economyCatalog);
+    this.send(context, appendOptionalRequestId({
+      type: "economy.result", action, ok: true, message: messageText, data,
     }, requestId));
     this.sendCharacterSnapshot(context);
     await this.flushDirty();
@@ -1643,7 +1818,8 @@ export class MultiplayerWorld {
     if (dateChanged) {
       advanceWorldLife(this.store.state, clock.world_date);
       processCareerWorldDate(this.store.state, clock.world_date, now, this.careerCatalog,
-        prototypeSalaryAccountPort(this.store.state, this.careerCatalog));
+        economyAccountPort(this.store.state, this.economyCatalog));
+      processEconomyWorldDate(this.store.state, clock.world_date, now, this.economyCatalog);
     }
     if (processCareerWorldMinute(this.store.state, clock.world_date, clock.minute_of_day, now, this.careerCatalog) > 0) {
       this.dirty = true;
@@ -1690,6 +1866,7 @@ export class MultiplayerWorld {
     const snapshot = safeClone(player.character);
     snapshot.life_profile = buildLifeProfile(this.store.state, player.character);
     snapshot.career_profile = buildCareerProfile(this.store.state, player.character, this.careerCatalog);
+    snapshot.economy_profile = buildEconomyProfile(this.store.state, player.character.character_id, this.economyCatalog);
     return snapshot;
   }
 

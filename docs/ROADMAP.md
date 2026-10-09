@@ -1,6 +1,6 @@
 # Master Roadmap
 
-The roadmap describes intended development, not completed features. Stage 0 is complete. Stages 1–5 remain in place; Godot runtime verification is still pending. Stages 4–6 have backend/persistence/multiplayer checks passing, while their Godot client verification remains blocked. Stage 6 is implementation-present and backend-tested; Stage 7 — Full Nigerian Economy is next. See `DEVELOPMENT_STATUS.md` for exact results and limits.
+The roadmap describes intended development, not completed features. Stage 0 is complete. Stages 1–6 remain in place; Godot runtime verification is still pending. Stages 4–7 have backend/persistence/multiplayer checks passing, while their Godot client verification remains blocked. Stage 7 is implementation-present and backend-tested; Stage 8 — Player Businesses is next. See `DEVELOPMENT_STATUS.md` for exact results and limits.
 
 | Phase | Name | Purpose | Status |
 |---:|---|---|---|
@@ -11,7 +11,7 @@ The roadmap describes intended development, not completed features. Stage 0 is c
 | 4 | Complete Education System | Integrate configurable secondary schooling, attendance/results, original final-secondary exams, fictional tertiary/ND/HND/vocational/apprenticeship pathways, scholarships, geography, multiplayer and saves. | **Implementation present; Node/backend checks pass; Godot runtime verification pending** |
 | 5 | Age & Life Simulation | Add birthdays, age progression, life stages, family events, death, inheritance, and generational continuity. | **Implementation present; Node tests pass; Godot client verification pending** |
 | 6 | Careers & Employment | Model skills, job seeking, employment, work progression, and career changes. | **Implementation present; backend tested; Godot client verification pending** |
-| 7 | Full Nigerian Economy | Build a balanced Naira-denominated simulation for prices, wages, banking, transactions, taxes, credit, and investment. | Not started |
+| 7 | Full Nigerian Economy | Build a balanced Naira-denominated simulation for prices, wages, banking, transactions, taxes, credit, and investment. | **Implementation present; backend verified; Godot runtime verification pending** |
 | 8 | Player Businesses | Let players establish and operate businesses with staffing, costs, stock, compliance, and customer demand. | Not started |
 | 9 | Housing & Property | Add homes, rentals, ownership, construction, property records, and housing markets. | Not started |
 | 10 | Government | Model local, state, and federal institutions, agencies, budgets, public services, and office holders. | Not started |
@@ -46,7 +46,7 @@ The implementation is in place across `game/data/education/catalog.json`, the of
 
 The prior Stage 4 verification reported 26 Node tests, including eight focused education tests for enrollment/progression, attendance/grades/results, final exam outcomes/persistence, tertiary and ND/HND pathways, training/apprenticeship, scholarships/history, geography, online schoolyard co-presence, attendance replication and save/restart. The current full suite has since grown to 48 Node tests and continues to cover those regressions. Geography reproducibility and GDScript formatting pass. Static GDScript lint has structural findings. **Godot 4.7.2 is unavailable**, so Stage 4 project import, offline/client UI/save journeys and Godot multiplayer/runtime regressions remain unverified. See `DEVELOPMENT_STATUS.md` and `EDUCATION_PLAN.md` for the remaining client gate. Stage 5 implementation has been added without replacing or declaring these Godot checks successful; the Stage 4 client limitation remains open.
 
-Next roadmap line: **Stage 7 — Full Nigerian Economy**. Stage 6 extends the same world with a bounded server-authoritative careers prototype; it does not remove the pending Stage 5/6 Godot client verification gate.
+Next roadmap line: **Stage 8 — Player Businesses**. Stage 7 extends the same world with a canonical Naira-denominated economy ledger; it replaces the Stage 6 prototype salary adapter and does not remove the pending Stage 5–7 Godot client verification gate.
 
 ## Stage 5 exit gate
 

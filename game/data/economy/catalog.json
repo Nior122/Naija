@@ -1,0 +1,250 @@
+{
+  "schema_version": 1,
+  "world_id": "nigeria-main",
+  "notice": "Fictional configurable Naira-denominated economy prototype for the Naija: One World game. All prices, tax rates, interest rates and fees are game-balanced fixtures, not official Nigerian economic data, tax guidance or banking regulation.",
+  "rules": {
+    "currency": "NGN",
+    "currency_label": "Naira",
+    "currency_symbol": "₦",
+    "maximum_account_balance_ngn": 500000000,
+    "minimum_account_balance_ngn": 0,
+    "maximum_transaction_amount_ngn": 50000000,
+    "minimum_transaction_amount_ngn": 1,
+    "maximum_transfer_amount_ngn": 10000000,
+    "maximum_loan_amount_ngn": 5000000,
+    "maximum_transaction_history_per_account": 500,
+    "maximum_accounts_per_character": 3,
+    "minimum_credit_score": 300,
+    "maximum_credit_score": 850,
+    "starting_credit_score": 500,
+    "minimum_credit_score_for_loan": 550,
+    "transaction_idempotency_window_seconds": 86400
+  },
+  "tax_bands": [
+    {
+      "id": "tax-band:1",
+      "label": "First ₦300,000",
+      "minimum_monthly_income_ngn": 0,
+      "maximum_monthly_income_ngn": 25000,
+      "rate_percent": 7
+    },
+    {
+      "id": "tax-band:2",
+      "label": "₦300,001 – ₦600,000",
+      "minimum_monthly_income_ngn": 25001,
+      "maximum_monthly_income_ngn": 50000,
+      "rate_percent": 11
+    },
+    {
+      "id": "tax-band:3",
+      "label": "₦600,001 – ₦1,100,000",
+      "minimum_monthly_income_ngn": 50001,
+      "maximum_monthly_income_ngn": 91667,
+      "rate_percent": 15
+    },
+    {
+      "id": "tax-band:4",
+      "label": "₦1,100,001 – ₦1,600,000",
+      "minimum_monthly_income_ngn": 91668,
+      "maximum_monthly_income_ngn": 133333,
+      "rate_percent": 19
+    },
+    {
+      "id": "tax-band:5",
+      "label": "₦1,600,001 – ₦3,200,000",
+      "minimum_monthly_income_ngn": 133334,
+      "maximum_monthly_income_ngn": 266667,
+      "rate_percent": 24
+    },
+    {
+      "id": "tax-band:6",
+      "label": "Above ₦3,200,000",
+      "minimum_monthly_income_ngn": 266668,
+      "maximum_monthly_income_ngn": 1000000000,
+      "rate_percent": 26
+    }
+  ],
+  "bank_products": [
+    {
+      "id": "bank-product:savings",
+      "label": "Savings Account",
+      "kind": "savings",
+      "interest_rate_monthly_percent": 0.35,
+      "minimum_balance_ngn": 1000,
+      "monthly_fee_ngn": 0,
+      "withdrawal_fee_ngn": 0,
+      "transfer_fee_ngn": 10,
+      "max_withdrawal_daily_ngn": 500000
+    },
+    {
+      "id": "bank-product:current",
+      "label": "Current Account",
+      "kind": "current",
+      "interest_rate_monthly_percent": 0,
+      "minimum_balance_ngn": 0,
+      "monthly_fee_ngn": 100,
+      "withdrawal_fee_ngn": 0,
+      "transfer_fee_ngn": 0,
+      "max_withdrawal_daily_ngn": 2000000
+    },
+    {
+      "id": "bank-product:fixed-deposit",
+      "label": "Fixed Deposit",
+      "kind": "fixed_deposit",
+      "interest_rate_monthly_percent": 0.75,
+      "minimum_balance_ngn": 50000,
+      "monthly_fee_ngn": 0,
+      "withdrawal_fee_ngn": 500,
+      "transfer_fee_ngn": 0,
+      "max_withdrawal_daily_ngn": 10000000
+    }
+  ],
+  "loan_products": [
+    {
+      "id": "loan-product:personal",
+      "label": "Personal Loan",
+      "kind": "personal",
+      "interest_rate_monthly_percent": 2.5,
+      "maximum_amount_ngn": 1000000,
+      "maximum_term_months": 24,
+      "minimum_credit_score": 550,
+      "origination_fee_percent": 1.5,
+      "late_payment_fee_ngn": 2000,
+      "requires_employment": true
+    },
+    {
+      "id": "loan-product:student",
+      "label": "Student Loan",
+      "kind": "student",
+      "interest_rate_monthly_percent": 0.5,
+      "maximum_amount_ngn": 500000,
+      "maximum_term_months": 48,
+      "minimum_credit_score": 400,
+      "origination_fee_percent": 0.5,
+      "late_payment_fee_ngn": 500,
+      "requires_employment": false
+    },
+    {
+      "id": "loan-product:business",
+      "label": "Small Business Loan",
+      "kind": "business",
+      "interest_rate_monthly_percent": 3.0,
+      "maximum_amount_ngn": 5000000,
+      "maximum_term_months": 36,
+      "minimum_credit_score": 650,
+      "origination_fee_percent": 2.0,
+      "late_payment_fee_ngn": 5000,
+      "requires_employment": true
+    }
+  ],
+  "market_goods": [
+    {
+      "id": "goods:rice-5kg",
+      "category": "food",
+      "label": "Rice (5 kg)",
+      "base_price_ngn": 8500,
+      "unit": "bag",
+      "hunger_restore": 40,
+      "location_ids": ["market"]
+    },
+    {
+      "id": "goods:beans-2kg",
+      "category": "food",
+      "label": "Beans (2 kg)",
+      "base_price_ngn": 3500,
+      "unit": "bag",
+      "hunger_restore": 30,
+      "location_ids": ["market"]
+    },
+    {
+      "id": "goods:garri-5kg",
+      "category": "food",
+      "label": "Garri (5 kg)",
+      "base_price_ngn": 4000,
+      "unit": "bag",
+      "hunger_restore": 25,
+      "location_ids": ["market"]
+    },
+    {
+      "id": "goods:palm-oil-1l",
+      "category": "food",
+      "label": "Palm Oil (1 litre)",
+      "base_price_ngn": 2500,
+      "unit": "bottle",
+      "hunger_restore": 0,
+      "location_ids": ["market"]
+    },
+    {
+      "id": "goods:bread",
+      "category": "food",
+      "label": "Bread (loaf)",
+      "base_price_ngn": 1500,
+      "unit": "loaf",
+      "hunger_restore": 20,
+      "location_ids": ["market"]
+    },
+    {
+      "id": "goods:water-50cl",
+      "category": "food",
+      "label": "Bottled Water (50 cl)",
+      "base_price_ngn": 200,
+      "unit": "bottle",
+      "hunger_restore": 5,
+      "location_ids": ["market"]
+    },
+    {
+      "id": "goods:suya",
+      "category": "food",
+      "label": "Suya (wrap)",
+      "base_price_ngn": 1000,
+      "unit": "wrap",
+      "hunger_restore": 30,
+      "location_ids": ["market"]
+    },
+    {
+      "id": "goods:paracetamol",
+      "category": "health",
+      "label": "Paracetamol (strip)",
+      "base_price_ngn": 350,
+      "unit": "strip",
+      "hunger_restore": 0,
+      "location_ids": ["market", "clinic"]
+    },
+    {
+      "id": "goods:bus-fare-town",
+      "category": "transport",
+      "label": "Bus fare (town)",
+      "base_price_ngn": 300,
+      "unit": "trip",
+      "hunger_restore": 0,
+      "location_ids": ["town"]
+    },
+    {
+      "id": "goods:bus-fare-intercity",
+      "category": "transport",
+      "label": "Bus fare (inter-city)",
+      "base_price_ngn": 2500,
+      "unit": "trip",
+      "hunger_restore": 0,
+      "location_ids": ["town"]
+    },
+    {
+      "id": "goods:phone-credit",
+      "category": "utilities",
+      "label": "Phone airtime (₦500)",
+      "base_price_ngn": 500,
+      "unit": "unit",
+      "hunger_restore": 0,
+      "location_ids": ["market"]
+    },
+    {
+      "id": "goods:school-uniform",
+      "category": "clothing",
+      "label": "School uniform piece",
+      "base_price_ngn": 5000,
+      "unit": "piece",
+      "hunger_restore": 0,
+      "location_ids": ["market"]
+    }
+  ]
+}
