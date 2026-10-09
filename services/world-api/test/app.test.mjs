@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { afterEach, test } from "node:test";
 import WebSocket from "ws";
 import { createApiServer } from "../dist/app.js";
+import { readApiConfig } from "../dist/config.js";
 
 const activeServers = new Set();
 const activeDirectories = new Set();
@@ -149,6 +150,19 @@ async function createCharacter(peer, name, overrides = {}) {
 const AKURE_REGION_ID = "ng:region:ondo:akure-south-core";
 const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
+test("game-time scaling is configurable and validates its bounds", () => {
+  const previousValue = process.env.GAME_MINUTE_MS;
+  try {
+    process.env.GAME_MINUTE_MS = "1200";
+    assert.equal(readApiConfig().gameMinuteMs, 1200);
+    process.env.GAME_MINUTE_MS = "0";
+    assert.throws(() => readApiConfig(), /GAME_MINUTE_MS/);
+  } finally {
+    if (previousValue === undefined) delete process.env.GAME_MINUTE_MS;
+    else process.env.GAME_MINUTE_MS = previousValue;
+  }
+});
+
 afterEach(async () => {
   for (const server of [...activeServers]) await stopServer(server);
   for (const directory of activeDirectories) await rm(directory, { recursive: true, force: true });
@@ -169,12 +183,14 @@ test("HTTP health, world metadata, 404, and read-only method checks remain intac
       name: "Nigeria",
       projectName: "Naija: One World",
       topology: "single-logical-world",
-      implementationStage: 4,
+      implementationStage: 5,
       simulationImplemented: true,
       simulationScope: "bounded-multiplayer-prototype",
       geographyImplemented: true,
       educationImplemented: true,
       educationScope: "fictional-configurable-education-prototype",
+      lifeSimulationImplemented: true,
+      lifeSimulationScope: "configurable-calendar-family-relationships-and-life-history-foundation",
       geographicCoverage: "national-admin-registry-plus-bounded-akure-south-sample",
       fullNationalGeography: false,
       fullNationalSimulation: false,

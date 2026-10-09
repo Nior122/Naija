@@ -18,6 +18,7 @@ signal modal_changed(is_open: bool)
 
 const SCHOOL_SERVICE = preload("res://scripts/domain/school_service.gd")
 const EducationServiceScript = preload("res://scripts/domain/education_service.gd")
+const LifeSimulationServiceScript = preload("res://scripts/domain/life_simulation_service.gd")
 const SKIN_TONES: Array[Dictionary] = [
 	{"label": "Warm brown", "hex": "#9b654d"},
 	{"label": "Deep brown", "hex": "#70452f"},
@@ -194,9 +195,24 @@ func refresh_hud(
 ) -> void:
 	if _hud.is_empty():
 		return
-	_hud["name"].text = "%s  ·  Age %d" % [character.name, character.age]
-	_hud["money"].text = "Balance: ₦%s" % _format_number(character.money)
-	_hud["time"].text = "Day %d  ·  %s  ·  %s" % [clock.day, clock.time_label(), clock.daypart()]
+	var life_profile := character.get_life_profile()
+	var stage_label := str(life_profile.get("life_stage_label", character.life_stage_id))
+	var status_label := str(
+		life_profile.get("life_status_label", character.life_status.capitalize())
+	)
+	_hud["name"].text = "%s  ·  Age %d  ·  %s" % [character.name, character.age, status_label]
+	_hud["money"].text = "Balance: ₦%s  ·  %s" % [_format_number(character.money), stage_label]
+	var world_date := clock.calendar_date()
+	_hud["time"].text = (
+		"%s  ·  %s\n%s  ·  Week %d  ·  %s"
+		% [
+			LifeSimulationServiceScript.date_label(world_date),
+			clock.weekday_name(),
+			clock.time_label_with_seconds(),
+			clock.week_number(),
+			clock.daypart(),
+		]
+	)
 	_hud["location"].text = location_name
 	_hud["health"].value = character.health
 	_hud["energy"].value = character.energy
@@ -207,28 +223,207 @@ func refresh_hud(
 
 
 func show_profile(character: CharacterState) -> void:
-	var card := _open_modal("Your character", "A young life in a fictional Nigerian community")
+	var life_profile := character.get_life_profile()
+	var dob: Dictionary = life_profile.get("date_of_birth", character.date_of_birth)
+	var dob_label := "Not recorded"
+	if LifeSimulationServiceScript.valid_date(dob):
+		dob_label = (
+			"%s  ·  %04d-%02d-%02d"
+			% [
+				LifeSimulationServiceScript.date_label(dob),
+				int(dob.get("year", 0)),
+				int(dob.get("month", 0)),
+				int(dob.get("day", 0)),
+			]
+		)
+	var card := _open_modal(
+		"Character & life record", "A persistent person in the shared Nigeria world"
+	)
 	_add_modal_text(card, "Name: %s" % character.name)
+	_add_modal_text(card, "Age: %d  ·  Date of birth: %s" % [character.age, dob_label])
 	_add_modal_text(
 		card,
-		"Age: %d · Character type: %s" % [character.age, character.character_type.capitalize()]
+		(
+			"Life stage: %s  ·  Status: %s"
+			% [
+				str(life_profile.get("life_stage_label", character.life_stage_id)),
+				str(life_profile.get("life_status_label", character.life_status.capitalize())),
+			]
+		)
 	)
+	if character.life_status == "deceased":
+		_add_modal_text(
+			card,
+			(
+				"Life ended at age %d  ·  Cause category: %s"
+				% [
+					character.age_at_death,
+					character.death_cause.replace("_", " ").capitalize(),
+				]
+			)
+		)
+	_add_modal_text(card, "Character type: %s" % character.character_type.capitalize())
 	_add_modal_text(card, "Education: %s" % character.education_level)
-	_add_modal_text(card, "Home: %s" % character.home_id)
 	_add_modal_text(
-		card, "Household: %s" % str(character.household.get("home_type", "Family home"))
+		card,
+		(
+			"Home: %s  ·  Household: %s"
+			% [
+				character.home_id,
+				str(character.household.get("home_type", "Family home")),
+			]
+		)
 	)
-	var guardians: Array = character.household.get("guardians", [])
-	for guardian in guardians:
-		if guardian is Dictionary:
+	_add_modal_text(card, "Family")
+	var family_members: Array = life_profile.get("family", [])
+	var displayed_family := 0
+	for member in family_members:
+		if not member is Dictionary:
+			continue
+		var member_id := str(member.get("person_id", member.get("character_id", "")))
+		var role := str(member.get("family_role", "family member")).replace("_", " ").capitalize()
+		var member_status := str(member.get("life_status", "alive")).capitalize()
+		var member_line := (
+			"%s  ·  %s  ·  age %d  ·  %s"
+			% [
+				str(member.get("name", "Family member")),
+				role,
+				int(member.get("age", 0)),
+				member_status,
+			]
+		)
+		if member_id == character.character_id:
+			member_line = (
+				"%s  ·  You  ·  age %d  ·  %s" % [character.name, character.age, member_status]
+			)
+		_add_modal_text(card, member_line)
+		displayed_family += 1
+	if displayed_family == 0:
+		_add_modal_text(card, "No family members have been recorded.")
+	_add_modal_text(card, "Relationships")
+	var relationships: Array = life_profile.get("relationships", [])
+	var displayed_relationships := 0
+	for relationship in relationships:
+		if not relationship is Dictionary:
+			continue
+		var relationship_type := (
+			str(relationship.get("type", "relationship")).replace("_", " ").capitalize()
+		)
+		var status := str(relationship.get("status", "active")).replace("_", " ")
+		var participant_names: Variant = relationship.get("participant_names", [])
+		var participants: Variant = relationship.get("participants", [])
+		if (
+			(not participant_names is Array or participant_names.is_empty())
+			and participants is Array
+		):
+			var resolved_names: Array[String] = []
+			for participant_id in participants:
+				if str(participant_id) == character.character_id:
+					resolved_names.append(character.name)
+					continue
+				for member in family_members:
+					if (
+						member is Dictionary
+						and (
+							str(member.get("person_id", member.get("character_id", "")))
+							== str(participant_id)
+						)
+					):
+					resolved_names.append(str(member.get("name", "Family member")))
+					break
+			participant_names = resolved_names
+		var relationship_line := "%s  ·  %s" % [relationship_type, status.capitalize()]
+		var relationship_stage := str(relationship.get("stage", "")).replace("_", " ")
+		if not relationship_stage.is_empty():
+			relationship_line += "  ·  " + relationship_stage.capitalize()
+		if participant_names is Array and not participant_names.is_empty():
+			var names_line := ""
+			for participant_name in participant_names:
+				if not names_line.is_empty():
+					names_line += ", "
+				names_line += str(participant_name)
+			relationship_line += "  ·  " + names_line
+		_add_modal_text(card, relationship_line)
+		displayed_relationships += 1
+	if displayed_relationships == 0:
+		_add_modal_text(card, "No personal relationships have been recorded yet.")
+	_add_modal_text(card, "Education record")
+	var education_record: Dictionary = character.education_record
+	_add_modal_text(
+		card,
+		(
+			"%s  ·  Term %d  ·  %s"
+			% [
+				str(education_record.get("current_class_id", "Not enrolled")),
+				int(education_record.get("term", 0)),
+				(
+					str(education_record.get("enrollment_status", "Not recorded"))
+					. replace("_", " ")
+					. capitalize()
+				),
+			]
+		)
+	)
+	var attendance_records: Variant = education_record.get("attendance_records", [])
+	var assessment_records: Variant = education_record.get("assessment_records", [])
+	var qualifications: Variant = education_record.get("qualifications", [])
+	_add_modal_text(
+		card,
+		(
+			"Attendance records: %d  ·  Assessments: %d  ·  Qualifications: %d"
+			% [
+				attendance_records.size() if attendance_records is Array else 0,
+				assessment_records.size() if assessment_records is Array else 0,
+				qualifications.size() if qualifications is Array else 0,
+			]
+		)
+	)
+	var education_events: Variant = education_record.get("education_events", [])
+	if education_events is Array and not education_events.is_empty():
+		_add_modal_text(card, "Recent education history")
+		for index in range(education_events.size() - 1, maxi(-1, education_events.size() - 4), -1):
+			var education_event: Variant = education_events[index]
+			if not education_event is Dictionary:
+				continue
+			var details: Variant = education_event.get("details", {})
+			var detail_label := ""
+			if details is Dictionary and not details.is_empty():
+				detail_label = "  ·  " + str(details.get("class_id", details.get("program_id", "")))
 			_add_modal_text(
 				card,
 				(
-					"%s: %s"
+					"Day %d  ·  %s%s"
 					% [
-						str(guardian.get("role", "Guardian")).capitalize(),
-						str(guardian.get("name", "Family member"))
+						int(education_event.get("day", 0)),
+						(
+							str(education_event.get("type", "Education event"))
+							. replace("_", " ")
+							. capitalize()
+						),
+						detail_label,
 					]
+				)
+			)
+	_add_modal_text(card, "Recorded life history")
+	var history: Array = life_profile.get("life_history", character.life_history)
+	if history.is_empty():
+		_add_modal_text(card, "No life events have been recorded.")
+	else:
+		for index in range(history.size() - 1, maxi(-1, history.size() - 11), -1):
+			var event: Variant = history[index]
+			if not event is Dictionary:
+				continue
+			var event_date: Dictionary = event.get("date", {})
+			var event_label := (
+				LifeSimulationServiceScript.date_label(event_date)
+				if LifeSimulationServiceScript.valid_date(event_date)
+				else "Date unknown"
+			)
+			_add_modal_text(
+				card,
+				(
+					"%s  ·  %s"
+					% [event_label, str(event.get("summary", event.get("type", "Life event")))]
 				)
 			)
 	_add_modal_text(

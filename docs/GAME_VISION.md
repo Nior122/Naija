@@ -45,6 +45,14 @@ The target direction is stylized-realistic and cross-platform: Android, iOS, PC,
 
 Stage 0 established the repository, technology direction, documentation, a minimal Godot title shell, and a testable read-only API foundation. At the end of that phase there was no gameplay, production database, authentication, multiplayer, Nigerian map, simulated clock, complete NPC society, or release-ready art.
 
-## Stage 1 prototype boundary (current)
+## Stage 1 prototype boundary
 
 Stage 1 adds the implementation of a small local single-player life-simulation slice in the fictional Idera Quarter: student creation, home and family, movement/interactions, school activities, basic needs, inventory, and local JSON save/load. Godot runtime and restart persistence remain unverified in the current workspace. This slice is not the full Nigeria, online play, production data, or the long-term life simulation; see [`DEVELOPMENT_STATUS.md`](DEVELOPMENT_STATUS.md) for verified status.
+
+## Stage 4 boundary — education
+
+Stage 4 adds a configurable, fictional education progression integrated with the existing character, locations, school/campus, history, saves, shared online clock and server authority. Curricula, institutions, results and funding are prototype content, not official Nigerian policy or institutional claims. Employment remains out of scope; see [`EDUCATION_PLAN.md`](EDUCATION_PLAN.md).
+
+## Stage 5 boundary — age and life simulation
+
+Stage 5 makes DOB and a configurable Gregorian life calendar the basis for age, birthdays, life stages, family history and persistent generations. Online records use one server-authoritative `nigeria-main` timeline; local offline saves retain their existing separate local record and are not another online world. The prototype supports generic family/household/relationship records, unique starter family NPCs, age-appropriate friendship, adult-only romance/marriage, child NPCs, retirement, preserved death history and inheritance references only. It does not simulate employment, sexual content, automatic old-age death, asset transfer, legal inheritance or a complete NPC society. Backend tests pass; the Godot client/runtime remains unverified because Godot 4.7.2 is unavailable. See [`LIFE_SIMULATION_PLAN.md`](LIFE_SIMULATION_PLAN.md) and [`DEVELOPMENT_STATUS.md`](DEVELOPMENT_STATUS.md).

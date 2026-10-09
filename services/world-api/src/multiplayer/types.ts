@@ -1,5 +1,17 @@
 import type { GeographicLocation } from "../geography/types.js";
 import type { StudentEducationRecord } from "../education/types.js";
+import type { WorldClockState } from "../life/calendar.js";
+import type {
+  FamilyPersonRecord,
+  FamilyRecord,
+  HouseholdRecord,
+  InheritanceEventRecord,
+  LifeEventRecord,
+  LifeProfileSnapshot,
+  MarriageRecord,
+  RelationshipRecord,
+  CharacterLifeFields,
+} from "../life/types.js";
 
 export const WORLD_ID = "nigeria-main" as const;
 export const MAP_WIDTH = 1600;
@@ -11,11 +23,7 @@ export interface Point2D {
   y: number;
 }
 
-export interface WorldClockState {
-  day: number;
-  minute_of_day: number;
-  updated_at: string;
-}
+export type { WorldClockState } from "../life/calendar.js";
 
 export interface InventoryItem {
   id: string;
@@ -26,11 +34,11 @@ export interface InventoryItem {
 }
 
 /** Mirrors the Stage 1 CharacterState JSON fields; server-owned online state. */
-export interface CharacterRecord {
+export interface CharacterRecord extends CharacterLifeFields {
   player_id: string;
   character_id: string;
   name: string;
-  age: 15 | 16;
+  age: number;
   character_type: "girl" | "boy" | "androgynous";
   appearance: Record<string, string>;
   money: number;
@@ -52,6 +60,7 @@ export interface CharacterRecord {
   geographic_location: GeographicLocation | null;
   created_at: string;
   updated_at: string;
+  life_profile?: LifeProfileSnapshot;
 }
 
 export interface PersistentPlayer {
@@ -65,10 +74,17 @@ export interface PersistentPlayer {
 }
 
 export interface PersistentWorldState {
-  schemaVersion: 1;
+  schemaVersion: 2;
   worldId: typeof WORLD_ID;
   worldClock: WorldClockState;
   players: Record<string, PersistentPlayer>;
+  people: Record<string, FamilyPersonRecord>;
+  households: Record<string, HouseholdRecord>;
+  families: Record<string, FamilyRecord>;
+  relationships: Record<string, RelationshipRecord>;
+  lifeEvents: Record<string, LifeEventRecord>;
+  marriages: Record<string, MarriageRecord>;
+  inheritanceEvents: Record<string, InheritanceEventRecord>;
 }
 
 export interface PublicPresence {

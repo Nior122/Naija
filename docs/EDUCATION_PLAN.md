@@ -89,4 +89,4 @@ Engine/runtime checks still require Godot 4.7.2: import the project, run existin
 
 ## Out of scope and next stage
 
-No full employment/careers, banking, credit, realistic national economy, education ministry/policy, real admissions, official accreditation/exam material, automatic birthdays/age progression, family-life simulation, national institution coverage, production database, or large-scale MMO operations are included. After Stage 4 implementation and available tests, the next roadmap stage is **Stage 5 — Age & Life Simulation**.
+No full employment/careers, banking, credit, realistic national economy, education ministry/policy, real admissions, official accreditation/exam material, automatic birthdays/age progression, family-life simulation, national institution coverage, production database, or large-scale MMO operations are included in Stage 4. Stage 5 age/family simulation is implemented separately in [`LIFE_SIMULATION_PLAN.md`](LIFE_SIMULATION_PLAN.md); its Godot client/runtime verification remains pending. The next planned roadmap stage is **Stage 6 — Careers & Employment**, not yet started.

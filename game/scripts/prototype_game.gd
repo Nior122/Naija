@@ -1,6 +1,7 @@
 extends Node2D
 
 const CharacterStateScript = preload("res://scripts/domain/character_state.gd")
+const LifeSimulationServiceScript = preload("res://scripts/domain/life_simulation_service.gd")
 const GeographyModelScript = preload("res://scripts/domain/geography_model.gd")
 const WorldClockScript = preload("res://scripts/domain/world_clock.gd")
 const HouseholdFactoryScript = preload("res://scripts/domain/household_factory.gd")
@@ -14,7 +15,6 @@ const PrototypeUIScript = preload("res://scripts/ui/prototype_ui.gd")
 const MultiplayerClientScript = preload("res://scripts/services/multiplayer_client.gd")
 const RemotePlayerScript = preload("res://scripts/player/remote_player.gd")
 
-const SECONDS_PER_GAME_MINUTE: float = 0.65
 const CLINIC_VISIT_COST: int = 300
 const BUS_FARE: int = 150
 
@@ -29,11 +29,16 @@ var _online_mode: bool = false
 var _online_input_accumulator: float = 0.0
 var _remote_players: Dictionary = {}
 var _time_accumulator: float = 0.0
+var _seconds_per_game_minute: float = 0.65
 var _active_subject: String = ""
 var _active_question: Dictionary = {}
 
 
 func _ready() -> void:
+	var life_calendar: Dictionary = LifeSimulationServiceScript.catalog().get("calendar", {})
+	_seconds_per_game_minute = maxf(
+		float(life_calendar.get("real_milliseconds_per_game_minute", 650)) / 1000.0, 0.001
+	)
 	_setup_input_actions()
 	world = WorldMapScript.new()
 	world.name = "StarterWorld"
@@ -73,16 +78,19 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	if not playing:
 		return
+	if character != null and not character.can_take_active_action():
+		player.movement_enabled = false
 	if _online_mode:
 		_online_input_accumulator += delta
 		if _online_input_accumulator >= 0.05:
 			_online_input_accumulator = 0.0
-			var direction := Vector2.ZERO
-			if not ui.is_modal_open():
-				direction = Input.get_vector("move_left", "move_right", "move_up", "move_down")
-			multiplayer_client.send_movement(
-				direction, Input.is_action_pressed("run") and direction.length_squared() > 0.0
-			)
+			if character.can_take_active_action():
+				var direction := Vector2.ZERO
+				if not ui.is_modal_open():
+					direction = Input.get_vector("move_left", "move_right", "move_up", "move_down")
+				multiplayer_client.send_movement(
+					direction, Input.is_action_pressed("run") and direction.length_squared() > 0.0
+				)
 		var online_nearest := world.nearest_interactable(player.position)
 		world.set_focused_entity(online_nearest)
 		var remote_nearest := _nearest_remote_player()
@@ -96,26 +104,75 @@ func _process(delta: float) -> void:
 			_refresh_hud(online_nearest)
 		return
 	if not ui.is_modal_open():
-		_time_accumulator += delta
-		while _time_accumulator >= SECONDS_PER_GAME_MINUTE:
-			_time_accumulator -= SECONDS_PER_GAME_MINUTE
-			clock.advance_minutes(1)
-			character.advance_time(1)
-			var missed_periods := EducationServiceScript.mark_missed_periods(
-				character.education_record, clock.day, clock.minute_of_day
-			)
-			if missed_periods > 0:
-				EducationServiceScript.sync_legacy_character(character)
+		var absolute_minute_before := (
+			clock.day * WorldClockScript.MINUTES_PER_DAY + clock.minute_of_day
+		)
+		var game_milliseconds := delta * 60_000.0 / _seconds_per_game_minute
+		var whole_game_milliseconds := int(floor(game_milliseconds + _time_accumulator))
+		_time_accumulator = game_milliseconds + _time_accumulator - whole_game_milliseconds
+		if whole_game_milliseconds > 0:
+			clock.advance_milliseconds(whole_game_milliseconds)
+		var absolute_minute_after := (
+			clock.day * WorldClockScript.MINUTES_PER_DAY + clock.minute_of_day
+		)
+		var elapsed_minutes := maxi(0, absolute_minute_after - absolute_minute_before)
+		if elapsed_minutes > 0:
+			if character.can_take_active_action():
+				character.advance_time(elapsed_minutes)
+			var current_date := clock.calendar_date()
+			if (
+				LifeSimulationServiceScript.compare_dates(
+					character.last_life_processed_date, current_date
+				)
+				< 0
+			):
+				character.advance_life_to_date(current_date)
+			if character.can_take_active_action():
+				var missed_periods := EducationServiceScript.mark_missed_periods(
+					character.education_record, clock.day, clock.minute_of_day
+				)
+				if missed_periods > 0:
+					EducationServiceScript.sync_legacy_character(character)
 			world.update_daypart(clock.daypart())
-			if clock.minute_of_day % 15 == 0:
+			if (
+				int(floor(float(absolute_minute_after) / 15.0))
+				> int(floor(float(absolute_minute_before) / 15.0))
+			):
 				_save_game(false)
 	var nearest := world.nearest_interactable(player.position)
 	world.set_focused_entity(nearest)
 	_refresh_hud(nearest)
 
 
+func _advance_time(minutes: int) -> void:
+	if clock == null or character == null or minutes <= 0:
+		return
+	clock.advance_minutes(minutes)
+	if character.can_take_active_action():
+		character.advance_time(minutes)
+	var current_date := clock.calendar_date()
+	if (
+		LifeSimulationServiceScript.compare_dates(character.last_life_processed_date, current_date)
+		< 0
+	):
+		character.advance_life_to_date(current_date)
+	world.update_daypart(clock.daypart())
+
+
+func _block_deceased_action() -> bool:
+	if character == null or character.can_take_active_action():
+		return false
+	ui.notify("This character is deceased. Their family and life history remain available.")
+	return true
+
+
 func _unhandled_input(event: InputEvent) -> void:
-	if not playing or ui.is_modal_open():
+	if (
+		not playing
+		or ui.is_modal_open()
+		or character == null
+		or not character.can_take_active_action()
+	):
 		return
 	if event.is_action_pressed("interact"):
 		_interact_nearest()
@@ -131,16 +188,18 @@ func _start_new_game(profile: Dictionary) -> void:
 	multiplayer_client.disconnect_from_world()
 	_online_mode = false
 	player.server_controlled = false
+	clock = WorldClockScript.new()
 	character = CharacterStateScript.new()
-	var household: Dictionary = HouseholdFactoryScript.create_household()
+	var starting_date := clock.calendar_date()
+	var household: Dictionary = HouseholdFactoryScript.create_household(starting_date)
 	character.create_new(
 		str(profile.get("name", "Ayo")),
 		int(profile.get("age", 15)),
 		str(profile.get("character_type", "androgynous")),
 		profile.get("appearance", {}),
-		household
+		household,
+		starting_date
 	)
-	clock = WorldClockScript.new()
 	character.set_location("home", Vector2(720.0, 540.0))
 	_begin_play_session()
 	var welcome_message := (
@@ -163,12 +222,12 @@ func _start_online_game(profile: Dictionary) -> void:
 func _on_online_session_ready(
 	character_data: Dictionary, world_data: Dictionary, players_data: Array
 ) -> void:
-	character = CharacterStateScript.new()
-	character.load_dictionary(character_data)
 	clock = WorldClockScript.new()
 	var raw_clock: Variant = world_data.get("clock", {})
 	if raw_clock is Dictionary:
 		clock.load_dictionary(raw_clock)
+	character = CharacterStateScript.new()
+	character.load_dictionary(character_data, clock.calendar_date())
 	playing = true
 	_time_accumulator = 0.0
 	_online_input_accumulator = 0.0
@@ -274,7 +333,7 @@ func _apply_online_character_snapshot(character_data: Dictionary) -> void:
 	if character == null or not _online_mode:
 		return
 	var old_location := character.current_location
-	character.load_dictionary(character_data)
+	character.load_dictionary(character_data, clock.calendar_date())
 	if not WorldMapScript.is_valid_location(character.current_location):
 		character.set_location("home", Vector2(720.0, 540.0))
 	if old_location != character.current_location:
@@ -415,10 +474,10 @@ func _continue_game() -> void:
 			str(result.get("error", "The saved game could not be loaded."))
 		)
 		return
-	character = CharacterStateScript.new()
-	character.load_dictionary(result["character"])
 	clock = WorldClockScript.new()
 	clock.load_dictionary(result["clock"])
+	character = CharacterStateScript.new()
+	character.load_dictionary(result["character"], clock.calendar_date())
 	if not WorldMapScript.is_valid_location(character.current_location):
 		character.set_location("home", Vector2(720.0, 540.0))
 	_begin_play_session()
@@ -437,7 +496,7 @@ func _begin_play_session() -> void:
 		Vector2(28.0, 28.0), PlayerActorScript.MAP_SIZE - Vector2(28.0, 28.0)
 	)
 	player.set_appearance(character.appearance)
-	player.movement_enabled = true
+	player.movement_enabled = character.can_take_active_action()
 	player.snap_camera()
 	ui.show_game(character, clock, WorldMapScript.location_name(character.current_location))
 
@@ -475,11 +534,13 @@ func _bind_action(action_name: String, key_codes: Array) -> void:
 
 func _on_modal_changed(is_open: bool) -> void:
 	if is_instance_valid(player):
-		player.movement_enabled = playing and not is_open
+		player.movement_enabled = (
+			playing and not is_open and character != null and character.can_take_active_action()
+		)
 
 
 func _on_player_travelled(distance: float, running: bool) -> void:
-	if not playing or character == null:
+	if not playing or character == null or not character.can_take_active_action():
 		return
 	character.spend_energy(distance * (0.0030 if running else 0.0017))
 	character.position = player.position
@@ -501,7 +562,12 @@ func _refresh_hud(nearest: WorldEntity = null) -> void:
 
 
 func _interact_nearest() -> void:
-	if not playing or ui.is_modal_open():
+	if (
+		not playing
+		or ui.is_modal_open()
+		or character == null
+		or not character.can_take_active_action()
+	):
 		return
 	if _online_mode:
 		var remote_nearest: Variant = _nearest_remote_player()
@@ -522,6 +588,8 @@ func _interact_nearest() -> void:
 
 
 func _interact_with(entity: WorldEntity) -> void:
+	if _block_deceased_action():
+		return
 	match entity.action_id:
 		"travel":
 			if _online_mode:
@@ -585,6 +653,8 @@ func _interact_with(entity: WorldEntity) -> void:
 
 
 func _change_location(destination: String, spawn_position: Vector2) -> void:
+	if _block_deceased_action():
+		return
 	if not WorldMapScript.is_valid_location(destination):
 		ui.show_notice("Unknown location", "That prototype location is not available yet.")
 		return
@@ -603,6 +673,8 @@ func _change_location(destination: String, spawn_position: Vector2) -> void:
 
 
 func _sleep() -> void:
+	if _block_deceased_action():
+		return
 	if _online_mode:
 		if not multiplayer_client.send_command("character.rest"):
 			ui.notify("Waiting for the multiplayer server connection.")
@@ -611,8 +683,7 @@ func _sleep() -> void:
 		ui.show_notice("Rest at home", "You can sleep in your own bedroom at home.")
 		return
 	var sleep_minutes := clock.minutes_until_morning()
-	clock.advance_minutes(sleep_minutes)
-	character.advance_time(sleep_minutes)
+	_advance_time(sleep_minutes)
 	character.sleep_until_morning()
 	character.position = Vector2(720.0, 540.0)
 	player.position = character.position
@@ -625,6 +696,8 @@ func _sleep() -> void:
 
 
 func _take_bus_to_school() -> void:
+	if _block_deceased_action():
+		return
 	if _online_mode:
 		if not multiplayer_client.send_command("world.bus"):
 			ui.notify("Waiting for the multiplayer server connection.")
@@ -639,6 +712,8 @@ func _take_bus_to_school() -> void:
 
 
 func _visit_clinic() -> void:
+	if _block_deceased_action():
+		return
 	if _online_mode:
 		if not multiplayer_client.send_command("clinic.care"):
 			ui.notify("Waiting for the multiplayer server connection.")
@@ -668,6 +743,8 @@ func _visit_clinic() -> void:
 
 
 func _attend_next_class() -> void:
+	if _block_deceased_action():
+		return
 	if _online_mode:
 		if not multiplayer_client.send_command("school.begin"):
 			ui.notify("Waiting for the multiplayer server connection.")
@@ -689,8 +766,7 @@ func _attend_next_class() -> void:
 	var start_minute := int(lesson["minute"])
 	if clock.minute_of_day < start_minute:
 		var wait_minutes := start_minute - clock.minute_of_day
-		clock.advance_minutes(wait_minutes)
-		character.advance_time(wait_minutes)
+		_advance_time(wait_minutes)
 		_refresh_hud()
 	EducationServiceScript.record_attendance(
 		character.education_record, lesson, clock.day, clock.minute_of_day
@@ -706,6 +782,8 @@ func _attend_next_class() -> void:
 
 
 func _on_quiz_answer(answer_index: int, quiz_id: String = "") -> void:
+	if _block_deceased_action():
+		return
 	if _online_mode:
 		if (
 			quiz_id.is_empty()
@@ -749,8 +827,7 @@ func _on_quiz_answer(answer_index: int, quiz_id: String = "") -> void:
 			"Education activity not recorded", str(result.get("message", "Please try again."))
 		)
 		return
-	clock.advance_minutes(20)
-	character.advance_time(20)
+	_advance_time(20)
 	_active_subject = ""
 	_active_question.clear()
 	_save_game(false)
@@ -759,6 +836,8 @@ func _on_quiz_answer(answer_index: int, quiz_id: String = "") -> void:
 
 
 func _on_education_action_requested(action: String, payload: Dictionary = {}) -> void:
+	if _block_deceased_action():
+		return
 	if action in ["begin_final_exam", "begin_course"]:
 		if _online_mode:
 			var command_sent := false
@@ -899,8 +978,7 @@ func _on_education_action_requested(action: String, payload: Dictionary = {}) ->
 		)
 		return
 	if time_cost > 0:
-		clock.advance_minutes(time_cost)
-		character.advance_time(time_cost)
+		_advance_time(time_cost)
 		EducationServiceScript.mark_missed_periods(
 			character.education_record, clock.day, clock.minute_of_day
 		)
@@ -940,6 +1018,8 @@ func _can_enter_education_location(destination: String) -> bool:
 
 
 func _purchase_item(item_id: String) -> void:
+	if _block_deceased_action():
+		return
 	if _online_mode:
 		if not multiplayer_client.send_command("shop.purchase", {"itemId": item_id}):
 			ui.notify("Waiting for the multiplayer server connection.")
@@ -969,6 +1049,8 @@ func _purchase_item(item_id: String) -> void:
 
 
 func _consume_item(item_id: String) -> void:
+	if _block_deceased_action():
+		return
 	if _online_mode:
 		if not multiplayer_client.send_command("inventory.consume", {"itemId": item_id}):
 			ui.notify("Waiting for the multiplayer server connection.")
@@ -1022,6 +1104,8 @@ func _open_panel(panel_id: String) -> void:
 
 
 func _toggle_geographic_preview() -> void:
+	if _block_deceased_action():
+		return
 	if world.location_id != "town":
 		ui.show_notice(
 			"Geographic sample",

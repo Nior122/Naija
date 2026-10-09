@@ -1,114 +1,98 @@
 # Development Status
 
-> **Future AI agents: read this file before modifying the project.** It separates implementation from verification; source code and test files are not proof of runtime behavior.
+> **Future agents: read this file before changing the project.** It distinguishes implementation from verification; source code and test files are not proof of engine/runtime behavior.
 
-## Current stage and verification gate
+## Current stage and gate
 
-**Stage 4 — Complete Nigerian Education System: implementation present; Node/backend and geography checks pass; Godot runtime verification remains blocked.** Stages 0–3 remain in the repository. Stage 4 extends the existing `nigeria-main` world rather than replacing its local life simulation, optional online authority, Stage 3 geography, or persistence contracts.
+**Stage 5 — Age & Life Simulation: backend implementation and tests present; GDScript formatting/parser checks pass; Godot client/runtime verification is blocked.** Stages 0–4 remain in the repository and were extended, not replaced. Stage 5 uses the same canonical `nigeria-main` world and one shared authoritative online clock.
 
-Godot 4.7.2 is not installed in this workspace (`godot: command not found`). GDScript formatting is checked, but project import, engine/type validation, scenes, client gameplay/UI, local save/restart, and Godot two-client/multiplayer behavior have not been run. Do not infer client-runtime success from Node tests.
+Godot 4.7.2 is not installed (`godot: command not found`). Project import, engine type-checking, scenes, local play/profile UI, save/restart runtime, and Godot multiplayer/client paths have not been run. Do not infer client success from Node or gdtoolkit tests.
 
-The next roadmap line is **Stage 5 — Age & Life Simulation**. It has not started. Follow the Stage 4 exit gate in [`ROADMAP.md`](ROADMAP.md); do not begin Stage 5 work while Godot-dependent Stage 4 runtime checks remain pending.
+The next planned roadmap stage is **Stage 6 — Careers & Employment**, but Stage 6 has not started. The remaining Stage 5 client-runtime tests are a known limitation; do not claim those checks passed or add Stage 6 implementation as part of this work.
 
-## Stages 0–3 preserved
+## Stages 0–4 preserved
 
-- The Stage 0 Node HTTP API, `/health`, `/api/v1/world`, strict TypeScript service and canonical world ID `nigeria-main` remain.
-- The Stage 1 offline Godot life, Idera Quarter, character/family/home, movement, school and community actions, money/needs/inventory, local clock and client-local save remain in the project. Their current client runtime is unverified here.
-- The Stage 2 optional WebSocket service, online character snapshots, presence, movement/actions, shared clock and server JSON persistence remain separate from Stage 1 local saves. Node integration regressions pass; Godot runtime remains unverified.
-- The Stage 3 administrative geography catalog, bounded Akure South preview/source pipeline, geography opt-in and server-derived online presence remain. The preview is not a complete boundary/city map. The deterministic import check passes; rendering and Godot client integration remain unverified.
-- Older online records without `geographic_location` remain supported. Stage 4 adds education-record normalization without resetting existing online character identity, household, money, position or geography.
+- **Stage 0:** Node HTTP API (`/health`, `/api/v1/world`), strict TypeScript service, canonical world ID `nigeria-main`.
+- **Stage 1:** Offline Godot Idera Quarter, character/household/home, movement/interactions, school/community actions, basic needs/money/inventory, local clock and separate local save. Godot runtime is unverified here.
+- **Stage 2:** Optional WebSocket server, sessions, online character snapshots, presence/actions, shared clock and JSON persistence. Backend regressions pass; Godot runtime is unverified.
+- **Stage 3:** Administrative geography catalog, bounded Akure South source/preview pipeline, opt-in and server-derived presence. The sample is not a complete map/boundary. `npm run geography:check` passes; rendering/client integration is unverified.
+- **Stage 4:** Fictional/configurable JSS/SS education progression, attendance/results/exams, tertiary/ND/HND/training paths, scholarships, history and multiplayer persistence. The backend regression suite passes; Godot education UI/save/gameplay remains unverified. See [`EDUCATION_PLAN.md`](EDUCATION_PLAN.md).
 
-For the complete Stage 3 source provenance and coordinate limitations, see [`DATA_SOURCES.md`](DATA_SOURCES.md) and the Stage 3 history in [`ROADMAP.md`](ROADMAP.md).
+Existing local client saves remain separate from online server authority. Online records without geography and schema-version-1 records continue through the supported migration path; Stage 5 adds lifecycle fields/maps without replacing prior identity, money, location, geography or education data.
 
-## Stage 4 — education implementation
+## Stage 5 implementation
 
-### Configurable fictional catalog
+### Calendar, age and offline progression
 
-`game/data/education/catalog.json` is schema version 1 and uses `world_id: nigeria-main`. It contains:
+- `game/data/life/life_catalog.json` defines the `nigeria-main` Gregorian calendar, 2025-01-01 epoch, starting time, week/month labels, 650 ms/game-minute default, valid starting ages, life-stage ranges, adult/friendship constraints, family-size/history bounds, and retirement/old-age-review thresholds. The server accepts optional `GAME_MINUTE_MS` from 1–60,000 ms.
+- Online `worldClock` stores one date/time state for all players and NPC records. DOB is authoritative for age; the numeric age is synchronized for existing gameplay compatibility. New characters start at 15 or 16. February 29 birthdays are observed on February 28 in non-leap years.
+- Birthday, life-stage and history event IDs are retry-safe. Server lifecycle processing advances people and NPCs as the shared date moves and catches disconnected characters/household NPCs up on reconnect/reload. The shared clock pauses when the API process is stopped; downtime catch-up is **not** implemented. In local offline mode, the client clock advances during play and processes lifecycles to its saved date, but does not accrue real elapsed time while the app is closed.
+- `services/world-api/src/life/` owns server calendar rules, person/family/relationship/event records and profile snapshots. `game/scripts/domain/life_simulation_service.gd`, `world_clock.gd`, and `character_state.gd` provide the offline client counterpart. The local offline clock/save is not another online/server timeline.
 
-- Six configurable secondary years: JSS1, JSS2, JSS3, SS1, SS2 and SS3; diagnostic age mapping, curricula, compulsory/elective subjects, subject groups and a starter score set.
-- Twelve subjects; the school calendar/timetable, school days, term length, teachers, classrooms, activities, assessment categories, assessment weights, attendance grace, grade bands, promotion thresholds, exam rules, fees, training programs, scholarship amounts/capacities/terms, tertiary calendar, course/program prerequisites and NPCs.
-- Five configured secondary assessment types and original fictional questions. The sample WAEC/NECO-inspired final certificate examination is not affiliated with any examination body and contains no protected exam paper/questions.
-- Fictional secondary, university, polytechnic, college-of-education and skills-centre institution data with synthetic anchors inside the existing Akure South geographic sample. These are not real addresses, endorsements, accreditation claims, or official curriculum/admissions/fee rules.
-- Three fictional university BSc/BSc Ed routes, a distinct ND and prerequisite-based HND sequence, one NCE route and 13 vocational/apprenticeship trade programs with skills/career eligibility links.
+### Family, social, lifecycle and profile
 
-All values are prototype tuning. Read [`EDUCATION_PLAN.md`](EDUCATION_PLAN.md) for scope, limitations and pathway details.
+- Catalog-driven starter-family profiles vary caregiver roles/count and sibling-group size; unique caregiver and sibling records persist as NPC/person records with DOB, life stage/status, home/location, relationships and history. No universal parent pair is imposed. Generic households, families, family generations and typed relationship edges use stable IDs.
+- Friendship is age-appropriate and non-romantic. Romance/marriage is restricted to configured adults and requires mutual confirmation. No sexual content is modeled.
+- Marriage records spouse/date/household/family links. Childbirth is request-idempotent and adds a child NPC with DOB, parents, household/family/home/location and life state; it does not create a separately controlled player.
+- Retirement is an age-gated status. Death is centralized, idempotent, preserves character/NPC and relationship/history records, records abstract cause/date/age, and creates a pending inheritance-event/asset-reference hook without transfers. Old age does not trigger automatic death. Normal active actions by deceased characters are guarded client-side and server-side.
+- The profile/save path carries age, DOB, configured life stage/status, family, relationships, education and recorded history. Starter-family NPCs are spawned at home. Local client save/UI behavior has not been engine-verified.
 
-### Offline client integration (source present; engine checks blocked)
+Detailed scope and contracts are in [`LIFE_SIMULATION_PLAN.md`](LIFE_SIMULATION_PLAN.md).
 
-- `game/scripts/domain/education_service.gd` loads catalog data and owns the local student record rules. `school_service.gd` adapts existing timetable/class actions to the structured school/education service.
-- `game/scripts/domain/character_state.gd` persists a structured education record while maintaining compatibility fields for legacy scores/attendance.
-- `game/scripts/services/save_service.gd` keeps local saves separate from online state and migrates existing version-1 Stage 1 saves into the current record format.
-- `game/scripts/prototype_game.gd`, `game/scripts/ui/prototype_ui.gd` and `game/scripts/world/world_map.gd` integrate school, campus and skills-centre actions, student data/panels, NPCs and the existing world scenes.
-- `game/scripts/domain/education_service.gd`, `prototype_game.gd` and `prototype_ui.gd` exceed gdtoolkit's default file-length threshold; `prototype_ui.gd` also exceeds its public-method threshold. These are static lint findings; runtime behavior is unknown until Godot runs.
+## Stage 5 acceptance coverage
 
-### Online authority and persistence (Node-tested)
-
-- `services/world-api/src/education/` contains catalog validation, typed education records and server-owned lifecycle rules. `services/world-api/src/multiplayer/types.ts` attaches each `StudentEducationRecord` to the existing server-owned character.
-- `services/world-api/src/multiplayer/world-engine.ts` integrates server-validated education actions, scheduled lessons, attendance, scores/results, final-exam flow, tertiary course work, pathways, costs and funding with the existing time/location/world authority.
-- `services/world-api/src/multiplayer/persistence.ts` normalizes legacy online character education fields into the structured record while retaining Stage 2/3 character state. The existing JSON state file remains a bounded single-process prototype, not a database.
-- `services/world-api/test/education.test.mjs` verifies education lifecycle rules and a two-client school co-presence/attendance/action/save-restart integration path.
-
-### Acceptance coverage status
-
-| Requested area | Current evidence | Status |
+| Area | Evidence | Result |
 |---|---|---|
-| Enrollment, configured JSS/SS years, subject choices and progression | Node education lifecycle tests | **Passed** |
-| Timetable attendance, absences, idempotence, weighted grades and term results | Node education lifecycle tests; online classroom attendance assertion | **Passed** |
-| Final-secondary eligibility, original exam content, pass/fail, retained history and saved results | Node education lifecycle tests and JSON normalization round trip | **Passed** |
-| University program, course assessments, semester completion and qualification links | Node BSc route test | **Passed** |
-| Polytechnic ND followed by distinct prerequisite-based HND | Node ND/HND route test | **Passed** |
-| Vocational course/apprenticeship sessions, skill level and certificates | Node route tests | **Passed** |
-| Scholarship awards, fee funding and bounded family support | Node funding test | **Passed** |
-| Education event/history and persistent records | Node lifecycle plus online state-file restart/reconnect | **Passed** |
-| Geography/institution catalog integration and source reproducibility | Education catalog assertions plus `npm run geography:check` | **Passed** |
-| Online schoolyard co-presence, attendance/action replication | Two real WebSocket clients moved into the same school scene; server snapshot assertions | **Passed** |
-| Offline Godot play, player-facing education UI, local save/load runtime | Godot unavailable | **Not run / unverified** |
-| Godot education multiplayer client workflow | Godot unavailable | **Not run / unverified** |
-| Full Stage 1–3 Godot runtime regression | Godot unavailable | **Not run / unverified** |
+| Gregorian dates, calendar units, scale configuration, start age and leap-year behavior | `services/world-api/test/life.test.mjs` calendar test | **Passed (Node)** |
+| DOB-derived age, birthday/stage changes, idempotency and offline catch-up | Node life tests; assertions in `game/tests/domain_smoke.gd` | **Passed (Node); client test source only** |
+| Unique persistent parent/guardian/sibling records and family tree | Node life/persistence tests; local smoke/save-restart assertions | **Passed (Node); client test source only** |
+| Friendship, mutual confirmation, minor/adult restrictions | Node life and online WebSocket tests | **Passed (Node)** |
+| Adult progression, marriage, spouse/household/tree links, child NPCs and generations | Node life test | **Passed (Node)** |
+| Death/status/history preservation, family events and inheritance references without transfer | Node life test | **Passed (Node)** |
+| Multiplayer, persisted online lifecycle data, reconnect/offline catch-up, Stage 1–4 backend regressions | `npm run check` | **Passed: 37 Node tests** |
+| Local Godot project import, UI, movement/deceased-action runtime, save/restart and Godot multiplayer | Godot unavailable | **Blocked / not run** |
 
-## Technology and executed checks (2026-10-08)
+## Checks run (2026-10-09)
 
-| Component | Baseline/check | Result |
-|---|---|---|
-| Node.js/npm | Node `v22.22.3`; npm `10.9.8` | Available |
-| TypeScript API | `npm run check` (ESLint, strict TypeScript build, all Node tests) | **Passed**: 26 Node tests, 0 failures |
-| Focused education suite | `npm run build --workspace=@naija/world-api && node --test services/world-api/test/education.test.mjs` | **Passed**: 8 education tests, 0 failures |
-| Geography provenance/reproducibility | `npm run geography:check` | **Passed**: all 3 processed geography files match the pinned inputs |
-| GDScript formatting | `PYTHONPATH=/tmp/naija-gdtoolkit-packages /tmp/naija-gdtoolkit/bin/gdformat --check $(find game -name '*.gd' -print)` | **Passed**: 19 files left unchanged |
-| GDScript lint | `PYTHONPATH=/tmp/naija-gdtoolkit-packages /tmp/naija-gdtoolkit/bin/gdlint $(find game -name '*.gd' -print)` | **Not clean**: 4 structural findings listed below |
-| Godot | Project targets Godot 4.7.2 | **Blocked**: executable unavailable; no import/runtime checks |
-| Database | None configured | Single-process JSON server persistence and separate local client JSON save only |
+| Check | Result |
+|---|---|
+| `npm run check` | **Passed** — ESLint, TypeScript build, 37 Node tests, 0 failures. Includes life and retained Stage 1–4 backend/geography regressions. |
+| `npm run geography:check` | **Passed** — 3 processed geography files match pinned inputs. |
+| `./.venv/bin/gdformat --check $(find game -name '*.gd' -print)` (gdtoolkit 4.5.0) | **Passed** — all 20 GDScript files unchanged; gdformat parses/format-checks, not Godot type/runtime validation. |
+| `./.venv/bin/gdlint $(find game -name '*.gd' -print)` | **Not clean** — 7 style/structure findings listed below; these are not proven engine errors. |
+| `godot --version` / project import/tests | **Blocked** — executable is unavailable. |
+| Database/runtime operations | No database configured; online JSON store is single-process prototype persistence; local save remains separate. |
 
-Exact executed results:
+Exact successful Node result: `npm run check` ran ESLint, TypeScript build, then Node's test runner: **37 tests, 37 passed, 0 failed**. This includes the ten Stage 5-focused lifecycle/integration tests in addition to retained backend, education, geography, multiplayer, and persistence checks. `npm run geography:check` reproducibly validated the three processed geography assets.
 
-- `npm run build --workspace=@naija/world-api && node --test services/world-api/test/education.test.mjs` — **passed**, 8 tests, 0 failures. Includes a live two-WebSocket-client school co-presence journey, server-validated classroom attendance/action and online record persistence through API restart.
-- `npm run check` — **passed**, ESLint, TypeScript build and 26 Node tests, 0 failures. Includes the retained Stage 1–3 API, multiplayer, persistence, geography, and importer regressions alongside Stage 4 coverage.
-- `npm run geography:check` — **passed**, 3 processed files reproducibly matched the pinned sources.
-- `gdformat --check` over all game GDScript files — **passed**, 19 files unchanged.
-- `gdlint` — **failed only the style/structural gate**, with four configured maximum-count warnings: `max-file-lines` for `game/scripts/domain/education_service.gd` (2,162 lines), `game/scripts/prototype_game.gd` (1,090 lines), and `game/scripts/ui/prototype_ui.gd` (1,144 lines); plus `max-public-methods` in `game/scripts/ui/prototype_ui.gd`. The earlier line-length finding was fixed and does not appear in this latest run.
-- `godot --version` — **not run successfully**: shell reports `godot: command not found`. No engine, scene, graphics, input, local save/load, education UI, or Godot client-multiplayer results are claimed.
+The current `gdlint` structural findings are:
+
+- `max-public-methods`: `game/scripts/domain/character_state.gd` and `game/scripts/ui/prototype_ui.gd`.
+- `max-file-lines`: `game/scripts/domain/education_service.gd`, `game/scripts/domain/life_simulation_service.gd`, `game/scripts/prototype_game.gd`, and `game/scripts/ui/prototype_ui.gd`.
+- `max-returns`: `game/scripts/prototype_game.gd` function `_on_education_action_requested`.
+
+No Godot engine check or in-game regression is claimed. The gdtoolkit parse/format check cannot establish GDScript static typing, scene resource validity, UI behavior, or save/gameplay behavior.
 
 ## Reproduction commands
 
-From the repository root:
+From repository root:
 
 ```sh
 npm run check
-npm run build --workspace=@naija/world-api
-node --test services/world-api/test/education.test.mjs
 npm run geography:check
-PYTHONPATH=/tmp/naija-gdtoolkit-packages /tmp/naija-gdtoolkit/bin/gdformat --check $(find game -name '*.gd' -print)
-PYTHONPATH=/tmp/naija-gdtoolkit-packages /tmp/naija-gdtoolkit/bin/gdlint $(find game -name '*.gd' -print)
+node --test services/world-api/test/life.test.mjs  # after build, focused Stage 5 suite
+# If gdtoolkit is installed:
+gdformat --check $(find game -name '*.gd' -print)
+gdlint $(find game -name '*.gd' -print)
 ```
 
-When Godot 4.7.2 is available, import and run the existing tests documented in [`README.md`](../README.md), verify Stage 1 creation/movement/save/restart first, then follow the offline education journeys and two-client school/campus workflow described in [`EDUCATION_PLAN.md`](EDUCATION_PLAN.md). Confirm client scene transitions preserve one world, school clock/timetable behavior, attendance, results, final-exam eligibility/outcomes, funding and local save/restart. Fix any engine import/runtime failures before marking Stage 4 client behavior verified or beginning Stage 5.
+When Godot 4.7.2 is available, run the import check and retained client tests in [`README.md`](../README.md), including `domain_smoke.gd`, `player_movement.gd`, and both separate-process `save_restart.gd` phases. Verify Stage 1–4 journeys first, then test Stage 5 creation at ages 15/16, shared/local clock dates, birthday catch-up/idempotency, profile/history/family rendering, NPC reload, marriage/child/death paths, deceased-action guards and two-client lifecycle snapshots. Record exact engine version/output before marking client behavior verified.
 
 ## Known limits and next gates
 
-1. Keep the shared education catalog fictional, configurable and versioned; do not present its curricula, fees, admissions, awards or progression thresholds as Nigerian government or institutional policy.
-2. Do not add protected examination papers, imply WAEC/NECO or institution endorsement, or turn career eligibility metadata into employment simulation.
-3. Maintain one canonical `nigeria-main` world; campus anchors are synthetic prototype points inside the existing geographic sample, not real addresses.
-4. Before production, replace JSON persistence with an explicit storage/migration/recovery design, authoritative writes and operational/security controls. No banking or full economy was introduced.
-5. Godot import/runtime and Stage 1–4 offline-client/regression checks remain blocked until Godot 4.7.2 is available. Node tests do not substitute for these checks.
-6. **Next stage: Stage 5 — Age & Life Simulation.** Stage 5 remains not started and is gated on completing the available Stage 4 test/runtime verification first.
+1. The online world clock runs while the API process runs; it pauses during API downtime. Server-downtime catch-up is not implemented.
+2. Offline Godot mode keeps its existing local save/clock, advances only during play, and does not synchronize to online server time. Online characters share one authoritative clock.
+3. The current JSON store is single-process and limited to 16 MiB; there are no DB transactions, multi-writer coordination, production backups or recovery.
+4. Stage 5 client/engine checks remain blocked by missing Godot 4.7.2. Node tests and gdformat do not substitute for Godot runtime tests.
+5. Keep accident, violence/crime-related and poisoning/exposure categories abstract narrative data. Do not add methods or instructions. Do not implement employment, asset transfer, legal inheritance or broader systems as Stage 5 work.
+6. **Next planned stage: Stage 6 — Careers & Employment.** Do not begin it until Stage 5 implementation and its required verification gate are accepted.

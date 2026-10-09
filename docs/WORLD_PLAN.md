@@ -48,31 +48,29 @@ Do not treat one sample as a model of all Nigeria. A later sourced expansion can
 
 ## Persistent world clock
 
-The future clock is a server-owned service with an explicit calendar and configured game-time rate. It should support:
+Stage 5 implements a server-owned calendar for the online `nigeria-main` world. A new world begins on 2025-01-01 (world day 1) at 07:50. One game minute advances every 650 real milliseconds by default; `GAME_MINUTE_MS` can configure one shared rate for the server/world. The persisted clock carries day, minute, millisecond remainder, calendar date and an update timestamp; seconds are derived from the remainder. The calendar supports Gregorian leap years, dates, weekdays/weeks, months and years. Client ages derive from DOB and the shared world date.
 
-- second, minute, hour, day, week, month and year units;
-- birthdays, age progression, school years, terms and institutional schedules;
-- elections, office terms, business cycles and economic events;
-- day/night and weather/season inputs;
-- scheduled world events and player-history timestamps.
+Birthday/life-stage events are recorded idempotently, and disconnected online characters/NPC records catch up to the current world date when server lifecycle processing runs. The clock continues while the server process is running, even with no connected players, but pauses during server downtime; downtime world-time catch-up is not implemented. Need decay remains limited to connected players.
 
-Use a monotonic/process-safe time source for measuring elapsed server time and UTC timestamps for real-world audit records. Model the in-world calendar explicitly; do not equate a player's local device clock with authoritative game time. Keep Nigeria's civil-time zone (`Africa/Lagos`) distinct from the game's calendar and time multiplier.
+The Stage 1 local/offline prototype retains its saved local clock and is not synchronized with the online server. Do not equate a player's device wall-clock with authoritative online game time. Keep Nigeria's civil-time zone (`Africa/Lagos`) distinct from the game's calendar and time multiplier. School scheduling currently consumes the existing game clock; elections, office terms, business cycles, weather/season systems, and long-term scheduled world events remain future systems.
 
 ## Offline progression and catch-up
 
-For the eventual shared simulation, world time and selected systems should progress while an individual player is offline. The Stage 1 local prototype is an explicit exception: its simple day/minute clock advances only during active play, pauses with menus, is stored in the local save and does not progress while the app is closed. Stage 2/3 add a bounded server-owned clock shared among online players; it continues while the single server process is running, pauses during server downtime and does not catch up offline. Needs currently decay only for connected players. This is not the full offline-progression design. A future service should define canonical time anchors/configuration and process scheduled work in bounded, resumable batches.
+Online life progression catches disconnected characters and household NPCs up to the current server date when lifecycle processing runs (including reconnect). Birthday and life-stage events are idempotent. The one world clock advances while the server process runs and pauses during server downtime; the current prototype does not advance world time over an API outage. Needs currently decay only for connected players.
 
-Do not simulate every NPC every second. Use event scheduling and aggregate/cohort updates for low-priority populations, while preserving exact rules for important player-facing deadlines and economic/legal transactions. Define idempotency, ordering, pause/maintenance behavior, maximum catch-up work and recovery checkpoints so a long outage does not duplicate or skip irreversible events.
+Offline Godot mode remains client-local: its saved clock is not connected to the server clock and does not accrue wall-clock time while the game is closed. When local world dates advance through gameplay, the client lifecycle service can process missed birthdays/events from its saved `last_life_processed_date`. No separate region/player timeline is introduced to online play.
+
+This remains bounded prototype catch-up, not the full offline-progression design. Do not simulate every NPC every second. Use event scheduling and aggregate/cohort updates for low-priority populations, while preserving exact rules for important player-facing deadlines and economic/legal transactions. Future services need bounded resumable batches, event ordering, maximum catch-up work and recovery checkpoints so outages do not duplicate or skip irreversible events.
 
 ## Time and world design decisions still open
 
 Before full simulation, specify and test:
 
 - How much in-world time passes per real-world interval and whether the rate can ever change.
-- Calendar month/weekday rules, leap handling, naming/localization, birthdays and cross-time-zone presentation.
+- Localization and presentation of the implemented Gregorian calendar, cross-time-zone/device display, and any future calendar-specific school/community scheduling rules.
 - Which future environmental inputs need simulation, how regional variation works and which sourced data/license terms apply.
 - Which updates are exact events versus aggregate approximations, and which require player notification.
 - Clock ownership, failover, snapshots, ordering and acceptable drift between physical workers.
 - Boundary-authoritative administrative datasets and expansion beyond the current reference-point catalog/sample.
 
-Stage 1 implements a local prototype clock and fictional locations. Stage 2/3 retain one shared server clock for the bounded multiplayer prototype. Full calendar, weather, real-world boundaries, national visual detail and offline catch-up/progression remain future systems.
+Stage 1 retains a local prototype clock and fictional locations. Stages 2–5 retain one shared server clock for the bounded multiplayer prototype; Stage 5 adds its calendar, DOB-based age and idempotent life catch-up. Weather, authoritative real-world boundaries, national visual detail, downtime catch-up and comprehensive offline progression remain future systems.

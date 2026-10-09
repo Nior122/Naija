@@ -24,6 +24,7 @@ export.cfg
 export_presets.cfg
 
 # Build / temporary output
+.venv/
 build/
 out/
 tmp/

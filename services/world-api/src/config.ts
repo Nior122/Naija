@@ -16,6 +16,7 @@ export interface ApiConfig {
   readonly dataFile: string;
   readonly websocketPath: string;
   readonly allowedOrigins: readonly string[];
+  readonly gameMinuteMs?: number;
 }
 
 export function readApiConfig(): ApiConfig {
@@ -47,5 +48,19 @@ export function readApiConfig(): ApiConfig {
   const dataFile = process.env.DATA_FILE
     ? resolve(process.cwd(), process.env.DATA_FILE)
     : DEFAULT_DATA_FILE;
-  return { port, dataFile, websocketPath: rawWebsocketPath, allowedOrigins };
+  const rawGameMinuteMs = process.env.GAME_MINUTE_MS;
+  let gameMinuteMs: number | undefined;
+  if (rawGameMinuteMs !== undefined) {
+    gameMinuteMs = Number(rawGameMinuteMs);
+    if (!Number.isSafeInteger(gameMinuteMs) || gameMinuteMs < 1 || gameMinuteMs > 60_000) {
+      throw new Error("GAME_MINUTE_MS must be an integer between 1 and 60000.");
+    }
+  }
+  return {
+    port,
+    dataFile,
+    websocketPath: rawWebsocketPath,
+    allowedOrigins,
+    ...(gameMinuteMs === undefined ? {} : { gameMinuteMs }),
+  };
 }

@@ -6,11 +6,11 @@ Naija: One World is a long-term Nigerian life-simulation game project. The inten
 
 ## Current status
 
-The repository preserves the Stage 0 Node/TypeScript API, Stage 1 offline Godot prototype, Stage 2 multiplayer foundation, and Stage 3 bounded geography; **Stage 4 adds a data-driven Nigerian education progression** to the same `nigeria-main` world. Local play/save files remain separate from online player authority and JSON state.
+The repository preserves Stages 0–4 and implements **Stage 5 — Age & Life Simulation** on the same `nigeria-main` world. Offline local saves remain separate from the server-owned online character/world state; there is one shared authoritative online timeline, not regional or player-specific online clocks.
 
-Stage 3 includes a canonical registry for 36 states plus FCT and 774 LGAs, a reproducible geographic import pipeline, and a small 200-feature OpenStreetMap preview sample for Akure South, Ondo State. The sample is not full city, LGA, state, or national coverage. Stage 4 includes configurable JSS1–JSS3/SS1–SS3 schooling, subjects, timetable/attendance, weighted assessment/progression, a fictional senior certificate examination, fictional university/ND/HND/vocational/apprenticeship pathways, scholarships, persistent student history, and online server authority. The current backend lint/build and 26 Node tests pass; focused education tests and the deterministic geography check pass. GDScript formatting passes, while static GDScript lint has four structural warnings. **Godot is not installed in the current workspace**, so engine import, offline/online education gameplay, UI, and client save/runtime behavior remain unverified. See [`docs/DEVELOPMENT_STATUS.md`](docs/DEVELOPMENT_STATUS.md) for exact results and limits.
+Stage 3 includes a canonical registry for 36 states plus FCT and 774 LGAs, a reproducible geographic import pipeline, and a small 200-feature OpenStreetMap preview sample for Akure South, Ondo State. The sample is not full city, LGA, state, or national coverage. Stage 4 includes configurable secondary schooling, subjects/timetable/attendance, assessment/progression, fictional exams and post-secondary/trade pathways. Stage 5 adds a configurable Gregorian calendar/time scale, DOB-derived age and life stages, birthday/offline catch-up, persistent family/relationship/history records, safe adult relationship progression, marriage/child NPCs, retirement/death records and inheritance-reference hooks. The backend lint/build and all 37 Node tests pass; the deterministic geography check and GDScript formatting/parser check pass. Static GDScript lint has seven structural findings. **Godot 4.7.2 is not installed in the current workspace**, so project import, offline/online client gameplay, UI and local save/restart behavior remain unverified. See [`docs/DEVELOPMENT_STATUS.md`](docs/DEVELOPMENT_STATUS.md) and [`docs/LIFE_SIMULATION_PLAN.md`](docs/LIFE_SIMULATION_PLAN.md) for exact evidence and limits.
 
-Institutions, education rules, fee amounts, coordinates and all assessment content are fictional prototype data—not official curriculum, admission, accreditation or fee guidance. The senior exam uses original content and is not affiliated with WAEC/NECO. Stage 4 is not a production service or the complete Nigeria simulation.
+Education institutions/rules/exams and life-simulation demographic rules are configurable fictional prototype data—not official guidance or real-world demographic/mortality claims. Stage 5 has no sexual content, automatic old-age death, asset transfer, legal inheritance, full employment, or production service.
 
 ## Stage 1 — first playable slice (retained)
 
@@ -52,13 +52,21 @@ Education is a persistent progression in the existing world, not a detached menu
 
 The shared fictional catalog lives at [`game/data/education/catalog.json`](game/data/education/catalog.json). It configures the six JSS/SS years, twelve subjects, fictional assessments/schools/institutions, separate ND/HND pathways, fees, scholarships and vocational/apprenticeship trades. The offline Godot UI/domain and online TypeScript server use the catalog; online education outcomes are server-owned and part of the existing character snapshot/persistence. The Godot client path has not been engine-tested in this workspace.
 
-Read [`docs/EDUCATION_PLAN.md`](docs/EDUCATION_PLAN.md) for detailed implemented scope, persistence/migration contracts, test evidence, data boundaries and remaining runtime verification. The system does not include full employment/careers, banking/economy, government education policy, official examination/admission rules, protected examination content, or automatic age progression.
+Read [`docs/EDUCATION_PLAN.md`](docs/EDUCATION_PLAN.md) for detailed implemented scope, persistence/migration contracts, test evidence, data boundaries and remaining runtime verification. Stage 4 itself does not include full employment/careers, banking/economy, government education policy, official examination/admission rules, or protected examination content.
+
+## Stage 5 — Age & Life Simulation
+
+The online API owns one calendar clock for `nigeria-main`. DOB is authoritative for age; the current age is a synchronized gameplay snapshot. The shared life catalog configures the epoch, time scale, stages, adult restrictions, family-generation bounds, retirement and old-age review thresholds. New characters normally start at 15 or 16. Lifecycle processing is idempotent and catches disconnected player/NPC records up to the current shared server date; the prototype clock pauses while the server process is down.
+
+Persistent people, households, families, relationships, life events, marriages and inheritance-event foundations are linked by IDs. Configurable starter-family profiles vary caregiver roles/count and sibling groups; relatives are unique NPC records, not a universal parent pair. Friendship remains non-romantic and age-appropriate; romantic progression and marriage are adult-only and mutually confirmed. Children are NPC records, not separately controlled players. Deceased records/history/relationships are retained and normal active actions are blocked. Inheritance events carry references only; no property/legal transfer is implemented. Accident, violence/crime-related and poisoning/exposure are abstract narrative cause labels only.
+
+The local profile/save and Godot world/NPC paths are source-implemented but **not engine-verified**. See [`docs/LIFE_SIMULATION_PLAN.md`](docs/LIFE_SIMULATION_PLAN.md) for the model, exact persistence boundaries, tests and known limitations.
 
 ## Technology
 
 - **Game client:** Godot 4.7.2 + GDScript. Offline play remains available; optional multiplayer uses Godot's `WebSocketPeer`.
 - **World API/server:** Node.js 22.x + strict TypeScript, HTTP endpoints, and the `ws` WebSocket library.
-- **Prototype persistence:** atomically replaced single-process online JSON state file, configurable with `DATA_FILE`, plus a separate versioned local Godot save. Education records are nested in the relevant character save; the fictional catalog remains static repository data. No database is configured; PostgreSQL remains a future candidate only.
+- **Prototype persistence:** atomically replaced single-process online JSON state file (schema version 2), configurable with `DATA_FILE`, plus a separate versioned local Godot save. Education and life records persist with characters/world maps; static catalogs remain repository data. No database is configured; PostgreSQL remains a future candidate only.
 - **Canonical logical world:** `nigeria-main`; this is not a player-selectable shard.
 
 See [`docs/TECH_STACK.md`](docs/TECH_STACK.md), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), and [`docs/MULTIPLAYER_PLAN.md`](docs/MULTIPLAYER_PLAN.md).
@@ -79,7 +87,7 @@ cp .env.example .env   # optional; edit only the settings you need
 npm run dev
 ```
 
-The server listens on `0.0.0.0:3000` by default. Its default state file is `services/world-api/data/world-state.json` (ignored by Git). If you set `DATA_FILE` in the root `.env`, a relative path is resolved from `services/world-api/`; for example, `DATA_FILE=data/world-state.json`.
+The server listens on `0.0.0.0:3000` by default. Its default state file is `services/world-api/data/world-state.json` (ignored by Git). If you set `DATA_FILE` in the root `.env`, a relative path is resolved from `services/world-api/`; for example, `DATA_FILE=data/world-state.json`. `GAME_MINUTE_MS` optionally overrides the default 650 real milliseconds per in-game minute; it must be an integer from 1 to 60000 and affects the single shared online world clock.
 
 HTTP endpoints:
 
@@ -137,9 +145,10 @@ From the repository root:
 ```sh
 npm run build  # compile TypeScript
 npm run lint   # ESLint
-npm test       # build and run Node HTTP/WebSocket, education, and geography tests
+npm test       # build and run Node HTTP/WebSocket, education, life, and geography tests
 npm run check  # lint plus the complete test suite
 node --test services/world-api/test/education.test.mjs  # focused Stage 4 education tests (build first)
+node --test services/world-api/test/life.test.mjs       # focused Stage 5 life tests (build first)
 npm run geography:import  # regenerate the deterministic processed geography catalog
 npm run geography:check   # verify that processed outputs match pinned source files
 ```
@@ -167,13 +176,13 @@ gdformat --check $(find game -name '*.gd' -print)
 gdlint $(find game -name '*.gd' -print)
 ```
 
-The automated tests cover the Stage 4 education lifecycle and persistence, original final-exam eligibility/outcomes, university/ND/HND/vocational/apprenticeship paths, scholarships, geography integration and online schoolyard co-presence/attendance alongside retained HTTP, legacy/geographic multiplayer, movement/chat/interaction, importer/coordinate/chunk, payload/rate-limit, identity-recovery, API-restart, clock and WebSocket-origin regressions. They do not exercise Godot rendering/input, browser exports, offline client save/load, education UI, or the actual Godot reconnect flow.
+The automated tests cover the Stage 5 calendar/DOB/age/birthday/idempotency/offline catch-up, life stages, persistent family trees/NPC siblings, friendship and adult restrictions, marriage/child NPCs, death/history/inheritance hooks, multiplayer and online save/restart. They also cover Stage 4 education progression/persistence, exams, university/ND/HND/vocational/apprenticeship paths, scholarships and schoolyard co-presence, plus retained HTTP, legacy/geographic multiplayer, movement/chat/interaction, importer/coordinate/chunk, payload/rate-limit, identity-recovery, API-restart, shared-clock and WebSocket-origin regressions. They do not exercise Godot rendering/input, browser exports, offline client save/load, profile/UI behavior, or the actual Godot reconnect flow.
 
 ## Repository layout
 
 ```text
-game/                       Godot life prototype, Stage 3 map preview, Stage 4 education, data
-services/world-api/         HTTP/WebSocket authority, geography and education domains, tests
+game/                       Godot prototype, geography, education, life simulation, data
+services/world-api/         HTTP/WebSocket authority, geography, education/life domains, tests
 tools/geography/            Deterministic bounded-feature extraction/import tools
 docs/                       Vision, plans, architecture, status, and agent guidance
 .github/workflows/          Node/TypeScript foundation checks
@@ -188,6 +197,7 @@ docs/                       Vision, plans, architecture, status, and agent guida
 - [Technology stack](docs/TECH_STACK.md)
 - [Database plan](docs/DATABASE_PLAN.md)
 - [Stage 4 education plan](docs/EDUCATION_PLAN.md)
+- [Stage 5 life simulation plan](docs/LIFE_SIMULATION_PLAN.md)
 - [Multiplayer plan](docs/MULTIPLAYER_PLAN.md)
 - [World and time plan](docs/WORLD_PLAN.md)
 - [Geographic data sources and licenses](docs/DATA_SOURCES.md)
@@ -198,4 +208,4 @@ docs/                       Vision, plans, architecture, status, and agent guida
 
 ## Scope boundary
 
-Stage 3 provides a national administrative registry and one bounded Akure South map-data sample, not full national geography or simulation. Stage 4 implements the prototype education progression described above; its Node/backend tests pass, but Godot runtime/UI/save integration remains unverified until Godot 4.7.2 is available. Preserve one logical Nigeria; do not split the prototype into separately authoritative regional worlds. **Next roadmap stage: Stage 5 — Age & Life Simulation.** It remains not started and is gated on the Stage 4 verification work. Full national visual detail, accounts, production database/operations, comprehensive anti-cheat/moderation, advanced NPC simulation, transport/weather simulation, and cross-platform client exports remain future work.
+Stage 3 provides a national administrative registry and one bounded Akure South map-data sample, not full national geography or simulation. Stages 4 and 5 implement fictional education progression and age/life simulation; their Node/backend checks pass, but Godot runtime/UI/save integration remains unverified until Godot 4.7.2 is available. Preserve one logical Nigeria and one shared online timeline; do not split the prototype into separately authoritative regional or player worlds. **Next roadmap stage: Stage 6 — Careers & Employment.** Stage 6 has not begun. Full national visual detail, accounts, production database/operations, comprehensive anti-cheat/moderation, advanced NPC society, transport/weather simulation, and cross-platform client exports remain future work.

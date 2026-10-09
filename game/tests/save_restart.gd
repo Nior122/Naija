@@ -67,10 +67,10 @@ func _read_checkpoint() -> void:
 		)
 		quit(1)
 		return
-	var character := CharacterStateScript.new()
-	character.load_dictionary(result["character"])
 	var clock := WorldClockScript.new()
 	clock.load_dictionary(result["clock"])
+	var character := CharacterStateScript.new()
+	character.load_dictionary(result["character"], clock.calendar_date())
 	var passed := true
 	passed = (
 		_expect(character.name == "Restart Student" and character.age == 16, "character identity")
@@ -82,8 +82,8 @@ func _read_checkpoint() -> void:
 	)
 	passed = (
 		_expect(
-			character.home_id != "" and character.household.get("guardians", []).size() == 2,
-			"household and home"
+			character.home_id != "" and character.household.get("guardians", []).size() >= 1,
+			"household and home with configured caregivers"
 		)
 		and passed
 	)
@@ -114,6 +114,30 @@ func _read_checkpoint() -> void:
 			water_quantity = int(item.get("quantity", 0))
 	passed = _expect(water_quantity == 2, "saved inventory item quantity") and passed
 	passed = _expect(clock.day == 3 and clock.minute_of_day == 690, "world clock") and passed
+	passed = (
+		_expect(
+			character.date_of_birth.year < clock.calendar_date().year,
+			"persisted DOB derives current age"
+		)
+		and passed
+	)
+	passed = (
+		_expect(
+			character.life_status == "alive" and character.life_history.size() >= 2,
+			"persisted life status and history"
+		)
+		and passed
+	)
+	passed = (
+		_expect(
+			(
+				character.household.get("family_members", []).size() >= 2
+				and character.household.get("siblings", []).size() >= 1
+			),
+			"persistent NPC family records with configured siblings"
+		)
+		and passed
+	)
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(RESTART_SAVE_PATH))
 	if passed:
 		print("PASS: saved character state survived a fresh Godot process.")

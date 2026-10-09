@@ -10,6 +10,20 @@ import {
 } from "../geography/catalog.js";
 import type { GeographicRegion } from "../geography/types.js";
 import { loadEducationCatalog } from "../education/catalog.js";
+import { loadLifeCatalog, dateForWorldDay, worldClockSnapshot } from "../life/calendar.js";
+import {
+  advanceWorldLife,
+  buildLifeProfile,
+  canTakeActiveAction,
+  createChildForMarriage,
+  createStarterFamily,
+  initializeCharacterLife,
+  isDeathCauseCategory,
+  proposeRelationship,
+  recordDeath,
+  recordRetirement,
+} from "../life/service.js";
+import type { CalendarDate, DeathCauseCategory, LifeEventRecord } from "../life/types.js";
 import {
   applyEducationAction,
   beginTertiaryCoursePayload,
@@ -70,6 +84,8 @@ const IDEMPOTENT_COMMANDS = new Set([
   "character.rest",
   "school.answer",
   "education.action",
+  "relationship.progress",
+  "family.childbirth",
 ]);
 
 const SKIN_TONES: Record<string, string> = {
@@ -84,10 +100,6 @@ const SHIRT_STYLES: Record<string, string> = {
   "#e5e8d7": "White school shirt",
   "#3f7092": "Blue casual shirt",
 };
-const GUARDIAN_NAMES = [
-  "Amina", "Bisi", "Chinwe", "Hauwa", "Ifeoma", "Kemi", "Ngozi", "Sadiya", "Tola", "Zainab",
-];
-const FAMILY_NAMES = ["Adeyemi", "Bello", "Eze", "Ibrahim", "Okafor", "Olawale", "Yusuf"];
 interface TravelTarget {
   readonly destination: string;
   readonly position: Point2D;
@@ -208,32 +220,13 @@ function pointFrom(value: unknown): Point2D | null {
   return { x: value.x, y: value.y };
 }
 
-function makeHousehold(now: number): Record<string, unknown> {
-  const familyName = FAMILY_NAMES[Math.floor(Math.random() * FAMILY_NAMES.length)] ?? "Adeyemi";
-  const firstIndex = Math.floor(Math.random() * GUARDIAN_NAMES.length);
-  let secondIndex = Math.floor(Math.random() * GUARDIAN_NAMES.length);
-  while (secondIndex === firstIndex) secondIndex = Math.floor(Math.random() * GUARDIAN_NAMES.length);
-  const id = `household-${randomUUID()}`;
-  return {
-    id,
-    home_id: `home-${id}`,
-    neighborhood_id: "idera-quarter",
-    home_type: "Family compound home",
-    rooms: ["Living area", "Bedroom", "Kitchen"],
-    created_at: new Date(now).toISOString(),
-    guardians: [
-      { id: `npc-${randomUUID()}`, name: `${GUARDIAN_NAMES[firstIndex] ?? "Amina"} ${familyName}`, role: "parent" },
-      { id: `npc-${randomUUID()}`, name: `${GUARDIAN_NAMES[secondIndex] ?? "Bisi"} ${familyName}`, role: "guardian" },
-    ],
-  };
-}
-
 function createCharacter(
   profile: Record<string, unknown>,
   playerId: string,
   now: number,
   geographyRegion: GeographicRegion,
   educationCatalog: EducationCatalog,
+  worldDate: CalendarDate,
 ): CharacterRecord {
   const name = validName(profile.name);
   const age = profile.age;
@@ -250,7 +243,6 @@ function createCharacter(
     ? rawAppearance.hairstyle : "Short curls";
   const shirtColor = typeof rawAppearance.clothing_color === "string" && SHIRT_STYLES[rawAppearance.clothing_color]
     ? rawAppearance.clothing_color : "#27734a";
-  const household = makeHousehold(now);
   const timestamp = new Date(now).toISOString();
   let geographicLocation: CharacterRecord["geographic_location"] = null;
   let currentLocation = "home";
@@ -267,6 +259,15 @@ function createCharacter(
     character_id: characterId,
     name,
     age,
+    date_of_birth: { ...worldDate },
+    life_stage_id: "secondary-school-youth",
+    life_status: "alive",
+    household_id: "",
+    family_ids: [],
+    life_event_ids: [],
+    relationship_ids: [],
+    last_life_processed_date: { ...worldDate },
+    inheritance_event_ids: [],
     character_type: characterType,
     appearance: {
       skin_tone: skinTone,
@@ -282,7 +283,7 @@ function createCharacter(
     hunger: 82,
     education_level: "Secondary school · JSS 3",
     school_id: educationRecord.school_id,
-    home_id: String(household.home_id),
+    home_id: "",
     current_location: currentLocation,
     position,
     direction: { x: 0, y: 1 },
@@ -298,10 +299,11 @@ function createCharacter(
     attendance: [],
     education_record: educationRecord,
     reputation: 0,
-    household,
+    household: {},
     created_at: timestamp,
     updated_at: timestamp,
   };
+  initializeCharacterLife(character, worldDate, age);
   syncLegacyEducation(character, educationCatalog);
   return character;
 }
@@ -350,17 +352,18 @@ export class MultiplayerWorld {
   private readonly connectionAttemptsPerMinute: number;
   private readonly geographyRegion: GeographicRegion;
   private readonly educationCatalog: EducationCatalog;
+  private readonly lifeCatalog = loadLifeCatalog();
   private lastTickAt: number;
   private lastBroadcastAt = 0;
   private lastPersistAt: number;
-  private clockAccumulatorMs = 0;
+  private gameMillisecondRemainder = 0;
   private dirty = false;
   private flushInFlight = false;
   private closed = false;
 
   constructor(private readonly store: WorldStore, options: WorldEngineOptions = {}) {
     this.now = options.now ?? Date.now;
-    this.gameMinuteMs = Math.max(100, options.gameMinuteMs ?? 650);
+    this.gameMinuteMs = Math.max(1, options.gameMinuteMs ?? this.lifeCatalog.calendar.real_milliseconds_per_game_minute);
     this.broadcastIntervalMs = Math.max(50, options.broadcastIntervalMs ?? 100);
     this.maxConnections = Math.max(1, options.maxConnections ?? 64);
     this.connectionAttemptsPerMinute = Math.max(1, options.connectionAttemptsPerMinute ?? 30);
@@ -376,6 +379,51 @@ export class MultiplayerWorld {
 
   get connectedPlayerCount(): number { return this.online.size; }
   get socketCount(): number { return this.contexts.size; }
+
+  async recordDeathEvent(
+    characterId: string,
+    cause: DeathCauseCategory,
+  ): Promise<ReturnType<typeof recordDeath>> {
+    if (!isDeathCauseCategory(cause)) throw new Error("death_cause_invalid");
+    const result = recordDeath(this.store.state, characterId, cause);
+    if (!result.alreadyDeceased) {
+      this.dirty = true;
+      const timestamp = new Date(this.now()).toISOString();
+      const player = Object.values(this.store.state.players).find((entry) => entry.character.character_id === characterId);
+      if (player) {
+        player.character.updated_at = timestamp;
+        player.lastSeen = timestamp;
+        const context = this.online.get(player.playerId);
+        if (context) {
+          context.inputDirection = vectorZero();
+          context.running = false;
+          this.sendCharacterSnapshot(context);
+          this.send(context, { type: "presence.left", player: this.toPresence(player, "disconnected") });
+        }
+      } else if (this.store.state.people[characterId]) {
+        this.store.state.people[characterId]!.updated_at = timestamp;
+      }
+    }
+    await this.flushDirty();
+    return result;
+  }
+
+  async recordRetirementEvent(characterId: string): Promise<LifeEventRecord> {
+    const event = recordRetirement(this.store.state, characterId);
+    this.dirty = true;
+    const timestamp = new Date(this.now()).toISOString();
+    const player = Object.values(this.store.state.players).find((entry) => entry.character.character_id === characterId);
+    if (player) {
+      player.character.updated_at = timestamp;
+      player.lastSeen = timestamp;
+      const context = this.online.get(player.playerId);
+      if (context) this.sendCharacterSnapshot(context);
+    } else if (this.store.state.people[characterId]) {
+      this.store.state.people[characterId]!.updated_at = timestamp;
+    }
+    await this.flushDirty();
+    return event;
+  }
 
   attach(socket: WebSocket, request: IncomingMessage): void {
     const now = this.now();
@@ -426,12 +474,14 @@ export class MultiplayerWorld {
     if (this.closed) return;
     const elapsed = clamp(now - this.lastTickAt, 0, 1000);
     this.lastTickAt = now;
-    this.clockAccumulatorMs += elapsed;
+    const scaledGameMilliseconds = elapsed * 60_000 / this.gameMinuteMs + this.gameMillisecondRemainder;
+    const wholeGameMilliseconds = Math.floor(scaledGameMilliseconds);
+    this.gameMillisecondRemainder = scaledGameMilliseconds - wholeGameMilliseconds;
     const deltaSeconds = elapsed / 1000;
     let changed = false;
     for (const context of this.online.values()) {
       const player = this.playerFor(context);
-      if (!player) continue;
+      if (!player || !canTakeActiveAction(player.character)) continue;
       const direction = now - context.lastInputAt <= 250 ? context.inputDirection : vectorZero();
       if (Math.hypot(direction.x, direction.y) > 0.001 && deltaSeconds > 0) {
         const speed = context.running ? 320 : 205;
@@ -454,9 +504,8 @@ export class MultiplayerWorld {
         }
       }
     }
-    while (this.clockAccumulatorMs >= this.gameMinuteMs) {
-      this.clockAccumulatorMs -= this.gameMinuteMs;
-      this.advanceWorldMinute(now);
+    if (wholeGameMilliseconds > 0) {
+      this.advanceWorldMilliseconds(wholeGameMilliseconds, now);
       changed = true;
     }
     if (now - this.lastBroadcastAt >= this.broadcastIntervalMs) {
@@ -548,6 +597,10 @@ export class MultiplayerWorld {
       this.sendError(context, "not_authenticated", "Connect with a valid identity first.", requestId);
       return;
     }
+    if (!canTakeActiveAction(player.character)) {
+      this.sendError(context, "character_deceased", "This character is deceased; active world actions are unavailable.", requestId);
+      return;
+    }
     if (IDEMPOTENT_COMMANDS.has(message.type)) {
       if (requestId === undefined) {
         this.sendError(context, "request_id_required", "This action requires a unique request ID.");
@@ -575,6 +628,8 @@ export class MultiplayerWorld {
       case "education.action": await this.educationAction(context, player, message, requestId); return;
       case "chat.send": this.handleChat(context, player, message, requestId); return;
       case "player.interact": this.handlePlayerInteraction(context, player, message, requestId); return;
+      case "relationship.progress": await this.progressRelationship(context, player, message, requestId); return;
+      case "family.childbirth": await this.recordChildbirth(context, player, message, requestId); return;
       default: this.invalid(context, "unknown_message", requestId);
     }
   }
@@ -640,7 +695,14 @@ export class MultiplayerWorld {
     let character: CharacterRecord;
     try {
       playerId = `player-${randomUUID()}`;
-      character = createCharacter(profile, playerId, this.now(), this.geographyRegion, this.educationCatalog);
+      character = createCharacter(
+        profile,
+        playerId,
+        this.now(),
+        this.geographyRegion,
+        this.educationCatalog,
+        this.store.state.worldClock.world_date,
+      );
     } catch (error) {
       this.sendError(context, this.errorCode(error), "The character profile was not accepted.", requestId);
       return;
@@ -653,6 +715,13 @@ export class MultiplayerWorld {
       createdAt: timestamp, lastSeen: timestamp, character,
     };
     this.store.state.players[playerId] = player;
+    try {
+      createStarterFamily(this.store.state, playerId, character, this.now());
+    } catch (error) {
+      delete this.store.state.players[playerId];
+      this.sendError(context, this.errorCode(error), "The character family could not be created.", requestId);
+      return;
+    }
     this.playerByTokenHash.set(tokenHash, playerId);
     this.playerByCreationKeyHash.set(creationKeyHash, playerId);
     // The upcoming snapshot includes all current changes; keep later concurrent dirtiness intact.
@@ -697,6 +766,7 @@ export class MultiplayerWorld {
       context.socket.close(4409, "identity already connected");
       return;
     }
+    advanceWorldLife(this.store.state, this.store.state.worldClock.world_date);
     context.playerId = playerId;
     this.online.set(playerId, context);
     const timestamp = new Date(this.now()).toISOString();
@@ -704,8 +774,8 @@ export class MultiplayerWorld {
     player.character.updated_at = timestamp;
     this.dirty = true;
     this.send(context, appendOptionalRequestId({
-      type: "session.ready", playerId, character: safeClone(player.character),
-      world: { id: WORLD_ID, clock: safeClone(this.store.state.worldClock) },
+      type: "session.ready", playerId, character: this.characterSnapshot(player),
+      world: { id: WORLD_ID, clock: worldClockSnapshot(this.store.state.worldClock, this.lifeCatalog) },
       players: this.publicPresenceList(playerId),
     }, requestId));
     this.broadcastPresence({ type: "presence.joined", player: this.toPresence(player, "connected") });
@@ -1257,13 +1327,143 @@ export class MultiplayerWorld {
     if (targetContext !== context) this.send(targetContext, event);
   }
 
+  private findOnlineCharacter(characterId: string): { player: PersistentPlayer; context: ConnectionContext } | null {
+    for (const [playerId, context] of this.online) {
+      const player = this.store.state.players[playerId];
+      if (player?.character.character_id === characterId && canTakeActiveAction(player.character)) {
+        return { player, context };
+      }
+    }
+    return null;
+  }
+
+  private async progressRelationship(
+    context: ConnectionContext,
+    actor: PersistentPlayer,
+    message: Record<string, unknown>,
+    requestId?: string,
+  ): Promise<void> {
+    const targetCharacterId = message.targetCharacterId;
+    if (typeof targetCharacterId !== "string" || targetCharacterId.length > 96) {
+      this.sendError(context, "relationship_target_invalid", "Select another character first.", requestId);
+      return;
+    }
+    const targetEntry = this.findOnlineCharacter(targetCharacterId);
+    if (!targetEntry || targetEntry.player.playerId === actor.playerId ||
+      !this.arePlayersNearby(actor, targetEntry.player, INTERACTION_RADIUS)) {
+      this.sendError(context, "relationship_partner_unavailable", "The other living character must be nearby and connected.", requestId);
+      return;
+    }
+    let result: ReturnType<typeof proposeRelationship>;
+    try {
+      result = proposeRelationship(
+        this.store.state,
+        actor.character.character_id,
+        targetCharacterId,
+        message.stage,
+      );
+    } catch (error) {
+      this.sendError(context, this.errorCode(error), "That relationship update is not available.", requestId);
+      return;
+    }
+    this.markRequestProcessed(actor, requestId);
+    this.touchPlayer(actor);
+    this.touchPlayer(targetEntry.player);
+    const payload = appendOptionalRequestId({
+      type: "relationship.progress",
+      status: result.status,
+      relationshipId: result.relationship.relationship_id,
+      stage: result.relationship.stage ?? result.relationship.pending_stage ?? null,
+      actorCharacterId: actor.character.character_id,
+      targetCharacterId,
+      ...(result.marriage ? { marriageId: result.marriage.marriage_id } : {}),
+    }, requestId);
+    this.send(context, payload);
+    if (targetEntry.context !== context) this.send(targetEntry.context, payload);
+    this.sendCharacterSnapshot(context);
+    this.sendCharacterSnapshot(targetEntry.context);
+    await this.flushDirty();
+  }
+
+  private async recordChildbirth(
+    context: ConnectionContext,
+    parent: PersistentPlayer,
+    message: Record<string, unknown>,
+    requestId?: string,
+  ): Promise<void> {
+    const parentId = parent.character.character_id;
+    const marriage = Object.values(this.store.state.marriages).find((entry) =>
+      entry.status === "active" && entry.spouse_ids.includes(parentId) &&
+      (!isRecord(message) || message.marriageId === undefined || message.marriageId === entry.marriage_id));
+    if (!marriage) {
+      this.sendError(context, "marriage_not_active", "An active marriage is required for this family event.", requestId);
+      return;
+    }
+    let requestedName: string | undefined;
+    if (message.name !== undefined) {
+      const validatedName = validName(message.name);
+      if (validatedName === null) {
+        this.sendError(context, "invalid_name", "The child's name is not valid.", requestId);
+        return;
+      }
+      requestedName = validatedName;
+    }
+    let child: ReturnType<typeof createChildForMarriage>;
+    try {
+      child = createChildForMarriage(this.store.state, marriage.marriage_id, requestedName, this.now());
+    } catch (error) {
+      this.sendError(context, this.errorCode(error), "The family event could not be recorded.", requestId);
+      return;
+    }
+    this.markRequestProcessed(parent, requestId);
+    this.dirty = true;
+    const payload = appendOptionalRequestId({
+      type: "family.childborn",
+      child: {
+        person_id: child.person_id,
+        name: child.name,
+        date_of_birth: child.date_of_birth,
+        age: child.age,
+        life_stage_id: child.life_stage_id,
+        household_id: child.household_id,
+        family_ids: child.family_ids,
+      },
+    }, requestId);
+    for (const spouseId of marriage.spouse_ids) {
+      const spouse = Object.values(this.store.state.players).find((entry) => entry.character.character_id === spouseId);
+      if (!spouse) continue;
+      this.touchPlayer(spouse);
+      const spouseContext = this.online.get(spouse.playerId);
+      if (spouseContext) {
+        this.send(spouseContext, payload);
+        this.sendCharacterSnapshot(spouseContext);
+      }
+    }
+    if (!this.online.has(parent.playerId)) this.send(context, payload);
+    await this.flushDirty();
+  }
+
+  private advanceWorldMilliseconds(milliseconds: number, now: number): void {
+    const clock = this.store.state.worldClock;
+    const accumulated = clock.millisecond_of_minute + milliseconds;
+    const wholeMinutes = Math.floor(accumulated / 60_000);
+    clock.millisecond_of_minute = accumulated % 60_000;
+    for (let index = 0; index < wholeMinutes; index += 1) this.advanceWorldMinute(now);
+    clock.updated_at = new Date(now).toISOString();
+    this.dirty = true;
+  }
+
   private advanceWorldMinute(now: number): void {
     const clock = this.store.state.worldClock;
+    let dateChanged = false;
     if (clock.minute_of_day + 1 >= MINUTES_PER_DAY) {
       clock.day += 1;
       clock.minute_of_day = 0;
+      clock.world_date = dateForWorldDay(clock.day, this.lifeCatalog);
+      dateChanged = true;
     } else clock.minute_of_day += 1;
     clock.updated_at = new Date(now).toISOString();
+    if (dateChanged) advanceWorldLife(this.store.state, clock.world_date);
     const attendanceDeadlinePassed = this.educationCatalog.timetable.some((entry) =>
       entry.kind !== "break" &&
       entry.start_minute + entry.duration_minutes + this.educationCatalog.calendar.late_grace_minutes + 1 === clock.minute_of_day);
@@ -1276,7 +1476,7 @@ export class MultiplayerWorld {
     }
     for (const context of this.online.values()) {
       const player = this.playerFor(context);
-      if (!player) continue;
+      if (!player || !canTakeActiveAction(player.character)) continue;
       player.character.hunger = Math.max(0, player.character.hunger - 0.012);
       player.character.energy = Math.max(0, player.character.energy - 0.004);
       if (player.character.hunger < 8 && player.character.energy < 8) {
@@ -1302,10 +1502,16 @@ export class MultiplayerWorld {
     this.dirty = true;
   }
 
+  private characterSnapshot(player: PersistentPlayer): CharacterRecord {
+    const snapshot = safeClone(player.character);
+    snapshot.life_profile = buildLifeProfile(this.store.state, player.character);
+    return snapshot;
+  }
+
   private sendCharacterSnapshot(context: ConnectionContext, requestId?: string): void {
     const player = this.playerFor(context);
     if (!player) return;
-    this.send(context, appendOptionalRequestId({ type: "character.snapshot", character: safeClone(player.character) }, requestId));
+    this.send(context, appendOptionalRequestId({ type: "character.snapshot", character: this.characterSnapshot(player) }, requestId));
   }
 
   private toPresence(player: PersistentPlayer, connectionStatus: "connected" | "disconnected"): PublicPresence {
@@ -1334,7 +1540,8 @@ export class MultiplayerWorld {
     const list: PublicPresence[] = [];
     for (const context of this.online.values()) {
       const player = this.playerFor(context);
-      if (player && (player.playerId === viewerId || this.sharesGeographicInterest(viewer, player))) {
+      if (player && canTakeActiveAction(player.character) &&
+        (player.playerId === viewerId || this.sharesGeographicInterest(viewer, player))) {
         list.push(this.toPresence(player, "connected"));
       }
     }
@@ -1398,7 +1605,7 @@ export class MultiplayerWorld {
       this.send(context, {
         type: "world.snapshot",
         worldId: WORLD_ID,
-        clock: safeClone(this.store.state.worldClock),
+        clock: worldClockSnapshot(this.store.state.worldClock, this.lifeCatalog),
         players: this.publicPresenceList(player.playerId),
       });
     }

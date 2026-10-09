@@ -4,12 +4,21 @@ import { fileURLToPath } from "node:url";
 import { MultiplayerWorld } from "./multiplayer/world-engine.js";
 import { WorldStore } from "./multiplayer/persistence.js";
 import type { ServerOptions } from "./multiplayer/types.js";
+import type { DeathCauseCategory, InheritanceEventRecord, LifeEventRecord } from "./life/types.js";
 import { worldDescriptor } from "./world.js";
 
 const MAX_MESSAGE_BYTES = 8 * 1024;
 
 export interface ApiServer extends Server {
   shutdown(): Promise<void>;
+  /** Internal server-owned lifecycle hook; it is deliberately not an HTTP/client command. */
+  recordDeathEvent(characterId: string, cause: DeathCauseCategory): Promise<{
+    event: LifeEventRecord;
+    inheritanceEvent: InheritanceEventRecord | null;
+    alreadyDeceased: boolean;
+  }>;
+  /** Internal server-owned retirement hook; it is deliberately not an HTTP/client command. */
+  recordRetirementEvent(characterId: string): Promise<LifeEventRecord>;
 }
 
 export interface ApiServerOptions extends ServerOptions {
@@ -139,6 +148,8 @@ export function createApiServer(options: ApiServerOptions = {}): ApiServer {
     clearInterval(heartbeatTimer);
     clearInterval(tickTimer);
   });
+  server.recordDeathEvent = (characterId, cause) => world.recordDeathEvent(characterId, cause);
+  server.recordRetirementEvent = (characterId) => world.recordRetirementEvent(characterId);
 
   return server;
 }

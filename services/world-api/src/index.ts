@@ -1,11 +1,12 @@
 import { createApiServer } from "./app.js";
 import { readApiConfig } from "./config.js";
 
-const { port, dataFile, websocketPath, allowedOrigins } = readApiConfig();
+const { port, dataFile, websocketPath, allowedOrigins, gameMinuteMs } = readApiConfig();
 const server = createApiServer({
   stateFile: dataFile,
   websocketPath,
   allowedOrigins,
+  ...(gameMinuteMs === undefined ? {} : { gameMinuteMs }),
 });
 
 server.listen(port, "0.0.0.0", () => {

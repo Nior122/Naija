@@ -359,18 +359,28 @@ func _populate_home() -> void:
 		"Check your bag and food",
 		{}
 	)
-	var guardians: Array = household.get("guardians", [])
-	for index in range(guardians.size()):
-		var guardian: Dictionary = guardians[index]
-		var role := str(guardian.get("role", "guardian"))
-		var dialogue_role := "parent" if index == 0 else role
-		var npc_position := Vector2(710.0 + float(index) * 125.0, 530.0)
-		_add_npc(
-			str(guardian.get("id", "guardian-%d" % index)),
-			str(guardian.get("name", "Family guardian")),
-			npc_position,
-			dialogue_role
+	var family_members: Array = household.get("family_members", [])
+	if family_members.is_empty():
+		family_members = household.get("guardians", []) + household.get("siblings", [])
+	var visible_index := 0
+	for member in family_members:
+		if not member is Dictionary or str(member.get("life_status", "alive")) == "deceased":
+			continue
+		var role := str(member.get("family_role", member.get("role", "relative")))
+		var dialogue_role := "parent" if role == "parent" else "guardian"
+		if role in ["sibling", "child"]:
+			dialogue_role = "student"
+		var column := visible_index % 3
+		var row := int(floor(float(visible_index) / 3.0))
+		var npc_position := Vector2(710.0 + float(column) * 118.0, 510.0 + float(row) * 84.0)
+		var person_id := str(
+			member.get(
+				"person_id",
+				member.get("character_id", member.get("id", "family-%d" % visible_index))
+			)
 		)
+		_add_npc(person_id, str(member.get("name", "Family member")), npc_position, dialogue_role)
+		visible_index += 1
 
 
 func _populate_schoolyard() -> void:
