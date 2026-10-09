@@ -255,6 +255,17 @@ async function makeServerTest(run) {
   finally { await stopServer(running.server); }
 }
 
+async function waitForPersistedApplication(stateFile, applicationId, timeoutMs = 5000) {
+  const deadline = Date.now() + timeoutMs;
+  let persisted;
+  do {
+    persisted = JSON.parse(await readFile(stateFile, "utf8"));
+    if (persisted.careerApplications?.[applicationId]) return persisted;
+    await delay(25);
+  } while (Date.now() < deadline);
+  throw new Error(`Career application ${applicationId} was not persisted within ${timeoutMs} ms.`);
+}
+
 afterEach(async () => {
   for (const server of [...activeServers]) await stopServer(server);
   for (const directory of activeDirectories) await rm(directory, { recursive: true, force: true });
@@ -648,7 +659,7 @@ test("authenticated career actions use the caller identity, return private profi
         assert.equal("salary_payments" in presence, false);
       }
 
-      const persisted = JSON.parse(await readFile(stateFile, "utf8"));
+      const persisted = await waitForPersistedApplication(stateFile, application.application_id);
       assert.equal(Object.keys(persisted.careerApplications).length, 1);
       assert.equal(persisted.careerApplications[application.application_id].character_id, firstIdentity.ready.character.character_id);
       assert.equal(persisted.careerApplications[application.application_id].status, "under_review");
