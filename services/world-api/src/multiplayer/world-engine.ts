@@ -115,6 +115,41 @@ import {
   governmentErrorMessage,
 } from "../government/service.js";
 import type { GovernmentCatalog, GovernmentLevel, ProjectStatus } from "../government/types.js";
+import { loadElectionsCatalog } from "../elections/catalog.js";
+import {
+  initializeElectionWorldState,
+  createPoliticalParty,
+  registerPoliticalParty,
+  joinPoliticalParty,
+  leavePoliticalParty,
+  getPoliticalProfile,
+  updatePoliticalProfile,
+  createElection,
+  advanceElectionPhase,
+  registerCandidate,
+  approveCandidate,
+  rejectCandidate,
+  withdrawCandidate,
+  createCampaign,
+  checkVoterEligibility,
+  castBallot,
+  countVotes,
+  certifyElectionResult,
+  publishElectionResult,
+  transferElectedOffice,
+  submitDispute,
+  listParties,
+  listElections,
+  getElection,
+  listCandidates,
+  getCampaign,
+  getElectionAuditLog,
+  getCharacterElectionHistory,
+  getCharacterPartyMembership,
+  processElectionWorldDate,
+  electionsErrorMessage,
+} from "../elections/service.js";
+import type { ElectionsCatalog, ElectionPhase, PartyStatus, ManifestoRecord } from "../elections/types.js";
 import { loadLifeCatalog, dateForWorldDay, isValidDate, worldClockSnapshot } from "../life/calendar.js";
 import {
   advanceWorldLife,
@@ -465,6 +500,7 @@ export class MultiplayerWorld {
   private readonly businessCatalog: BusinessCatalog = loadBusinessCatalog();
   private readonly propertyCatalog: PropertyCatalog = loadPropertyCatalog();
   private readonly governmentCatalog: GovernmentCatalog = loadGovernmentCatalog();
+  private readonly electionsCatalog: ElectionsCatalog = loadElectionsCatalog();
   private readonly lifeCatalog = loadLifeCatalog();
   private lastTickAt: number;
   private lastBroadcastAt = 0;
@@ -752,6 +788,7 @@ export class MultiplayerWorld {
       case "business.action": await this.businessAction(context, player, message, requestId); return;
       case "property.action": await this.propertyAction(context, player, message, requestId); return;
       case "government.action": await this.governmentAction(context, player, message, requestId); return;
+      case "election.action": await this.electionAction(context, player, message, requestId); return;
       case "chat.send": this.handleChat(context, player, message, requestId); return;
       case "player.interact": this.handlePlayerInteraction(context, player, message, requestId); return;
       case "relationship.progress": await this.progressRelationship(context, player, message, requestId); return;
@@ -854,6 +891,7 @@ export class MultiplayerWorld {
     seedProperties(this.store.state, this.store.state.worldClock.world_date, this.now(), this.propertyCatalog);
     initializeGovernmentWorldState(this.store.state);
     seedGovernmentWorld(this.store.state, this.store.state.worldClock.world_date, this.now(), this.governmentCatalog);
+    initializeElectionWorldState(this.store.state);
     this.playerByTokenHash.set(tokenHash, playerId);
     this.playerByCreationKeyHash.set(creationKeyHash, playerId);
     // The upcoming snapshot includes all current changes; keep later concurrent dirtiness intact.
@@ -905,6 +943,7 @@ export class MultiplayerWorld {
     processBusinessWorldDate(this.store.state, this.store.state.worldClock.world_date, this.now(), this.businessCatalog);
     processPropertyWorldDate(this.store.state);
     processGovernmentWorldDate(this.store.state);
+    processElectionWorldDate(this.store.state, this.store.state.worldClock.world_date, this.now());
     processCareerWorldMinute(this.store.state, this.store.state.worldClock.world_date,
       this.store.state.worldClock.minute_of_day, this.now(), this.careerCatalog);
     context.playerId = playerId;
@@ -2274,6 +2313,280 @@ export class MultiplayerWorld {
     await this.flushDirty();
   }
 
+  private async electionAction(
+    context: ConnectionContext,
+    player: PersistentPlayer,
+    message: Record<string, unknown>,
+    requestId?: string,
+  ): Promise<void> {
+    const data = message;
+    const action = typeof data.action === "string" ? data.action : "";
+    const characterId = player.character.character_id;
+    const date = this.store.state.worldClock.world_date;
+    const now = this.now();
+    let messageText = "";
+    const responseData: Record<string, unknown> = {};
+    const requiredString = (key: string, value: unknown, maxLength = 200): string => {
+      if (typeof value !== "string" || value.trim().length === 0 || value.length > maxLength) throw new Error("elections_action_invalid");
+      return value.trim();
+    };
+    const optionalString = (key: string, value: unknown, maxLength = 500): string | null => {
+      if (value === undefined || value === null) return null;
+      if (typeof value !== "string" || value.length > maxLength) throw new Error("elections_action_invalid");
+      return value;
+    };
+
+    try {
+      switch (action) {
+        case "list_parties": {
+          const statusFilter = optionalString("status", data.status) as PartyStatus | undefined;
+          responseData.parties = listParties(this.store.state, statusFilter);
+          messageText = "Parties loaded.";
+          break;
+        }
+        case "create_party": {
+          const name = requiredString("name", data.name);
+          const abbreviation = requiredString("abbreviation", data.abbreviation);
+          const description = optionalString("description", data.description) ?? "";
+          const policyPositions = Array.isArray(data.policy_positions) ? data.policy_positions.map((p) => String(p)) : [];
+          const party = createPoliticalParty(this.store.state, name, abbreviation, description, characterId, policyPositions, date, now, this.electionsCatalog);
+          responseData.party = party;
+          messageText = `Party "${party.name}" created.`;
+          break;
+        }
+        case "register_party": {
+          const partyId = requiredString("party_id", data.party_id);
+          const party = registerPoliticalParty(this.store.state, partyId, characterId, date, now);
+          responseData.party = party;
+          messageText = "Party registered as active.";
+          break;
+        }
+        case "join_party": {
+          const partyId = requiredString("party_id", data.party_id);
+          const membership = joinPoliticalParty(this.store.state, partyId, characterId, date, now, this.electionsCatalog);
+          responseData.membership = membership;
+          messageText = "Joined party.";
+          break;
+        }
+        case "leave_party": {
+          const membershipId = requiredString("membership_id", data.membership_id);
+          const reason = optionalString("reason", data.reason);
+          const membership = leavePoliticalParty(this.store.state, membershipId, reason ?? "", date, now);
+          responseData.membership = membership;
+          messageText = "Left party.";
+          break;
+        }
+        case "political_profile": {
+          const profile = getPoliticalProfile(this.store.state, characterId);
+          responseData.profile = profile;
+          messageText = "Political profile loaded.";
+          break;
+        }
+        case "update_profile": {
+          const statement = requiredString("public_statement", data.public_statement);
+          const profile = updatePoliticalProfile(this.store.state, characterId, statement, date, now);
+          responseData.profile = profile;
+          messageText = "Political profile updated.";
+          break;
+        }
+        case "list_elections": {
+          const phaseFilter = optionalString("phase", data.phase) as ElectionPhase | undefined;
+          responseData.elections = listElections(this.store.state, phaseFilter);
+          messageText = "Elections loaded.";
+          break;
+        }
+        case "view_election": {
+          const electionId = requiredString("election_id", data.election_id);
+          const election = getElection(this.store.state, electionId);
+          if (!election) throw new Error("elections_election_not_found");
+          responseData.election = election;
+          messageText = "Election loaded.";
+          break;
+        }
+        case "create_election": {
+          const electionType = requiredString("election_type", data.election_type);
+          const jurisdictionId = optionalString("jurisdiction_id", data.jurisdiction_id) ?? null;
+          const constituencyId = optionalString("constituency_id", data.constituency_id) ?? null;
+          const registrationOpenDate = requiredString("registration_open_date", data.registration_open_date);
+          const registrationCloseDate = requiredString("registration_close_date", data.registration_close_date);
+          const campaignStartDate = requiredString("campaign_start_date", data.campaign_start_date);
+          const campaignEndDate = requiredString("campaign_end_date", data.campaign_end_date);
+          const votingOpenDate = requiredString("voting_open_date", data.voting_open_date);
+          const votingCloseDate = requiredString("voting_close_date", data.voting_close_date);
+          const election = createElection(
+            this.store.state, electionType, jurisdictionId, constituencyId, characterId,
+            registrationOpenDate, registrationCloseDate, campaignStartDate, campaignEndDate,
+            votingOpenDate, votingCloseDate, date, now, this.electionsCatalog,
+          );
+          responseData.election = election;
+          messageText = "Election created.";
+          break;
+        }
+        case "advance_phase": {
+          const electionId = requiredString("election_id", data.election_id);
+          const newPhase = requiredString("phase", data.phase) as ElectionPhase;
+          const election = advanceElectionPhase(this.store.state, electionId, newPhase, characterId, date, now);
+          responseData.election = election;
+          messageText = `Election phase advanced to ${newPhase}.`;
+          break;
+        }
+        case "register_candidate": {
+          const electionId = requiredString("election_id", data.election_id);
+          const partyId = optionalString("party_id", data.party_id) ?? null;
+          let manifesto: ManifestoRecord | null = null;
+          if (isRecord(data.manifesto)) {
+            const m = data.manifesto;
+            manifesto = {
+              title: String(m.title ?? ""),
+              summary: String(m.summary ?? ""),
+              policies: Array.isArray(m.policies) ? m.policies.map((p) => ({
+                category: String((p as Record<string, unknown>).category ?? ""),
+                statement: String((p as Record<string, unknown>).statement ?? ""),
+              })) : [],
+              published_at: new Date(now).toISOString(),
+              published_world_date: { ...date },
+            };
+          }
+          const candidate = registerCandidate(this.store.state, electionId, characterId, partyId, manifesto, date, now, this.electionsCatalog);
+          responseData.candidate = candidate;
+          messageText = "Candidate registration submitted.";
+          break;
+        }
+        case "approve_candidate": {
+          const candidateId = requiredString("candidate_id", data.candidate_id);
+          const candidate = approveCandidate(this.store.state, candidateId, characterId, date, now);
+          responseData.candidate = candidate;
+          messageText = "Candidate approved.";
+          break;
+        }
+        case "reject_candidate": {
+          const candidateId = requiredString("candidate_id", data.candidate_id);
+          const reason = requiredString("reason", data.reason);
+          const candidate = rejectCandidate(this.store.state, candidateId, reason, characterId, date, now);
+          responseData.candidate = candidate;
+          messageText = "Candidate rejected.";
+          break;
+        }
+        case "withdraw_candidate": {
+          const candidateId = requiredString("candidate_id", data.candidate_id);
+          const candidate = withdrawCandidate(this.store.state, candidateId, date, now);
+          responseData.candidate = candidate;
+          messageText = "Candidate withdrawn.";
+          break;
+        }
+        case "list_candidates": {
+          const electionId = requiredString("election_id", data.election_id);
+          responseData.candidates = listCandidates(this.store.state, electionId);
+          messageText = "Candidates loaded.";
+          break;
+        }
+        case "create_campaign": {
+          const candidateId = requiredString("candidate_id", data.candidate_id);
+          const title = requiredString("title", data.title);
+          const description = optionalString("description", data.description);
+          const themes = Array.isArray(data.themes) ? data.themes.map((t) => String(t)) : [];
+          const campaign = createCampaign(this.store.state, candidateId, title, description ?? "", themes, date, now, this.electionsCatalog);
+          responseData.campaign = campaign;
+          messageText = "Campaign created.";
+          break;
+        }
+        case "view_campaign": {
+          const campaignId = requiredString("campaign_id", data.campaign_id);
+          const campaign = getCampaign(this.store.state, campaignId);
+          if (!campaign) throw new Error("elections_campaign_not_found");
+          responseData.campaign = campaign;
+          messageText = "Campaign loaded.";
+          break;
+        }
+        case "check_eligibility": {
+          const electionId = requiredString("election_id", data.election_id);
+          const result = checkVoterEligibility(this.store.state, electionId, characterId, this.electionsCatalog);
+          responseData.eligible = result.eligible;
+          responseData.reason = result.reason;
+          messageText = result.eligible ? "Eligible to vote." : `Not eligible: ${result.reason}`;
+          break;
+        }
+        case "cast_ballot": {
+          const electionId = requiredString("election_id", data.election_id);
+          const candidateId = requiredString("candidate_id", data.candidate_id);
+          const result = castBallot(this.store.state, electionId, characterId, candidateId, date, now, this.electionsCatalog);
+          responseData.ballot_id = result.ballot.ballot_id;
+          messageText = "Ballot cast successfully.";
+          break;
+        }
+        case "count_votes": {
+          const electionId = requiredString("election_id", data.election_id);
+          const result = countVotes(this.store.state, electionId, date, now);
+          responseData.results = result;
+          messageText = "Votes counted.";
+          break;
+        }
+        case "certify_result": {
+          const electionId = requiredString("election_id", data.election_id);
+          const result = certifyElectionResult(this.store.state, electionId, characterId, date, now);
+          responseData.results = result;
+          messageText = "Result certified.";
+          break;
+        }
+        case "publish_result": {
+          const electionId = requiredString("election_id", data.election_id);
+          const result = publishElectionResult(this.store.state, electionId, characterId, date, now);
+          responseData.results = result;
+          messageText = "Result published.";
+          break;
+        }
+        case "transfer_office": {
+          const electionId = requiredString("election_id", data.election_id);
+          const appointment = transferElectedOffice(this.store.state, electionId, date, now);
+          responseData.appointment = appointment;
+          messageText = "Office transferred to elected winner.";
+          break;
+        }
+        case "submit_dispute": {
+          const electionId = requiredString("election_id", data.election_id);
+          const category = requiredString("category", data.category);
+          const description = requiredString("description", data.description);
+          const evidence = Array.isArray(data.evidence) ? data.evidence.map((e) => String(e)) : [];
+          const dispute = submitDispute(this.store.state, electionId, characterId, category, description, evidence, date, now, this.electionsCatalog);
+          responseData.dispute = dispute;
+          messageText = "Dispute submitted.";
+          break;
+        }
+        case "audit_log": {
+          const electionId = requiredString("election_id", data.election_id);
+          responseData.audits = getElectionAuditLog(this.store.state, electionId);
+          messageText = "Audit log loaded.";
+          break;
+        }
+        case "my_history": {
+          responseData.history = getCharacterElectionHistory(this.store.state, characterId);
+          responseData.membership = getCharacterPartyMembership(this.store.state, characterId);
+          messageText = "Election history loaded.";
+          break;
+        }
+        default:
+          throw new Error("elections_action_unknown");
+      }
+    } catch (error) {
+      const code = this.errorCode(error);
+      this.send(context, appendOptionalRequestId({
+        type: "election.error",
+        action,
+        code,
+        message: electionsErrorMessage(code),
+      }, requestId));
+      return;
+    }
+
+    this.markRequestProcessed(player, requestId);
+    if (!["list_parties", "list_elections", "view_election", "political_profile", "list_candidates", "view_campaign", "check_eligibility", "audit_log", "my_history"].includes(action)) this.touchPlayer(player);
+    this.send(context, appendOptionalRequestId({
+      type: "election.result", action, ok: true, message: messageText, data: responseData,
+    }, requestId));
+    this.sendCharacterSnapshot(context);
+    await this.flushDirty();
+  }
+
   private programSeatCount(programId: string): number {
     if (!programId) return 0;
     const occupied = new Set<string>();
@@ -2555,6 +2868,7 @@ export class MultiplayerWorld {
     try { snapshot.property_profiles = getCharacterProperties(this.store.state, player.character.character_id); } catch { snapshot.property_profiles = []; }
     try { snapshot.rental_agreements = getCharacterRentals(this.store.state, player.character.character_id); } catch { snapshot.rental_agreements = []; }
     try { snapshot.government_appointments = getCharacterAppointments(this.store.state, player.character.character_id); } catch { snapshot.government_appointments = []; }
+    try { const pp = getPoliticalProfile(this.store.state, player.character.character_id); if (pp) snapshot.political_profile = pp; } catch { /* ignore */ }
     return snapshot;
   }
 

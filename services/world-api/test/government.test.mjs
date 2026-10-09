@@ -51,7 +51,7 @@ function makeWorld() {
   const catalog = loadLifeCatalog();
   const now = Date.UTC(2025, 0, 1);
   const state = {
-    schemaVersion: 7,
+    schemaVersion: 8,
     worldId: "nigeria-main",
     worldClock: normalizeWorldClock({ day: catalog.calendar.starting_world_day, minute_of_day: catalog.calendar.starting_minute_of_day, millisecond_of_minute: 0, updated_at: new Date(now).toISOString() }, now, catalog),
     players: {},
@@ -518,26 +518,31 @@ test("government appointments are included in character snapshots", async () => 
   await peer.close();
 });
 
-test("schema version 6 state migrates to version 7 with empty government maps", async () => {
+test("schema version 7 state migrates to version 8 with empty election maps", async () => {
   const { serverPort, stateFile } = await startServer();
   const { peer, ready } = await createOnlinePeer(serverPort);
   await peer.close();
   const saved = JSON.parse(await readFile(stateFile, "utf8"));
-  assert.equal(saved.schemaVersion, 7);
-  saved.schemaVersion = 6;
-  delete saved.governmentOrganisations;
-  delete saved.governmentOffices;
-  delete saved.governmentAppointments;
-  delete saved.governmentBudgets;
-  delete saved.governmentRevenue;
-  delete saved.governmentExpenditure;
-  delete saved.governmentProjects;
-  delete saved.governmentAnnouncements;
-  delete saved.governmentEvents;
+  assert.equal(saved.schemaVersion, 8);
+  saved.schemaVersion = 7;
+  delete saved.politicalParties;
+  delete saved.partyMemberships;
+  delete saved.politicalProfiles;
+  delete saved.elections;
+  delete saved.candidates;
+  delete saved.campaigns;
+  delete saved.campaignEvents;
+  delete saved.campaignFinances;
+  delete saved.debates;
+  delete saved.ballots;
+  delete saved.voterParticipation;
+  delete saved.electionDisputes;
+  delete saved.electionAudits;
   await writeFile(stateFile, JSON.stringify(saved), "utf8");
   const migrated = new WorldStore(stateFile, Date.UTC(2025, 0, 2));
-  assert.equal(migrated.state.schemaVersion, 7);
+  assert.equal(migrated.state.schemaVersion, 8);
+  assert.ok(typeof migrated.state.politicalParties === "object");
+  assert.ok(typeof migrated.state.elections === "object");
+  assert.ok(typeof migrated.state.ballots === "object");
   assert.ok(typeof migrated.state.governmentOrganisations === "object");
-  assert.ok(typeof migrated.state.governmentOffices === "object");
-  assert.ok(typeof migrated.state.governmentBudgets === "object");
 });

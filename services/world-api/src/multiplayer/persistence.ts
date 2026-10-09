@@ -12,6 +12,8 @@ import { initializeEconomyWorldState } from "../economy/service.js";
 import { initializeBusinessWorldState } from "../businesses/service.js";
 import { initializePropertyWorldState } from "../properties/service.js";
 import { initializeGovernmentWorldState } from "../government/service.js";
+import { initializeElectionWorldState } from "../elections/service.js";
+import type { PersistentElectionMaps } from "../elections/types.js";
 import type { LifeCatalog } from "../life/types.js";
 import type { PersistentCareerMaps } from "../careers/types.js";
 import type { PersistentEconomyMaps } from "../economy/types.js";
@@ -366,6 +368,15 @@ function emptyGovernmentMaps(): PersistentGovernmentMaps {
   };
 }
 
+function emptyElectionMaps(): PersistentElectionMaps {
+  return {
+    politicalParties: {}, partyMemberships: {}, politicalProfiles: {},
+    elections: {}, candidates: {}, campaigns: {}, campaignEvents: {},
+    campaignFinances: {}, debates: {}, ballots: {}, voterParticipation: {},
+    electionDisputes: {}, electionAudits: {},
+  };
+}
+
 function emptyLifeMaps(): Pick<
   PersistentWorldState,
   "people" | "households" | "families" | "relationships" | "lifeEvents" | "marriages" | "inheritanceEvents"
@@ -517,7 +528,7 @@ function isBusinessEvent(value: unknown, key: string): boolean {
 }
 
 function validateState(value: unknown, now: number): PersistentWorldState {
-  if (!isRecord(value) || (value.schemaVersion !== 1 && value.schemaVersion !== 2 && value.schemaVersion !== 3 && value.schemaVersion !== 4 && value.schemaVersion !== 5 && value.schemaVersion !== 6 && value.schemaVersion !== 7) ||
+  if (!isRecord(value) || (value.schemaVersion !== 1 && value.schemaVersion !== 2 && value.schemaVersion !== 3 && value.schemaVersion !== 4 && value.schemaVersion !== 5 && value.schemaVersion !== 6 && value.schemaVersion !== 7 && value.schemaVersion !== 8) ||
     value.worldId !== WORLD_ID || !isRecord(value.worldClock) || !isRecord(value.players)) {
     throw new Error("World data has an invalid schema; refusing to start with reset state.");
   }
@@ -544,7 +555,7 @@ function validateState(value: unknown, now: number): PersistentWorldState {
       throw new Error("World data contains an invalid Stage 5 lifecycle record.");
     }
   }
-  if (schemaVersion === 3 || schemaVersion === 4 || schemaVersion === 5 || schemaVersion === 6 || schemaVersion === 7) {
+  if (schemaVersion === 3 || schemaVersion === 4 || schemaVersion === 5 || schemaVersion === 6 || schemaVersion === 7 || schemaVersion === 8) {
     const careerMapNames = [
       "careerEmployers", "careerVacancies", "careerApplications", "employments", "workSessions", "careerSkills",
       "careerLicenses", "careerReviews", "careerLeaveRequests", "careerEvents", "salaryPayments", "npcCareers",
@@ -568,7 +579,7 @@ function validateState(value: unknown, now: number): PersistentWorldState {
       throw new Error("World data contains an invalid Stage 6 career record.");
     }
   }
-  if (schemaVersion === 4 || schemaVersion === 5 || schemaVersion === 6 || schemaVersion === 7) {
+  if (schemaVersion === 4 || schemaVersion === 5 || schemaVersion === 6 || schemaVersion === 7 || schemaVersion === 8) {
     const economyMapNames = [
       "economyAccounts", "economyTransactions", "economyLoans", "economyCreditScores", "economyEvents",
     ] as const;
@@ -584,7 +595,7 @@ function validateState(value: unknown, now: number): PersistentWorldState {
       throw new Error("World data contains an invalid Stage 7 economy record.");
     }
   }
-  if (schemaVersion === 5 || schemaVersion === 6 || schemaVersion === 7) {
+  if (schemaVersion === 5 || schemaVersion === 6 || schemaVersion === 7 || schemaVersion === 8) {
     const businessMapNames = [
       "businesses", "businessOwnership", "businessBranches", "businessProducts", "businessInventory",
       "businessInventoryMovements", "businessTransactions", "businessExpenses", "businessSales",
@@ -604,7 +615,7 @@ function validateState(value: unknown, now: number): PersistentWorldState {
   }
 
   const catalog: LifeCatalog = loadLifeCatalog();
-  const careerMaps: PersistentCareerMaps = (schemaVersion === 3 || schemaVersion === 4 || schemaVersion === 5 || schemaVersion === 6 || schemaVersion === 7) ? {
+  const careerMaps: PersistentCareerMaps = (schemaVersion === 3 || schemaVersion === 4 || schemaVersion === 5 || schemaVersion === 6 || schemaVersion === 7 || schemaVersion === 8) ? {
     careerEmployers: value.careerEmployers as PersistentCareerMaps["careerEmployers"],
     careerVacancies: value.careerVacancies as PersistentCareerMaps["careerVacancies"],
     careerApplications: value.careerApplications as PersistentCareerMaps["careerApplications"],
@@ -618,14 +629,14 @@ function validateState(value: unknown, now: number): PersistentWorldState {
     salaryPayments: value.salaryPayments as PersistentCareerMaps["salaryPayments"],
     npcCareers: value.npcCareers as PersistentCareerMaps["npcCareers"],
   } : emptyCareerMaps();
-  const economyMaps: PersistentEconomyMaps = (schemaVersion === 4 || schemaVersion === 5 || schemaVersion === 6 || schemaVersion === 7) ? {
+  const economyMaps: PersistentEconomyMaps = (schemaVersion === 4 || schemaVersion === 5 || schemaVersion === 6 || schemaVersion === 7 || schemaVersion === 8) ? {
     economyAccounts: value.economyAccounts as PersistentEconomyMaps["economyAccounts"],
     economyTransactions: value.economyTransactions as PersistentEconomyMaps["economyTransactions"],
     economyLoans: value.economyLoans as PersistentEconomyMaps["economyLoans"],
     economyCreditScores: value.economyCreditScores as PersistentEconomyMaps["economyCreditScores"],
     economyEvents: value.economyEvents as PersistentEconomyMaps["economyEvents"],
   } : emptyEconomyMaps();
-  const businessMaps: PersistentBusinessMaps = (schemaVersion === 5 || schemaVersion === 6 || schemaVersion === 7) ? {
+  const businessMaps: PersistentBusinessMaps = (schemaVersion === 5 || schemaVersion === 6 || schemaVersion === 7 || schemaVersion === 8) ? {
     businesses: value.businesses as PersistentBusinessMaps["businesses"],
     businessOwnership: value.businessOwnership as PersistentBusinessMaps["businessOwnership"],
     businessBranches: value.businessBranches as PersistentBusinessMaps["businessBranches"],
@@ -638,7 +649,7 @@ function validateState(value: unknown, now: number): PersistentWorldState {
     businessProductionRuns: value.businessProductionRuns as PersistentBusinessMaps["businessProductionRuns"],
     businessEvents: value.businessEvents as PersistentBusinessMaps["businessEvents"],
   } : emptyBusinessMaps();
-  const propertyMaps: PersistentPropertyMaps = (schemaVersion === 6 || schemaVersion === 7) ? {
+  const propertyMaps: PersistentPropertyMaps = (schemaVersion === 6 || schemaVersion === 7 || schemaVersion === 8) ? {
     properties: value.properties as PersistentPropertyMaps["properties"],
     propertyOwnership: value.propertyOwnership as PersistentPropertyMaps["propertyOwnership"],
     propertyListings: value.propertyListings as PersistentPropertyMaps["propertyListings"],
@@ -649,7 +660,7 @@ function validateState(value: unknown, now: number): PersistentWorldState {
     propertyFurnishings: value.propertyFurnishings as PersistentPropertyMaps["propertyFurnishings"],
     propertyEvents: value.propertyEvents as PersistentPropertyMaps["propertyEvents"],
   } : emptyPropertyMaps();
-  const governmentMaps: PersistentGovernmentMaps = schemaVersion === 7 ? {
+  const governmentMaps: PersistentGovernmentMaps = (schemaVersion === 7 || schemaVersion === 8) ? {
     governmentOrganisations: value.governmentOrganisations as PersistentGovernmentMaps["governmentOrganisations"],
     governmentOffices: value.governmentOffices as PersistentGovernmentMaps["governmentOffices"],
     governmentAppointments: value.governmentAppointments as PersistentGovernmentMaps["governmentAppointments"],
@@ -660,8 +671,23 @@ function validateState(value: unknown, now: number): PersistentWorldState {
     governmentAnnouncements: value.governmentAnnouncements as PersistentGovernmentMaps["governmentAnnouncements"],
     governmentEvents: value.governmentEvents as PersistentGovernmentMaps["governmentEvents"],
   } : emptyGovernmentMaps();
+  const electionMaps: PersistentElectionMaps = schemaVersion === 8 ? {
+    politicalParties: value.politicalParties as PersistentElectionMaps["politicalParties"],
+    partyMemberships: value.partyMemberships as PersistentElectionMaps["partyMemberships"],
+    politicalProfiles: value.politicalProfiles as PersistentElectionMaps["politicalProfiles"],
+    elections: value.elections as PersistentElectionMaps["elections"],
+    candidates: value.candidates as PersistentElectionMaps["candidates"],
+    campaigns: value.campaigns as PersistentElectionMaps["campaigns"],
+    campaignEvents: value.campaignEvents as PersistentElectionMaps["campaignEvents"],
+    campaignFinances: value.campaignFinances as PersistentElectionMaps["campaignFinances"],
+    debates: value.debates as PersistentElectionMaps["debates"],
+    ballots: value.ballots as PersistentElectionMaps["ballots"],
+    voterParticipation: value.voterParticipation as PersistentElectionMaps["voterParticipation"],
+    electionDisputes: value.electionDisputes as PersistentElectionMaps["electionDisputes"],
+    electionAudits: value.electionAudits as PersistentElectionMaps["electionAudits"],
+  } : emptyElectionMaps();
   const state = {
-    schemaVersion: 7 as const,
+    schemaVersion: 8 as const,
     worldId: WORLD_ID,
     worldClock: normalizeWorldClock(clock, now, catalog),
     players: {} as Record<string, PersistentPlayer>,
@@ -679,6 +705,7 @@ function validateState(value: unknown, now: number): PersistentWorldState {
     ...businessMaps,
     ...propertyMaps,
     ...governmentMaps,
+    ...electionMaps,
   } satisfies PersistentWorldState;
 
   for (const [playerId, rawPlayer] of Object.entries(value.players)) {
@@ -717,7 +744,7 @@ function validateState(value: unknown, now: number): PersistentWorldState {
 function initialState(now: number): PersistentWorldState {
   const catalog = loadLifeCatalog();
   const state: PersistentWorldState = {
-    schemaVersion: 7,
+    schemaVersion: 8,
     worldId: WORLD_ID,
     worldClock: normalizeWorldClock({
       day: catalog.calendar.starting_world_day,
@@ -732,12 +759,14 @@ function initialState(now: number): PersistentWorldState {
     ...emptyBusinessMaps(),
     ...emptyPropertyMaps(),
     ...emptyGovernmentMaps(),
+    ...emptyElectionMaps(),
   };
   initializeCareerWorldState(state, now);
   initializeEconomyWorldState(state, now);
   initializeBusinessWorldState(state);
   initializePropertyWorldState(state);
   initializeGovernmentWorldState(state);
+  initializeElectionWorldState(state);
   return state;
 }
 

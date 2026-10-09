@@ -4,7 +4,7 @@
 
 ## Current stage and verification gate
 
-**Stage 10 — Government System: backend implementation and Node tests pass; government integrates with Stage 6 (careers) for appointments, Stage 7 (economy) for budgets/finance, and Stage 3 (geography) for project locations; Godot client/runtime verification is blocked.** Stages 0–9 remain preserved on the same `nigeria-main` world. The server still owns one shared online timeline. The earlier Stage 5 Godot limitation is still open; Stages 6–10 do not resolve it.
+**Stage 11 — Elections and Politics: backend implementation and Node tests pass; elections integrate with Stage 6 (careers) for character identity, Stage 7 (economy) for campaign finance, and Stage 10 (government) for office transfer; Godot client/runtime verification is blocked.** Stages 0–10 remain preserved on the same `nigeria-main` world. The server still owns one shared online timeline. The earlier Stage 5 Godot limitation is still open; Stages 6–11 do not resolve it.
 
 Godot 4.7.2 is not installed (`godot: command not found`). Project import, engine type-checking, scenes, rendered careers UI, clicks through work/application flows, offline client journeys, and Godot multiplayer/reconnect/save runtime behavior have not been run. Do not infer client success from Node tests or gdtoolkit.
 
@@ -146,6 +146,57 @@ The Godot client path has not been engine-tested in this workspace. See [`docs/H
 `services/world-api/src/government/` contains typed catalogue validation and server rules. `services/world-api/src/multiplayer/persistence.ts` validates/migrates schema version 7 and stores government organisations, offices, appointments, budgets, revenue, expenditure, projects, announcements, and events. `services/world-api/src/multiplayer/world-engine.ts` integrates `government.action` commands and appointment profiles in private character snapshots.
 
 The Godot client path has not been engine-tested in this workspace. See [`docs/GOVERNMENT_SYSTEM_PLAN.md`](GOVERNMENT_SYSTEM_PLAN.md) for full catalogue, contract, persistence, and scope details.
+
+## Stage 11 implementation
+
+### Political parties and membership
+
+- `game/data/elections/catalog.json` configures 6 election types, 10 election phases, eligibility rules per office, voter eligibility (18+), party rules (founder age 21+, member age 18+), campaign rules, and dispute rules.
+- Political parties support creation, registration, joining, leaving, leadership assignment, and status management (proposed, pending_registration, active, suspended, dissolved).
+- One active party membership per character enforced on the server.
+- Political profiles track party affiliation, public statement, and public service history.
+
+### Elections and voting
+
+- Elections follow a validated lifecycle: scheduling → candidate_registration → screening → campaign → voting → counting → certification → completed (with dispute and cancellation paths).
+- Candidate registration validates minimum age per office type (40 presidential, 35 governorship/senatorial, 30 house/assembly/local), party affiliation requirements, and duplicate candidacy prevention.
+- Voter eligibility checks age (18+), life status, and geographic jurisdiction on the server.
+- Ballot casting prevents duplicate voting through voter participation records.
+- Vote counting is deterministic from persisted ballots. Configurable winning rules.
+- Results progress through preliminary → certified → published. Certification prevents duplicate finalization.
+
+### Government integration
+
+- Certified election results transfer the winner to the corresponding Stage 10 government office.
+- Previous officeholders' appointments are preserved in history.
+- Election source is recorded with the appointment.
+
+### Schema and client integration
+
+`services/world-api/src/elections/` contains typed catalogue validation and server rules. `services/world-api/src/multiplayer/persistence.ts` validates/migrates schema version 8 and stores party, election, candidate, campaign, ballot, dispute, and audit records. `services/world-api/src/multiplayer/world-engine.ts` integrates `election.action` commands with 28 actions and political profiles in character snapshots.
+
+The Godot client path has not been engine-tested in this workspace. See [`docs/ELECTIONS_AND_POLITICS_PLAN.md`](ELECTIONS_AND_POLITICS_PLAN.md) for full catalogue, contract, persistence, and scope details.
+
+## Stage 11 acceptance coverage
+
+| Area | Evidence | Result |
+|---|---|---|
+| Catalogue bounds, election types, eligibility, party rules | `services/world-api/test/elections.test.mjs` | **Passed (Node)** |
+| Party creation, registration, membership, leadership | Election service tests | **Passed (Node)** |
+| Election creation and schedule validation | Election service tests | **Passed (Node)** |
+| Phase transitions | Election service tests | **Passed (Node)** |
+| Candidate registration and age eligibility | Election service tests | **Passed (Node)** |
+| Candidate approval, rejection, withdrawal | Election service tests | **Passed (Node)** |
+| Voter eligibility (age, phase, geography) | Election service tests | **Passed (Node)** |
+| Ballot casting and duplicate prevention | Election service tests | **Passed (Node)** |
+| Vote counting and winner determination | Election service tests | **Passed (Node)** |
+| Result certification and publication | Election service tests | **Passed (Node)** |
+| Government office transfer after election | Election service tests | **Passed (Node)** |
+| Dispute submission | Election service tests | **Passed (Node)** |
+| WebSocket list_parties, list_elections, political_profile | WebSocket test | **Passed (Node)** |
+| WebSocket my_history | WebSocket test | **Passed (Node)** |
+| Schema-v7 to v8 migration preserving all records | Persistence test | **Passed (Node)** |
+| Godot project import, engine typing, client election UI | Godot unavailable | **Blocked / not run** |
 
 ## Stage 10 acceptance coverage
 
@@ -294,6 +345,6 @@ When Godot 4.7.2 is available, run the import check and retained client tests in
 3. The current online JSON store is single-process, atomically replaced and limited to 16 MiB; it has no database transaction isolation, multi-writer coordination, backups, or production recovery.
 4. Career employers, salaries, leave, licences, and eligibility rules are fictional configurable fixtures, not official Nigerian economic/legal data. No real employer identity, role authorization, job marketplace, professional credentialing, or labor-law system is implemented.
 5. Stage 7 replaces the Stage 6 prototype salary adapter with the canonical Naira ledger. Tax estimation is display-only; no automatic tax deduction, inter-player transfers, businesses, property, or estate wage settlement are implemented.
-6. Godot 4.7.2 client/runtime verification for Stages 1–10 remains blocked. Node tests and gdformat do not substitute for engine/runtime checks.
+6. Godot 4.7.2 client/runtime verification for Stages 1–11 remains blocked. Node tests and gdformat do not substitute for engine/runtime checks.
 7. Preserve Stage 5 life status and age as the sole authority for death and retirement; do not enable work or future wages for deceased characters.
 8. **Next planned stage: Stage 10 — Government System.** Keep it inside the same world and use Stage 9 for government property and public facilities.
