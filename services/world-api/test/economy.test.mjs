@@ -414,31 +414,29 @@ test("syncCharacterCashFromEconomy updates character money from cash account", (
   assert.equal(player.character.money, 25000);
 });
 
-test("schema version 4 state migrates to version 5 with empty business maps", async () => {
+test("schema version 5 state migrates to version 6 with empty property maps", async () => {
   const { serverPort, stateFile } = await startServer();
   const { peer, ready } = await createOnlinePeer(serverPort);
   await peer.close();
   const saved = JSON.parse(await readFile(stateFile, "utf8"));
-  assert.equal(saved.schemaVersion, 5);
-  // Simulate a v4 state by removing business fields
-  saved.schemaVersion = 4;
-  delete saved.businesses;
-  delete saved.businessOwnership;
-  delete saved.businessBranches;
-  delete saved.businessProducts;
-  delete saved.businessInventory;
-  delete saved.businessInventoryMovements;
-  delete saved.businessTransactions;
-  delete saved.businessExpenses;
-  delete saved.businessSales;
-  delete saved.businessProductionRuns;
-  delete saved.businessEvents;
+  assert.equal(saved.schemaVersion, 6);
+  // Simulate a v5 state by removing property fields
+  saved.schemaVersion = 5;
+  delete saved.properties;
+  delete saved.propertyOwnership;
+  delete saved.propertyListings;
+  delete saved.rentalAgreements;
+  delete saved.rentalPayments;
+  delete saved.propertySales;
+  delete saved.propertyMaintenance;
+  delete saved.propertyFurnishings;
+  delete saved.propertyEvents;
   await writeFile(stateFile, JSON.stringify(saved), "utf8");
   const migrated = new WorldStore(stateFile, Date.UTC(2025, 0, 2));
-  assert.equal(migrated.state.schemaVersion, 5);
-  assert.ok(typeof migrated.state.businesses === "object");
-  assert.ok(typeof migrated.state.businessOwnership === "object");
-  assert.ok(typeof migrated.state.businessTransactions === "object");
+  assert.equal(migrated.state.schemaVersion, 6);
+  assert.ok(typeof migrated.state.properties === "object");
+  assert.ok(typeof migrated.state.propertyOwnership === "object");
+  assert.ok(typeof migrated.state.propertyListings === "object");
   const characterId = ready.character.character_id;
   const creditScore = migrated.state.economyCreditScores[characterId];
   assert.ok(creditScore);

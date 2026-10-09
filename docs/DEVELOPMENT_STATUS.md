@@ -4,7 +4,7 @@
 
 ## Current stage and verification gate
 
-**Stage 8 — Player Businesses: backend implementation and Node tests pass; businesses connect to Stage 6 employment and Stage 7 economy; Godot client/runtime verification is blocked.** Stages 0–7 remain preserved on the same `nigeria-main` world. The server still owns one shared online timeline. The earlier Stage 5 Godot limitation is still open; Stages 6–8 do not resolve it.
+**Stage 9 — Housing and Property: backend implementation and Node tests pass; housing integrates with Stage 7 economy and Stage 8 businesses; Godot client/runtime verification is blocked.** Stages 0–8 remain preserved on the same `nigeria-main` world. The server still owns one shared online timeline. The earlier Stage 5 Godot limitation is still open; Stages 6–9 do not resolve it.
 
 Godot 4.7.2 is not installed (`godot: command not found`). Project import, engine type-checking, scenes, rendered careers UI, clicks through work/application flows, offline client journeys, and Godot multiplayer/reconnect/save runtime behavior have not been run. Do not infer client success from Node tests or gdtoolkit.
 
@@ -88,6 +88,63 @@ The Godot client path has not been engine-tested in this workspace. See [`docs/E
 `services/world-api/src/businesses/` contains typed catalogue validation and server rules. `services/world-api/src/multiplayer/persistence.ts` validates/migrates schema version 5 and stores business records, ownership, products, inventory, transactions, sales, production runs, and events. `services/world-api/src/multiplayer/world-engine.ts` integrates `business.action` commands and business profiles in private character snapshots.
 
 The Godot client path has not been engine-tested in this workspace. See [`docs/PLAYER_BUSINESSES_PLAN.md`](PLAYER_BUSINESSES_PLAN.md) for full catalogue, contract, persistence, and scope details.
+
+## Stage 9 implementation
+
+### Property catalogue and locations
+
+- `game/data/properties/catalog.json` configures 4 categories (residential, commercial, land, public), 19 property types, 10 locations across Nigerian cities, 10 seed properties with NPC owners, and 10 furniture items.
+- Property creation validates character age (18+), listing availability, affordability, and ownership limits. Atomic purchase flow with funds deduction and ownership transfer.
+- Public/government properties cannot be purchased by players.
+
+### Ownership, listings, and marketplace
+
+- Property ownership types: player, NPC, business, government, community, joint. Server-side authorization on every sensitive action.
+- Configurable marketplace with filtering by location, category, listing type, price range, bedrooms, and condition.
+- Owners can list properties for sale or rent. Rental agreements include deposits and payment periods.
+
+### Rental system
+
+- Atomic rental agreement creation with rent + deposit deducted from tenant, credited to landlord.
+- Rent payment processing through Stage 7 economy. Idempotent against duplicate requests.
+- Rental termination by tenant or landlord, with automatic re-listing.
+
+### Maintenance, furnishing, and development
+
+- Property condition system (excellent, good, fair, poor, requires_repair) with maintenance records.
+- Furniture purchasing and placement with quantity tracking and per-property limits.
+- Foundation for land development (undeveloped, reserved, under_construction, developed status).
+
+### Schema and client integration
+
+`services/world-api/src/properties/` contains typed catalogue validation and server rules. `services/world-api/src/multiplayer/persistence.ts` validates/migrates schema version 6 and stores property records, ownership, listings, rental agreements, payments, sales, maintenance, furnishings, and events. `services/world-api/src/multiplayer/world-engine.ts` integrates `property.action` commands and property/rental profiles in private character snapshots.
+
+The Godot client path has not been engine-tested in this workspace. See [`docs/HOUSING_AND_PROPERTY_PLAN.md`](HOUSING_AND_PROPERTY_PLAN.md) for full catalogue, contract, persistence, and scope details.
+
+## Stage 9 acceptance coverage
+
+| Area | Evidence | Result |
+|---|---|---|
+| Catalogue bounds, categories, types, locations, seed data | `services/world-api/test/properties.test.mjs` | **Passed (Node)** |
+| Property seeding with NPC ownership and listings | Property service tests | **Passed (Node)** |
+| Market search with location/category/type/price/bedroom filters | Property service tests | **Passed (Node)** |
+| Property purchase with atomic ownership transfer | Property service tests | **Passed (Node)** |
+| Purchase rejection for insufficient funds, underage, unavailable | Property service tests | **Passed (Node)** |
+| Listing creation for sale and rent | Property service tests | **Passed (Node)** |
+| Unauthorized listing rejection | Property service tests | **Passed (Node)** |
+| Rental agreement creation with deposit | Property service tests | **Passed (Node)** |
+| Rental rejection for unavailable, insufficient funds | Property service tests | **Passed (Node)** |
+| Rental termination and re-listing | Property service tests | **Passed (Node)** |
+| Maintenance with condition update and cost deduction | Property service tests | **Passed (Node)** |
+| Furniture purchase and placement | Property service tests | **Passed (Node)** |
+| Ownership transfer | Property service tests | **Passed (Node)** |
+| Property profile building | Property service tests | **Passed (Node)** |
+| Character property and rental retrieval | Property service tests | **Passed (Node)** |
+| Error messages for standard codes | Property service tests | **Passed (Node)** |
+| WebSocket market and view actions | WebSocket test | **Passed (Node)** |
+| Property profiles in character snapshots | WebSocket snapshot test | **Passed (Node)** |
+| Schema-v5 to v6 migration preserving all records | Persistence test | **Passed (Node)** |
+| Godot project import, engine typing, client property UI | Godot unavailable | **Blocked / not run** |
 
 ## Stage 8 acceptance coverage
 
@@ -186,6 +243,6 @@ When Godot 4.7.2 is available, run the import check and retained client tests in
 3. The current online JSON store is single-process, atomically replaced and limited to 16 MiB; it has no database transaction isolation, multi-writer coordination, backups, or production recovery.
 4. Career employers, salaries, leave, licences, and eligibility rules are fictional configurable fixtures, not official Nigerian economic/legal data. No real employer identity, role authorization, job marketplace, professional credentialing, or labor-law system is implemented.
 5. Stage 7 replaces the Stage 6 prototype salary adapter with the canonical Naira ledger. Tax estimation is display-only; no automatic tax deduction, inter-player transfers, businesses, property, or estate wage settlement are implemented.
-6. Godot 4.7.2 client/runtime verification for Stages 1–8 remains blocked. Node tests and gdformat do not substitute for engine/runtime checks.
+6. Godot 4.7.2 client/runtime verification for Stages 1–9 remains blocked. Node tests and gdformat do not substitute for engine/runtime checks.
 7. Preserve Stage 5 life status and age as the sole authority for death and retirement; do not enable work or future wages for deceased characters.
-8. **Next planned stage: Stage 9 — Housing and Property.** Keep it inside the same world and use Stage 8 for business-operated property and Stage 7 as the economic authority for rent, mortgage, and property costs.
+8. **Next planned stage: Stage 10 — Government System.** Keep it inside the same world and use Stage 9 for government property and public facilities.

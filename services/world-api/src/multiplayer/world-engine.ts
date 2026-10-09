@@ -70,6 +70,28 @@ import {
 } from "../businesses/service.js";
 import type { BusinessPremisesType } from "../businesses/types.js";
 import type { BusinessCatalog } from "../businesses/types.js";
+import { loadPropertyCatalog } from "../properties/catalog.js";
+import {
+  buildPropertyProfile,
+  createRentalAgreement,
+  getCharacterProperties,
+  getCharacterRentals,
+  initializePropertyWorldState,
+  listPropertyForRent,
+  listPropertyForSale,
+  payRent,
+  processPropertyWorldDate,
+  propertyErrorMessage,
+  purchaseFurniture,
+  purchaseProperty,
+  recordMaintenance,
+  removeFurnishing,
+  searchPropertyMarket,
+  seedProperties,
+  terminateRentalAgreement,
+  transferProperty,
+} from "../properties/service.js";
+import type { PropertyCatalog, PropertyCondition, PropertyListingType, PropertyRentPeriod } from "../properties/types.js";
 import { loadLifeCatalog, dateForWorldDay, isValidDate, worldClockSnapshot } from "../life/calendar.js";
 import {
   advanceWorldLife,
@@ -418,6 +440,7 @@ export class MultiplayerWorld {
   private readonly careerCatalog: CareerCatalog = loadCareerCatalog();
   private readonly economyCatalog: EconomyCatalog = loadEconomyCatalog();
   private readonly businessCatalog: BusinessCatalog = loadBusinessCatalog();
+  private readonly propertyCatalog: PropertyCatalog = loadPropertyCatalog();
   private readonly lifeCatalog = loadLifeCatalog();
   private lastTickAt: number;
   private lastBroadcastAt = 0;
@@ -703,6 +726,7 @@ export class MultiplayerWorld {
       case "career.action": await this.careerAction(context, player, message, requestId); return;
       case "economy.action": await this.economyAction(context, player, message, requestId); return;
       case "business.action": await this.businessAction(context, player, message, requestId); return;
+      case "property.action": await this.propertyAction(context, player, message, requestId); return;
       case "chat.send": this.handleChat(context, player, message, requestId); return;
       case "player.interact": this.handlePlayerInteraction(context, player, message, requestId); return;
       case "relationship.progress": await this.progressRelationship(context, player, message, requestId); return;
@@ -801,6 +825,8 @@ export class MultiplayerWorld {
     }
     initializeEconomyWorldState(this.store.state, this.now());
     initializeBusinessWorldState(this.store.state);
+    initializePropertyWorldState(this.store.state);
+    seedProperties(this.store.state, this.store.state.worldClock.world_date, this.now(), this.propertyCatalog);
     this.playerByTokenHash.set(tokenHash, playerId);
     this.playerByCreationKeyHash.set(creationKeyHash, playerId);
     // The upcoming snapshot includes all current changes; keep later concurrent dirtiness intact.
@@ -850,6 +876,7 @@ export class MultiplayerWorld {
       economyAccountPort(this.store.state, this.economyCatalog));
     processEconomyWorldDate(this.store.state, this.store.state.worldClock.world_date, this.now(), this.economyCatalog);
     processBusinessWorldDate(this.store.state, this.store.state.worldClock.world_date, this.now(), this.businessCatalog);
+    processPropertyWorldDate(this.store.state);
     processCareerWorldMinute(this.store.state, this.store.state.worldClock.world_date,
       this.store.state.worldClock.minute_of_day, this.now(), this.careerCatalog);
     context.playerId = playerId;
@@ -1835,6 +1862,188 @@ export class MultiplayerWorld {
     await this.flushDirty();
   }
 
+  private async propertyAction(
+    context: ConnectionContext,
+    player: PersistentPlayer,
+    message: Record<string, unknown>,
+    requestId?: string,
+  ): Promise<void> {
+    if (typeof message.action !== "string" || message.action.length > 48) {
+      this.send(context, appendOptionalRequestId({
+        type: "property.error", action: "", code: "property_action_invalid",
+        message: "Choose a supported property action.",
+      }, requestId));
+      return;
+    }
+    const action = message.action;
+    const payload = isRecord(message.payload) ? message.payload : {};
+    const state = this.store.state;
+    const characterId = player.character.character_id;
+    const date = { ...state.worldClock.world_date };
+    const minuteOfDay = state.worldClock.minute_of_day;
+    const now = this.now();
+    const data: Record<string, unknown> = {};
+    let messageText = "Property records refreshed.";
+    const requiredString = (key: string, maximumLength = 120): string => {
+      const value = payload[key];
+      if (typeof value !== "string" || value.trim().length === 0 || value.length > maximumLength) {
+        throw new Error("property_action_invalid");
+      }
+      return value.trim();
+    };
+    const requiredInteger = (key: string, minimum = 0, maximum = 10_000_000_000): number => {
+      const value = payload[key];
+      if (!Number.isSafeInteger(value) || (value as number) < minimum || (value as number) > maximum) {
+        throw new Error("property_action_invalid");
+      }
+      return value as number;
+    };
+
+    try {
+      switch (action) {
+        case "market": {
+          const filters = isRecord(payload.filters) ? payload.filters : {};
+          const snapshot = searchPropertyMarket(state, {
+            location_id: typeof filters.location_id === "string" ? filters.location_id : null,
+            category_id: typeof filters.category_id === "string" ? filters.category_id : null,
+            listing_type: typeof filters.listing_type === "string" ? filters.listing_type as PropertyListingType : null,
+            min_price_ngn: typeof filters.min_price_ngn === "number" ? filters.min_price_ngn : null,
+            max_price_ngn: typeof filters.max_price_ngn === "number" ? filters.max_price_ngn : null,
+            min_bedrooms: typeof filters.min_bedrooms === "number" ? filters.min_bedrooms : null,
+            condition: typeof filters.condition === "string" ? filters.condition as PropertyCondition : null,
+          }, this.propertyCatalog);
+          data.market = snapshot;
+          messageText = `Found ${snapshot.listings.length} available properties.`;
+          break;
+        }
+        case "view": {
+          const profile = buildPropertyProfile(state, requiredString("property_id"));
+          data.property_profile = profile;
+          messageText = `Property '${profile.name}' details loaded.`;
+          break;
+        }
+        case "my_properties": {
+          const profiles = getCharacterProperties(state, characterId);
+          data.properties = profiles;
+          messageText = `You own ${profiles.length} properties.`;
+          break;
+        }
+        case "my_rentals": {
+          const rentals = getCharacterRentals(state, characterId);
+          data.rentals = rentals;
+          messageText = `You have ${rentals.length} rental agreements.`;
+          break;
+        }
+        case "purchase": {
+          const result = purchaseProperty(state, characterId, requiredString("listing_id"), date, minuteOfDay, now, this.propertyCatalog);
+          data.property = result.property;
+          data.sale = result.sale;
+          data.ownership = result.ownership;
+          syncCharacterCashFromEconomy(state, characterId);
+          messageText = `Property '${result.property.name}' purchased for ₦${result.sale.amount_ngn.toLocaleString("en-NG")}.`;
+          break;
+        }
+        case "list_for_sale": {
+          const listing = listPropertyForSale(state, requiredString("property_id"), characterId,
+            requiredInteger("asking_price_ngn", this.propertyCatalog.rules.minimum_property_price_ngn, this.propertyCatalog.rules.maximum_property_price_ngn),
+            date, minuteOfDay, now, this.propertyCatalog);
+          data.listing = listing;
+          messageText = `Property listed for sale at ₦${listing.asking_price_ngn.toLocaleString("en-NG")}.`;
+          break;
+        }
+        case "list_for_rent": {
+          const rentPeriod = (typeof payload.rent_period === "string" ? payload.rent_period : "yearly") as PropertyRentPeriod;
+          const listing = listPropertyForRent(state, requiredString("property_id"), characterId,
+            requiredInteger("rent_price_ngn", this.propertyCatalog.rules.minimum_rent_price_ngn, this.propertyCatalog.rules.maximum_rent_price_ngn),
+            rentPeriod,
+            requiredInteger("deposit_ngn", 0, this.propertyCatalog.rules.maximum_property_price_ngn),
+            date, minuteOfDay, now, this.propertyCatalog);
+          data.listing = listing;
+          messageText = `Property listed for rent at ₦${listing.rent_price_ngn.toLocaleString("en-NG")}/${listing.rent_period}.`;
+          break;
+        }
+        case "rent": {
+          const result = createRentalAgreement(state, characterId, requiredString("listing_id"), date, minuteOfDay, now, this.propertyCatalog);
+          data.agreement = result.agreement;
+          data.payment = result.payment;
+          syncCharacterCashFromEconomy(state, characterId);
+          messageText = `Rental agreement started. Rent: ₦${result.agreement.rent_ngn.toLocaleString("en-NG")}/${result.agreement.rent_period}.`;
+          break;
+        }
+        case "pay_rent": {
+          const payment = payRent(state, characterId, requiredString("agreement_id"), date, minuteOfDay, now);
+          data.payment = payment;
+          syncCharacterCashFromEconomy(state, characterId);
+          messageText = `Rent payment of ₦${payment.amount_ngn.toLocaleString("en-NG")} processed.`;
+          break;
+        }
+        case "terminate_rental": {
+          const agreement = terminateRentalAgreement(state, characterId, requiredString("agreement_id"),
+            typeof payload.reason === "string" ? payload.reason as string : "",
+            date, minuteOfDay, now);
+          data.agreement = agreement;
+          messageText = `Rental agreement terminated.`;
+          break;
+        }
+        case "maintain": {
+          const maintenance = recordMaintenance(state, requiredString("property_id"), characterId,
+            requiredString("description", 500),
+            requiredInteger("cost_ngn", 0),
+            (typeof payload.condition === "string" ? payload.condition : "good") as PropertyCondition,
+            date, minuteOfDay, now, this.propertyCatalog);
+          data.maintenance = maintenance;
+          syncCharacterCashFromEconomy(state, characterId);
+          messageText = `Maintenance recorded. Condition: ${maintenance.condition_before} → ${maintenance.condition_after}.`;
+          break;
+        }
+        case "furnish": {
+          const furnishing = purchaseFurniture(state, requiredString("property_id"), characterId,
+            requiredString("furniture_id"),
+            requiredInteger("quantity", 1, 10),
+            date, minuteOfDay, now, this.propertyCatalog);
+          data.furnishing = furnishing;
+          syncCharacterCashFromEconomy(state, characterId);
+          messageText = `Furniture purchased and placed.`;
+          break;
+        }
+        case "remove_furnishing": {
+          removeFurnishing(state, requiredString("property_id"), characterId,
+            requiredString("furnishing_id"), date, now);
+          syncCharacterCashFromEconomy(state, characterId);
+          messageText = `Furnishing removed.`;
+          break;
+        }
+        case "transfer": {
+          const result = transferProperty(state, requiredString("property_id"), characterId,
+            requiredString("to_character_id"), date, minuteOfDay, now);
+          data.ownership = result.ownership;
+          data.previous = result.previous;
+          messageText = `Property transferred to ${result.ownership.owner_id}.`;
+          break;
+        }
+        default:
+          throw new Error("property_action_unknown");
+      }
+    } catch (error) {
+      const code = this.errorCode(error);
+      this.send(context, appendOptionalRequestId({
+        type: "property.error",
+        action,
+        code,
+        message: propertyErrorMessage(code),
+      }, requestId));
+      return;
+    }
+
+    this.markRequestProcessed(player, requestId);
+    if (!["market", "view", "my_properties", "my_rentals"].includes(action)) this.touchPlayer(player);
+    this.send(context, appendOptionalRequestId({
+      type: "property.result", action, ok: true, message: messageText, data,
+    }, requestId));
+    this.sendCharacterSnapshot(context);
+    await this.flushDirty();
+  }
+
   private programSeatCount(programId: string): number {
     if (!programId) return 0;
     const occupied = new Set<string>();
@@ -2061,6 +2270,7 @@ export class MultiplayerWorld {
         economyAccountPort(this.store.state, this.economyCatalog));
       processEconomyWorldDate(this.store.state, clock.world_date, now, this.economyCatalog);
       processBusinessWorldDate(this.store.state, clock.world_date, now, this.businessCatalog);
+      processPropertyWorldDate(this.store.state);
     }
     if (processCareerWorldMinute(this.store.state, clock.world_date, clock.minute_of_day, now, this.careerCatalog) > 0) {
       this.dirty = true;
@@ -2112,6 +2322,8 @@ export class MultiplayerWorld {
     snapshot.business_profiles = ownedBusinesses.map((biz) => {
       try { return buildBusinessProfile(this.store.state, biz.business_id, this.businessCatalog); } catch { return null; }
     }).filter((profile): profile is NonNullable<typeof profile> => profile !== null);
+    try { snapshot.property_profiles = getCharacterProperties(this.store.state, player.character.character_id); } catch { snapshot.property_profiles = []; }
+    try { snapshot.rental_agreements = getCharacterRentals(this.store.state, player.character.character_id); } catch { snapshot.rental_agreements = []; }
     return snapshot;
   }
 
