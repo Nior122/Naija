@@ -5,6 +5,7 @@ import type { CareerProfileSnapshot, PersistentCareerMaps } from "../careers/typ
 import type { EconomyProfileSnapshot, PersistentEconomyMaps } from "../economy/types.js";
 import type { BusinessProfileSnapshot, PersistentBusinessMaps } from "../businesses/types.js";
 import type { PropertyProfileSnapshot, PersistentPropertyMaps, RentalAgreementSnapshot } from "../properties/types.js";
+import type { PersistentGovernmentMaps } from "../government/types.js";
 import type {
   FamilyPersonRecord,
   FamilyRecord,
@@ -75,6 +76,8 @@ export interface CharacterRecord extends CharacterLifeFields {
   property_profiles?: PropertyProfileSnapshot[];
   /** List of rental agreement snapshots for agreements where this character is the tenant. */
   rental_agreements?: RentalAgreementSnapshot[];
+  /** The character's current government appointments, if any. */
+  government_appointments?: import("../government/types.js").AppointmentSnapshot[];
 }
 
 export interface PersistentPlayer {
@@ -87,8 +90,8 @@ export interface PersistentPlayer {
   character: CharacterRecord;
 }
 
-export interface PersistentWorldState extends PersistentCareerMaps, PersistentEconomyMaps, PersistentBusinessMaps, PersistentPropertyMaps {
-  schemaVersion: 6;
+export interface PersistentWorldState extends PersistentCareerMaps, PersistentEconomyMaps, PersistentBusinessMaps, PersistentPropertyMaps, PersistentGovernmentMaps {
+  schemaVersion: 7;
   worldId: typeof WORLD_ID;
   worldClock: WorldClockState;
   players: Record<string, PersistentPlayer>;

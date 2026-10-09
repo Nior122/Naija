@@ -92,6 +92,29 @@ import {
   transferProperty,
 } from "../properties/service.js";
 import type { PropertyCatalog, PropertyCondition, PropertyListingType, PropertyRentPeriod } from "../properties/types.js";
+import { loadGovernmentCatalog } from "../government/catalog.js";
+import {
+  appointOfficial,
+  createBudget,
+  createProject,
+  fundProject,
+  getCharacterAppointments,
+  getFederalGovernment,
+  getLocalGovernment,
+  getPublishedAnnouncements,
+  getStateGovernment,
+  initializeGovernmentWorldState,
+  processGovernmentWorldDate,
+  publishAnnouncement,
+  recordGovernmentExpenditure,
+  recordGovernmentRevenue,
+  removeOfficial,
+  searchProjects,
+  seedGovernmentWorld,
+  updateProjectStatus,
+  governmentErrorMessage,
+} from "../government/service.js";
+import type { GovernmentCatalog, GovernmentLevel, ProjectStatus } from "../government/types.js";
 import { loadLifeCatalog, dateForWorldDay, isValidDate, worldClockSnapshot } from "../life/calendar.js";
 import {
   advanceWorldLife,
@@ -441,6 +464,7 @@ export class MultiplayerWorld {
   private readonly economyCatalog: EconomyCatalog = loadEconomyCatalog();
   private readonly businessCatalog: BusinessCatalog = loadBusinessCatalog();
   private readonly propertyCatalog: PropertyCatalog = loadPropertyCatalog();
+  private readonly governmentCatalog: GovernmentCatalog = loadGovernmentCatalog();
   private readonly lifeCatalog = loadLifeCatalog();
   private lastTickAt: number;
   private lastBroadcastAt = 0;
@@ -727,6 +751,7 @@ export class MultiplayerWorld {
       case "economy.action": await this.economyAction(context, player, message, requestId); return;
       case "business.action": await this.businessAction(context, player, message, requestId); return;
       case "property.action": await this.propertyAction(context, player, message, requestId); return;
+      case "government.action": await this.governmentAction(context, player, message, requestId); return;
       case "chat.send": this.handleChat(context, player, message, requestId); return;
       case "player.interact": this.handlePlayerInteraction(context, player, message, requestId); return;
       case "relationship.progress": await this.progressRelationship(context, player, message, requestId); return;
@@ -827,6 +852,8 @@ export class MultiplayerWorld {
     initializeBusinessWorldState(this.store.state);
     initializePropertyWorldState(this.store.state);
     seedProperties(this.store.state, this.store.state.worldClock.world_date, this.now(), this.propertyCatalog);
+    initializeGovernmentWorldState(this.store.state);
+    seedGovernmentWorld(this.store.state, this.store.state.worldClock.world_date, this.now(), this.governmentCatalog);
     this.playerByTokenHash.set(tokenHash, playerId);
     this.playerByCreationKeyHash.set(creationKeyHash, playerId);
     // The upcoming snapshot includes all current changes; keep later concurrent dirtiness intact.
@@ -877,6 +904,7 @@ export class MultiplayerWorld {
     processEconomyWorldDate(this.store.state, this.store.state.worldClock.world_date, this.now(), this.economyCatalog);
     processBusinessWorldDate(this.store.state, this.store.state.worldClock.world_date, this.now(), this.businessCatalog);
     processPropertyWorldDate(this.store.state);
+    processGovernmentWorldDate(this.store.state);
     processCareerWorldMinute(this.store.state, this.store.state.worldClock.world_date,
       this.store.state.worldClock.minute_of_day, this.now(), this.careerCatalog);
     context.playerId = playerId;
@@ -2044,6 +2072,208 @@ export class MultiplayerWorld {
     await this.flushDirty();
   }
 
+  private async governmentAction(
+    context: ConnectionContext,
+    player: PersistentPlayer,
+    message: Record<string, unknown>,
+    requestId?: string,
+  ): Promise<void> {
+    if (typeof message.action !== "string" || message.action.length > 48) {
+      this.send(context, appendOptionalRequestId({
+        type: "government.error", action: "", code: "government_action_invalid",
+        message: "Choose a supported government action.",
+      }, requestId));
+      return;
+    }
+    const action = message.action;
+    const payload = isRecord(message.payload) ? message.payload : {};
+    const state = this.store.state;
+    const characterId = player.character.character_id;
+    const date = { ...state.worldClock.world_date };
+    const now = this.now();
+    const data: Record<string, unknown> = {};
+    let messageText = "Government records refreshed.";
+    const requiredString = (key: string, maximumLength = 120): string => {
+      const value = payload[key];
+      if (typeof value !== "string" || value.trim().length === 0 || value.length > maximumLength) {
+        throw new Error("government_action_invalid");
+      }
+      return value.trim();
+    };
+    const requiredInteger = (key: string, minimum = 0, maximum = 1_000_000_000_000): number => {
+      const value = payload[key];
+      if (!Number.isSafeInteger(value) || (value as number) < minimum || (value as number) > maximum) {
+        throw new Error("government_action_invalid");
+      }
+      return value as number;
+    };
+
+    try {
+      switch (action) {
+        case "view_federal": {
+          const federal = getFederalGovernment(state);
+          data.federal_government = federal;
+          messageText = federal ? `Federal Government of Nigeria loaded.` : `No federal government found.`;
+          break;
+        }
+        case "view_state": {
+          const stateId = requiredString("state_id", 40);
+          const stateGov = getStateGovernment(state, stateId);
+          data.state_government = stateGov;
+          messageText = stateGov ? `State government loaded.` : `No state government found for '${stateId}'.`;
+          break;
+        }
+        case "view_local": {
+          const lgaId = requiredString("lga_id", 80);
+          const localGov = getLocalGovernment(state, lgaId);
+          data.local_government = localGov;
+          messageText = localGov ? `Local government loaded.` : `No local government found for '${lgaId}'.`;
+          break;
+        }
+        case "appoint": {
+          const appointment = appointOfficial(state, requiredString("office_id"),
+            requiredString("character_id"), characterId, date, now, this.governmentCatalog);
+          data.appointment = appointment;
+          messageText = `Official appointed.`;
+          break;
+        }
+        case "remove_official": {
+          const appointment = removeOfficial(state, requiredString("appointment_id"),
+            typeof payload.reason === "string" ? payload.reason as string : "",
+            date, now);
+          data.appointment = appointment;
+          messageText = `Official removed from office.`;
+          break;
+        }
+        case "create_budget": {
+          const budget = createBudget(state, requiredString("organisation_id"),
+            requiredInteger("fiscal_year", 2000, 3000),
+            requiredString("category_id", 60),
+            requiredInteger("amount_ngn", this.governmentCatalog.rules.minimum_budget_amount_ngn, this.governmentCatalog.rules.maximum_budget_amount_ngn),
+            date, now, this.governmentCatalog);
+          data.budget = budget;
+          messageText = `Budget of ₦${budget.approved_amount_ngn.toLocaleString("en-NG")} created.`;
+          break;
+        }
+        case "record_revenue": {
+          const revenue = recordGovernmentRevenue(state, requiredString("organisation_id"),
+            requiredString("category_id", 60),
+            requiredInteger("amount_ngn", this.governmentCatalog.rules.minimum_revenue_amount_ngn, this.governmentCatalog.rules.maximum_revenue_amount_ngn),
+            typeof payload.description === "string" ? payload.description as string : "",
+            typeof payload.source_reference === "string" ? payload.source_reference as string : null,
+            date, now, this.governmentCatalog);
+          data.revenue = revenue;
+          messageText = `Revenue of ₦${revenue.amount_ngn.toLocaleString("en-NG")} recorded.`;
+          break;
+        }
+        case "record_expenditure": {
+          const budgetId = typeof payload.budget_id === "string" ? payload.budget_id as string : null;
+          const projectId = typeof payload.project_id === "string" ? payload.project_id as string : null;
+          const expenditure = recordGovernmentExpenditure(state, requiredString("organisation_id"),
+            budgetId,
+            requiredString("category_id", 60),
+            requiredInteger("amount_ngn", this.governmentCatalog.rules.minimum_expenditure_amount_ngn, this.governmentCatalog.rules.maximum_expenditure_amount_ngn),
+            typeof payload.description === "string" ? payload.description as string : "",
+            projectId,
+            typeof payload.recipient_reference === "string" ? payload.recipient_reference as string : null,
+            date, now, this.governmentCatalog);
+          data.expenditure = expenditure;
+          messageText = `Expenditure of ₦${expenditure.amount_ngn.toLocaleString("en-NG")} recorded.`;
+          break;
+        }
+        case "create_project": {
+          const budgetId = typeof payload.budget_id === "string" ? payload.budget_id as string : null;
+          const project = createProject(state, requiredString("organisation_id"),
+            budgetId,
+            requiredString("category_id", 60),
+            requiredString("name", this.governmentCatalog.rules.project_max_name_length),
+            typeof payload.description === "string" ? payload.description as string : "",
+            typeof payload.location_id === "string" ? payload.location_id as string : "unknown",
+            requiredInteger("estimated_cost_ngn", this.governmentCatalog.rules.minimum_project_cost_ngn, this.governmentCatalog.rules.maximum_project_cost_ngn),
+            date, now, this.governmentCatalog);
+          data.project = project;
+          messageText = `Project '${project.name}' created.`;
+          break;
+        }
+        case "update_project": {
+          const project = updateProjectStatus(state, requiredString("project_id"),
+            (typeof payload.status === "string" ? payload.status : "proposed") as ProjectStatus,
+            typeof payload.progress_percent === "number" ? payload.progress_percent as number : null,
+            date, now, this.governmentCatalog);
+          data.project = project;
+          messageText = `Project status updated to ${project.status}.`;
+          break;
+        }
+        case "fund_project": {
+          const project = fundProject(state, requiredString("project_id"),
+            requiredInteger("amount_ngn", 1),
+            date, now);
+          data.project = project;
+          messageText = `Project funded. Total funding: ₦${project.approved_funding_ngn.toLocaleString("en-NG")}.`;
+          break;
+        }
+        case "publish_announcement": {
+          const scopeLevel = (typeof payload.scope_level === "string" ? payload.scope_level : "federal") as GovernmentLevel;
+          const scopeJurisdictionId = typeof payload.scope_jurisdiction_id === "string" ? payload.scope_jurisdiction_id as string : null;
+          const projectId = typeof payload.project_id === "string" ? payload.project_id as string : null;
+          const announcement = publishAnnouncement(state, requiredString("organisation_id"),
+            requiredString("title", this.governmentCatalog.rules.announcement_max_title_length),
+            requiredString("body", this.governmentCatalog.rules.announcement_max_body_length),
+            scopeLevel, scopeJurisdictionId, projectId,
+            date, now, this.governmentCatalog);
+          data.announcement = announcement;
+          messageText = `Announcement published.`;
+          break;
+        }
+        case "search_projects": {
+          const filters = isRecord(payload.filters) ? payload.filters : {};
+          const projects = searchProjects(state, {
+            organisation_id: typeof filters.organisation_id === "string" ? filters.organisation_id : null,
+            location_id: typeof filters.location_id === "string" ? filters.location_id : null,
+            category_id: typeof filters.category_id === "string" ? filters.category_id : null,
+            status: typeof filters.status === "string" ? filters.status as ProjectStatus : null,
+          });
+          data.projects = projects;
+          messageText = `Found ${projects.length} projects.`;
+          break;
+        }
+        case "announcements": {
+          const level = typeof payload.level === "string" ? payload.level as GovernmentLevel : null;
+          const jurisdictionId = typeof payload.jurisdiction_id === "string" ? payload.jurisdiction_id as string : null;
+          const announcements = getPublishedAnnouncements(state, level, jurisdictionId);
+          data.announcements = announcements;
+          messageText = `Found ${announcements.length} announcements.`;
+          break;
+        }
+        case "my_appointments": {
+          const appointments = getCharacterAppointments(state, characterId);
+          data.appointments = appointments;
+          messageText = `You hold ${appointments.filter((a) => a.status === "active").length} active government appointments.`;
+          break;
+        }
+        default:
+          throw new Error("government_action_unknown");
+      }
+    } catch (error) {
+      const code = this.errorCode(error);
+      this.send(context, appendOptionalRequestId({
+        type: "government.error",
+        action,
+        code,
+        message: governmentErrorMessage(code),
+      }, requestId));
+      return;
+    }
+
+    this.markRequestProcessed(player, requestId);
+    if (!["view_federal", "view_state", "view_local", "search_projects", "announcements", "my_appointments"].includes(action)) this.touchPlayer(player);
+    this.send(context, appendOptionalRequestId({
+      type: "government.result", action, ok: true, message: messageText, data,
+    }, requestId));
+    this.sendCharacterSnapshot(context);
+    await this.flushDirty();
+  }
+
   private programSeatCount(programId: string): number {
     if (!programId) return 0;
     const occupied = new Set<string>();
@@ -2324,6 +2554,7 @@ export class MultiplayerWorld {
     }).filter((profile): profile is NonNullable<typeof profile> => profile !== null);
     try { snapshot.property_profiles = getCharacterProperties(this.store.state, player.character.character_id); } catch { snapshot.property_profiles = []; }
     try { snapshot.rental_agreements = getCharacterRentals(this.store.state, player.character.character_id); } catch { snapshot.rental_agreements = []; }
+    try { snapshot.government_appointments = getCharacterAppointments(this.store.state, player.character.character_id); } catch { snapshot.government_appointments = []; }
     return snapshot;
   }
 

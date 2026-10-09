@@ -4,7 +4,7 @@
 
 ## Current stage and verification gate
 
-**Stage 9 — Housing and Property: backend implementation and Node tests pass; housing integrates with Stage 7 economy and Stage 8 businesses; Godot client/runtime verification is blocked.** Stages 0–8 remain preserved on the same `nigeria-main` world. The server still owns one shared online timeline. The earlier Stage 5 Godot limitation is still open; Stages 6–9 do not resolve it.
+**Stage 10 — Government System: backend implementation and Node tests pass; government integrates with Stage 6 (careers) for appointments, Stage 7 (economy) for budgets/finance, and Stage 3 (geography) for project locations; Godot client/runtime verification is blocked.** Stages 0–9 remain preserved on the same `nigeria-main` world. The server still owns one shared online timeline. The earlier Stage 5 Godot limitation is still open; Stages 6–10 do not resolve it.
 
 Godot 4.7.2 is not installed (`godot: command not found`). Project import, engine type-checking, scenes, rendered careers UI, clicks through work/application flows, offline client journeys, and Godot multiplayer/reconnect/save runtime behavior have not been run. Do not infer client success from Node tests or gdtoolkit.
 
@@ -120,6 +120,57 @@ The Godot client path has not been engine-tested in this workspace. See [`docs/P
 `services/world-api/src/properties/` contains typed catalogue validation and server rules. `services/world-api/src/multiplayer/persistence.ts` validates/migrates schema version 6 and stores property records, ownership, listings, rental agreements, payments, sales, maintenance, furnishings, and events. `services/world-api/src/multiplayer/world-engine.ts` integrates `property.action` commands and property/rental profiles in private character snapshots.
 
 The Godot client path has not been engine-tested in this workspace. See [`docs/HOUSING_AND_PROPERTY_PLAN.md`](HOUSING_AND_PROPERTY_PLAN.md) for full catalogue, contract, persistence, and scope details.
+
+## Stage 10 implementation
+
+### Government structure and offices
+
+- `game/data/government/catalog.json` configures 3 government levels (federal, state, local), 15 federal ministries, 10 office types, 14 project categories, 12 budget categories, 7 revenue categories, and 8 expenditure categories.
+- Federal Government of Nigeria is seeded on initialization with ministries, offices, and an initial approved budget.
+- Government offices enforce unique occupancy — only one active occupant per unique office at a time.
+
+### Appointments, budgets, and finance
+
+- Appointments validate character age (18+), life status, unique-office occupancy, and per-character appointment limits. Historical appointments preserved after removal.
+- Budgets created with fiscal year, category, and approved amount. Spending validated against budget availability — overspending rejected.
+- Revenue and expenditure recorded with categories, amounts, and references. Idempotent against duplicate requests.
+
+### Projects and announcements
+
+- Government projects follow a validated lifecycle (proposed → under_review → approved → funded → in_progress → completed, with suspended/cancelled paths).
+- Projects are location-linked via Stage 3 geography. Project funding updates status from approved to funded.
+- Published announcements with scope level and jurisdiction. Searchable by organisation, location, category, status.
+
+### Schema and client integration
+
+`services/world-api/src/government/` contains typed catalogue validation and server rules. `services/world-api/src/multiplayer/persistence.ts` validates/migrates schema version 7 and stores government organisations, offices, appointments, budgets, revenue, expenditure, projects, announcements, and events. `services/world-api/src/multiplayer/world-engine.ts` integrates `government.action` commands and appointment profiles in private character snapshots.
+
+The Godot client path has not been engine-tested in this workspace. See [`docs/GOVERNMENT_SYSTEM_PLAN.md`](GOVERNMENT_SYSTEM_PLAN.md) for full catalogue, contract, persistence, and scope details.
+
+## Stage 10 acceptance coverage
+
+| Area | Evidence | Result |
+|---|---|---|
+| Catalogue bounds, levels, ministries, offices, categories | `services/world-api/test/government.test.mjs` | **Passed (Node)** |
+| Government seeding with federal structure, ministries, offices, budget | Government service tests | **Passed (Node)** |
+| Appointment with age eligibility and unique-office enforcement | Government service tests | **Passed (Node)** |
+| Appointment rejection for underage, duplicate unique-office | Government service tests | **Passed (Node)** |
+| Removal with history preservation | Government service tests | **Passed (Node)** |
+| Budget creation with category and amount validation | Government service tests | **Passed (Node)** |
+| Revenue and expenditure recording | Government service tests | **Passed (Node)** |
+| Expenditure rejection for overspending | Government service tests | **Passed (Node)** |
+| Project creation and status transition validation | Government service tests | **Passed (Node)** |
+| Project funding updates status | Government service tests | **Passed (Node)** |
+| Announcement publishing | Government service tests | **Passed (Node)** |
+| Federal government snapshot | Government service tests | **Passed (Node)** |
+| Project search with filters | Government service tests | **Passed (Node)** |
+| Announcement browsing | Government service tests | **Passed (Node)** |
+| Character appointment history | Government service tests | **Passed (Node)** |
+| Error messages for standard codes | Government service tests | **Passed (Node)** |
+| WebSocket view_federal and announcements | WebSocket test | **Passed (Node)** |
+| Government appointments in character snapshots | WebSocket snapshot test | **Passed (Node)** |
+| Schema-v6 to v7 migration preserving all records | Persistence test | **Passed (Node)** |
+| Godot project import, engine typing, client government UI | Godot unavailable | **Blocked / not run** |
 
 ## Stage 9 acceptance coverage
 
@@ -243,6 +294,6 @@ When Godot 4.7.2 is available, run the import check and retained client tests in
 3. The current online JSON store is single-process, atomically replaced and limited to 16 MiB; it has no database transaction isolation, multi-writer coordination, backups, or production recovery.
 4. Career employers, salaries, leave, licences, and eligibility rules are fictional configurable fixtures, not official Nigerian economic/legal data. No real employer identity, role authorization, job marketplace, professional credentialing, or labor-law system is implemented.
 5. Stage 7 replaces the Stage 6 prototype salary adapter with the canonical Naira ledger. Tax estimation is display-only; no automatic tax deduction, inter-player transfers, businesses, property, or estate wage settlement are implemented.
-6. Godot 4.7.2 client/runtime verification for Stages 1–9 remains blocked. Node tests and gdformat do not substitute for engine/runtime checks.
+6. Godot 4.7.2 client/runtime verification for Stages 1–10 remains blocked. Node tests and gdformat do not substitute for engine/runtime checks.
 7. Preserve Stage 5 life status and age as the sole authority for death and retirement; do not enable work or future wages for deceased characters.
 8. **Next planned stage: Stage 10 — Government System.** Keep it inside the same world and use Stage 9 for government property and public facilities.

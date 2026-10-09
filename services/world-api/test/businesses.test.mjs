@@ -52,7 +52,7 @@ function makeWorld(date = { year: 2025, month: 1, day: 4 }) {
   const lifeCatalog = loadLifeCatalog();
   const day = worldDayForDate(date, lifeCatalog);
   const state = {
-    schemaVersion: 6,
+    schemaVersion: 7,
     worldId: "nigeria-main",
     worldClock: normalizeWorldClock({
       day,
@@ -600,28 +600,26 @@ test("business profiles are included in character snapshots", async () => {
   await peer.close();
 });
 
-test("schema version 5 state migrates to version 6 with empty property maps", async () => {
+test("schema version 6 state migrates to version 7 with empty government maps", async () => {
   const { serverPort, stateFile } = await startServer();
   const { peer, ready } = await createOnlinePeer(serverPort);
   await peer.close();
   const saved = JSON.parse(await readFile(stateFile, "utf8"));
-  assert.equal(saved.schemaVersion, 6);
-  saved.schemaVersion = 5;
-  delete saved.properties;
-  delete saved.propertyOwnership;
-  delete saved.propertyListings;
-  delete saved.rentalAgreements;
-  delete saved.rentalPayments;
-  delete saved.propertySales;
-  delete saved.propertyMaintenance;
-  delete saved.propertyFurnishings;
-  delete saved.propertyEvents;
+  assert.equal(saved.schemaVersion, 7);
+  saved.schemaVersion = 6;
+  delete saved.governmentOrganisations;
+  delete saved.governmentOffices;
+  delete saved.governmentAppointments;
+  delete saved.governmentBudgets;
+  delete saved.governmentRevenue;
+  delete saved.governmentExpenditure;
+  delete saved.governmentProjects;
+  delete saved.governmentAnnouncements;
+  delete saved.governmentEvents;
   await writeFile(stateFile, JSON.stringify(saved), "utf8");
   const migrated = new WorldStore(stateFile, Date.UTC(2025, 0, 2));
-  assert.equal(migrated.state.schemaVersion, 6);
-  assert.ok(typeof migrated.state.properties === "object");
-  assert.ok(typeof migrated.state.propertyOwnership === "object");
-  assert.ok(typeof migrated.state.propertyListings === "object");
-  assert.ok(typeof migrated.state.rentalAgreements === "object");
-  assert.ok(typeof migrated.state.propertySales === "object");
+  assert.equal(migrated.state.schemaVersion, 7);
+  assert.ok(typeof migrated.state.governmentOrganisations === "object");
+  assert.ok(typeof migrated.state.governmentOffices === "object");
+  assert.ok(typeof migrated.state.governmentProjects === "object");
 });
