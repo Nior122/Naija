@@ -4,7 +4,7 @@
 
 ## Current stage and verification gate
 
-**Stage 7 — Full Nigerian Economy: backend implementation and Node tests pass; the economy replaces the Stage 6 salary adapter with a canonical Naira ledger; Godot client/runtime verification is blocked.** Stages 0–6 remain preserved on the same `nigeria-main` world. The server still owns one shared online timeline. The earlier Stage 5 Godot limitation is still open; Stages 6–7 do not resolve it.
+**Stage 8 — Player Businesses: backend implementation and Node tests pass; businesses connect to Stage 6 employment and Stage 7 economy; Godot client/runtime verification is blocked.** Stages 0–7 remain preserved on the same `nigeria-main` world. The server still owns one shared online timeline. The earlier Stage 5 Godot limitation is still open; Stages 6–8 do not resolve it.
 
 Godot 4.7.2 is not installed (`godot: command not found`). Project import, engine type-checking, scenes, rendered careers UI, clicks through work/application flows, offline client journeys, and Godot multiplayer/reconnect/save runtime behavior have not been run. Do not infer client success from Node tests or gdtoolkit.
 
@@ -63,6 +63,53 @@ See [`CAREERS_AND_EMPLOYMENT_PLAN.md`](CAREERS_AND_EMPLOYMENT_PLAN.md) for full 
 `services/world-api/src/economy/` contains typed catalogue validation, the economy service, and the canonical ledger. `services/world-api/src/multiplayer/persistence.ts` validates/migrates schema version 4 and stores economy accounts, transactions, loans, credit scores, and events. `services/world-api/src/multiplayer/world-engine.ts` integrates `economy.action` commands, the economy profile in private character snapshots, and the shared-clock economy processing (interest, fees, loan payments).
 
 The Godot client path has not been engine-tested in this workspace. See [`docs/ECONOMY_PLAN.md`](ECONOMY_PLAN.md) for full catalogue, contract, persistence, and scope details.
+
+## Stage 8 implementation
+
+### Business catalogue and creation
+
+- `game/data/businesses/catalog.json` configures 10 categories, 13 active business templates across retail, food, tech, trades, agriculture, transport, creative, professional, and manufacturing, 22 business products, and 5 production recipes.
+- Business creation validates character age (18+), template eligibility, location compatibility, and available funds. Setup costs are deducted from the owner's personal cash account; initial capital is contributed to the business ledger through an atomic transaction.
+- Ownership is recorded with role-based permissions (owner, co-owner, manager, accountant, inventory-manager, employee). All sensitive actions require server-side authorization.
+
+### Products, inventory, sales, and production
+
+- Businesses add catalogue products with custom pricing within configured markup bounds. Both product-based (inventory) and service-based sales are supported.
+- Persistent stock records support restocking, sale deductions, production outputs/inputs, and movement history. No negative stock, no free stock, no client-side creation.
+- Configurable recipe system consumes input inventory, charges operating costs, and produces output inventory. Atomic production runs with idempotent deduplication.
+
+### Finance and operating costs
+
+- Business financial accounts are separate from the owner's personal wallet. Capital contributions, owner withdrawals, sales revenue, operating expenses, rent, salary, and production costs are all recorded in the business ledger.
+- Daily operating and premises costs are charged on world-date rollover through `processBusinessWorldDate`. Insufficient funds lead to business insolvency status.
+
+### Schema and client integration
+
+`services/world-api/src/businesses/` contains typed catalogue validation and server rules. `services/world-api/src/multiplayer/persistence.ts` validates/migrates schema version 5 and stores business records, ownership, products, inventory, transactions, sales, production runs, and events. `services/world-api/src/multiplayer/world-engine.ts` integrates `business.action` commands and business profiles in private character snapshots.
+
+The Godot client path has not been engine-tested in this workspace. See [`docs/PLAYER_BUSINESSES_PLAN.md`](PLAYER_BUSINESSES_PLAN.md) for full catalogue, contract, persistence, and scope details.
+
+## Stage 8 acceptance coverage
+
+| Area | Evidence | Result |
+|---|---|---|
+| Catalogue bounds, categories, templates, products, recipes | `services/world-api/test/businesses.test.mjs` | **Passed (Node)** |
+| Business creation eligibility, setup cost, ownership | Business service tests | **Passed (Node)** |
+| Creation rejection for age, funds, template, location | Business service tests | **Passed (Node)** |
+| Products, restocking, sales, insufficient stock rejection | Business service tests | **Passed (Node)** |
+| Service-based sales without inventory | Business service tests | **Passed (Node)** |
+| Capital contributions and owner withdrawals | Business service tests | **Passed (Node)** |
+| Expense recording and deduction | Business service tests | **Passed (Node)** |
+| Production consuming inputs and creating outputs | Business service tests | **Passed (Node)** |
+| Business closure preserving history | Business service tests | **Passed (Node)** |
+| Unauthorized access rejection | Business service tests | **Passed (Node)** |
+| Business discovery by location | Business service tests | **Passed (Node)** |
+| Daily operating costs and insolvency detection | Business service tests | **Passed (Node)** |
+| WebSocket discover and business actions | Two-client WebSocket test | **Passed (Node)** |
+| Age eligibility enforcement through WebSocket | WebSocket test | **Passed (Node)** |
+| Business profiles in character snapshots | WebSocket snapshot test | **Passed (Node)** |
+| Schema-v4 to v5 migration preserving all records | Persistence test | **Passed (Node)** |
+| Godot project import, engine typing, client business UI | Godot unavailable | **Blocked / not run** |
 
 ## Stage 7 acceptance coverage
 
@@ -139,6 +186,6 @@ When Godot 4.7.2 is available, run the import check and retained client tests in
 3. The current online JSON store is single-process, atomically replaced and limited to 16 MiB; it has no database transaction isolation, multi-writer coordination, backups, or production recovery.
 4. Career employers, salaries, leave, licences, and eligibility rules are fictional configurable fixtures, not official Nigerian economic/legal data. No real employer identity, role authorization, job marketplace, professional credentialing, or labor-law system is implemented.
 5. Stage 7 replaces the Stage 6 prototype salary adapter with the canonical Naira ledger. Tax estimation is display-only; no automatic tax deduction, inter-player transfers, businesses, property, or estate wage settlement are implemented.
-6. Godot 4.7.2 client/runtime verification for Stages 1–7 remains blocked. Node tests and gdformat do not substitute for engine/runtime checks.
+6. Godot 4.7.2 client/runtime verification for Stages 1–8 remains blocked. Node tests and gdformat do not substitute for engine/runtime checks.
 7. Preserve Stage 5 life status and age as the sole authority for death and retirement; do not enable work or future wages for deceased characters.
-8. **Next planned stage: Stage 8 — Player Businesses.** Keep it inside the same world and use Stage 7 as the economic authority for business costs, revenue, and compliance.
+8. **Next planned stage: Stage 9 — Housing and Property.** Keep it inside the same world and use Stage 8 for business-operated property and Stage 7 as the economic authority for rent, mortgage, and property costs.

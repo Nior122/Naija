@@ -3,6 +3,7 @@ import type { StudentEducationRecord } from "../education/types.js";
 import type { WorldClockState } from "../life/calendar.js";
 import type { CareerProfileSnapshot, PersistentCareerMaps } from "../careers/types.js";
 import type { EconomyProfileSnapshot, PersistentEconomyMaps } from "../economy/types.js";
+import type { BusinessProfileSnapshot, PersistentBusinessMaps } from "../businesses/types.js";
 import type {
   FamilyPersonRecord,
   FamilyRecord,
@@ -67,6 +68,8 @@ export interface CharacterRecord extends CharacterLifeFields {
   career_profile?: CareerProfileSnapshot;
   /** Private projection of economy data for this character's authenticated session only. */
   economy_profile?: EconomyProfileSnapshot;
+  /** List of business profile snapshots for businesses this character owns or manages. */
+  business_profiles?: BusinessProfileSnapshot[];
 }
 
 export interface PersistentPlayer {
@@ -79,8 +82,8 @@ export interface PersistentPlayer {
   character: CharacterRecord;
 }
 
-export interface PersistentWorldState extends PersistentCareerMaps, PersistentEconomyMaps {
-  schemaVersion: 4;
+export interface PersistentWorldState extends PersistentCareerMaps, PersistentEconomyMaps, PersistentBusinessMaps {
+  schemaVersion: 5;
   worldId: typeof WORLD_ID;
   worldClock: WorldClockState;
   players: Record<string, PersistentPlayer>;

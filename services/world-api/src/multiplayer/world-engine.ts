@@ -46,6 +46,30 @@ import {
   withdrawFromAccount,
 } from "../economy/service.js";
 import type { EconomyCatalog } from "../economy/types.js";
+import { loadBusinessCatalog } from "../businesses/catalog.js";
+import {
+  addBranch,
+  addBusinessProduct,
+  buildBusinessProfile,
+  businessErrorMessage,
+  closeBusiness,
+  contributeCapital,
+  createBusiness,
+  discoverBusinesses,
+  fireEmployee,
+  hireEmployee,
+  initializeBusinessWorldState,
+  processBusinessWorldDate,
+  recordBusinessExpense,
+  restockInventory,
+  runProduction,
+  sellProduct,
+  sellService,
+  transferOwnership,
+  withdrawFromBusiness,
+} from "../businesses/service.js";
+import type { BusinessPremisesType } from "../businesses/types.js";
+import type { BusinessCatalog } from "../businesses/types.js";
 import { loadLifeCatalog, dateForWorldDay, isValidDate, worldClockSnapshot } from "../life/calendar.js";
 import {
   advanceWorldLife,
@@ -122,6 +146,7 @@ const IDEMPOTENT_COMMANDS = new Set([
   "education.action",
   "career.action",
   "economy.action",
+  "business.action",
   "relationship.progress",
   "family.childbirth",
 ]);
@@ -392,6 +417,7 @@ export class MultiplayerWorld {
   private readonly educationCatalog: EducationCatalog;
   private readonly careerCatalog: CareerCatalog = loadCareerCatalog();
   private readonly economyCatalog: EconomyCatalog = loadEconomyCatalog();
+  private readonly businessCatalog: BusinessCatalog = loadBusinessCatalog();
   private readonly lifeCatalog = loadLifeCatalog();
   private lastTickAt: number;
   private lastBroadcastAt = 0;
@@ -676,6 +702,7 @@ export class MultiplayerWorld {
       case "education.action": await this.educationAction(context, player, message, requestId); return;
       case "career.action": await this.careerAction(context, player, message, requestId); return;
       case "economy.action": await this.economyAction(context, player, message, requestId); return;
+      case "business.action": await this.businessAction(context, player, message, requestId); return;
       case "chat.send": this.handleChat(context, player, message, requestId); return;
       case "player.interact": this.handlePlayerInteraction(context, player, message, requestId); return;
       case "relationship.progress": await this.progressRelationship(context, player, message, requestId); return;
@@ -773,6 +800,7 @@ export class MultiplayerWorld {
       return;
     }
     initializeEconomyWorldState(this.store.state, this.now());
+    initializeBusinessWorldState(this.store.state);
     this.playerByTokenHash.set(tokenHash, playerId);
     this.playerByCreationKeyHash.set(creationKeyHash, playerId);
     // The upcoming snapshot includes all current changes; keep later concurrent dirtiness intact.
@@ -821,6 +849,7 @@ export class MultiplayerWorld {
     processCareerWorldDate(this.store.state, this.store.state.worldClock.world_date, this.now(), this.careerCatalog,
       economyAccountPort(this.store.state, this.economyCatalog));
     processEconomyWorldDate(this.store.state, this.store.state.worldClock.world_date, this.now(), this.economyCatalog);
+    processBusinessWorldDate(this.store.state, this.store.state.worldClock.world_date, this.now(), this.businessCatalog);
     processCareerWorldMinute(this.store.state, this.store.state.worldClock.world_date,
       this.store.state.worldClock.minute_of_day, this.now(), this.careerCatalog);
     context.playerId = playerId;
@@ -1595,6 +1624,217 @@ export class MultiplayerWorld {
     await this.flushDirty();
   }
 
+  private async businessAction(
+    context: ConnectionContext,
+    player: PersistentPlayer,
+    message: Record<string, unknown>,
+    requestId?: string,
+  ): Promise<void> {
+    if (typeof message.action !== "string" || message.action.length > 48) {
+      this.send(context, appendOptionalRequestId({
+        type: "business.error", action: "", code: "business_action_invalid",
+        message: "Choose a supported business action.",
+      }, requestId));
+      return;
+    }
+    const action = message.action;
+    const payload = isRecord(message.payload) ? message.payload : {};
+    const state = this.store.state;
+    const characterId = player.character.character_id;
+    const date = { ...state.worldClock.world_date };
+    const minuteOfDay = state.worldClock.minute_of_day;
+    const now = this.now();
+    const data: Record<string, unknown> = {};
+    let messageText = "Business records refreshed.";
+    const requiredString = (key: string, maximumLength = 120): string => {
+      const value = payload[key];
+      if (typeof value !== "string" || value.trim().length === 0 || value.length > maximumLength) {
+        throw new Error("business_action_invalid");
+      }
+      return value.trim();
+    };
+    const requiredInteger = (key: string, minimum = 0, maximum = 1_000_000_000): number => {
+      const value = payload[key];
+      if (!Number.isSafeInteger(value) || (value as number) < minimum || (value as number) > maximum) {
+        throw new Error("business_action_invalid");
+      }
+      return value as number;
+    };
+
+    try {
+      switch (action) {
+        case "discover": {
+          const locationId = typeof payload.location_id === "string" ? payload.location_id : null;
+          data.businesses = discoverBusinesses(state, locationId, this.businessCatalog);
+          data.catalog_categories = this.businessCatalog.categories;
+          data.catalog_templates = this.businessCatalog.templates.filter((t) => t.active);
+          messageText = `Discovered ${(data.businesses as unknown[]).length} active businesses.`;
+          break;
+        }
+        case "create": {
+          const business = createBusiness(state, characterId,
+            requiredString("template_id"),
+            requiredString("name", this.businessCatalog.rules.maximum_business_name_length),
+            typeof payload.description === "string" ? payload.description as string : "A new business.",
+            typeof payload.location_id === "string" ? payload.location_id : player.character.current_location,
+            requiredInteger("initial_capital_ngn", 0, this.businessCatalog.rules.maximum_capital_contribution_ngn),
+            date, minuteOfDay, now, this.businessCatalog);
+          data.business = business;
+          data.business_profile = buildBusinessProfile(state, business.business_id, this.businessCatalog);
+          syncCharacterCashFromEconomy(state, characterId);
+          messageText = `Business '${business.name}' has been registered.`;
+          break;
+        }
+        case "view": {
+          const businessId = requiredString("business_id");
+          const viewProfile = buildBusinessProfile(state, businessId, this.businessCatalog);
+          data.business_profile = viewProfile;
+          messageText = `Business profile for '${viewProfile.name}' loaded.`;
+          break;
+        }
+        case "add_product": {
+          const product = addBusinessProduct(state, requiredString("business_id"), characterId,
+            requiredString("product_definition_id"),
+            payload.custom_price_ngn !== undefined ? requiredInteger("custom_price_ngn", 0) : null,
+            date, minuteOfDay, now, this.businessCatalog);
+          data.product = product;
+          messageText = `Added '${product.display_name}' to the business at ₦${product.price_ngn.toLocaleString("en-NG")}.`;
+          break;
+        }
+        case "restock": {
+          const result = restockInventory(state, requiredString("business_id"), characterId,
+            requiredString("product_definition_id"),
+            requiredInteger("quantity", 1, this.businessCatalog.rules.maximum_stock_per_product),
+            requiredInteger("unit_cost_ngn", 0),
+            date, minuteOfDay, now, this.businessCatalog);
+          data.inventory = result.inventory;
+          data.movement = result.movement;
+          data.cost_transaction = result.cost_transaction;
+          syncCharacterCashFromEconomy(state, characterId);
+          messageText = `Restocked ${result.inventory.quantity} units.`;
+          break;
+        }
+        case "sell_product": {
+          const buyerId = typeof payload.buyer_character_id === "string" ? payload.buyer_character_id : null;
+          const result = sellProduct(state, requiredString("business_id"), requiredString("product_record_id"),
+            buyerId, requiredInteger("quantity", 1), date, minuteOfDay, now, this.businessCatalog);
+          data.sale = result.sale;
+          data.revenue_transaction = result.revenue_transaction;
+          messageText = `Sale of ${result.sale.quantity} × ₦${result.sale.unit_price_ngn.toLocaleString("en-NG")} = ₦${result.sale.total_ngn.toLocaleString("en-NG")}.`;
+          break;
+        }
+        case "sell_service": {
+          const buyerId = typeof payload.buyer_character_id === "string" ? payload.buyer_character_id : null;
+          const result = sellService(state, requiredString("business_id"), requiredString("product_record_id"),
+            buyerId, date, minuteOfDay, now, this.businessCatalog);
+          data.sale = result.sale;
+          data.revenue_transaction = result.revenue_transaction;
+          messageText = `Service sold for ₦${result.sale.total_ngn.toLocaleString("en-NG")}.`;
+          break;
+        }
+        case "contribute_capital": {
+          const tx = contributeCapital(state, requiredString("business_id"), characterId,
+            requiredInteger("amount_ngn", 1, this.businessCatalog.rules.maximum_capital_contribution_ngn),
+            date, minuteOfDay, now, this.businessCatalog);
+          data.transaction = tx;
+          syncCharacterCashFromEconomy(state, characterId);
+          messageText = `Contributed ₦${tx.amount_ngn.toLocaleString("en-NG")} as capital.`;
+          break;
+        }
+        case "withdraw": {
+          const tx = withdrawFromBusiness(state, requiredString("business_id"), characterId,
+            requiredInteger("amount_ngn", 1, this.businessCatalog.rules.maximum_owner_withdrawal_ngn),
+            date, minuteOfDay, now, this.businessCatalog);
+          data.transaction = tx;
+          syncCharacterCashFromEconomy(state, characterId);
+          messageText = `Withdrew ₦${tx.amount_ngn.toLocaleString("en-NG")} from the business.`;
+          break;
+        }
+        case "record_expense": {
+          const tx = recordBusinessExpense(state, requiredString("business_id"), characterId,
+            requiredString("kind", 48), requiredInteger("amount_ngn", 1),
+            requiredString("description", 300), date, minuteOfDay, now);
+          data.transaction = tx;
+          messageText = `Recorded ${tx.kind} expense of ₦${tx.amount_ngn.toLocaleString("en-NG")}.`;
+          break;
+        }
+        case "produce": {
+          const run = runProduction(state, requiredString("business_id"), characterId,
+            requiredString("recipe_id"), date, minuteOfDay, now, this.businessCatalog);
+          data.production_run = run;
+          messageText = `Production completed: ${this.businessCatalog.production_recipes.find((r) => r.id === run.recipe_id)?.label ?? run.recipe_id} (×${run.output_quantity}).`;
+          break;
+        }
+        case "close": {
+          const business = closeBusiness(state, requiredString("business_id"), characterId,
+            typeof payload.reason === "string" ? payload.reason as string : "",
+            date, minuteOfDay, now);
+          data.business = business;
+          messageText = `Business '${business.name}' has been closed.`;
+          break;
+        }
+        case "add_branch": {
+          const branchBusinessId = requiredString("business_id");
+          const premisesType = (typeof payload.premises_type === "string" ? payload.premises_type : "shop") as BusinessPremisesType;
+          const branch = addBranch(state, branchBusinessId, characterId,
+            requiredString("name", 120),
+            typeof payload.location_id === "string" ? payload.location_id : state.businesses[branchBusinessId]!.primary_location_id,
+            premisesType, date, minuteOfDay, now, this.businessCatalog);
+          data.branch = branch;
+          messageText = `Branch '${branch.name}' opened.`;
+          break;
+        }
+        case "transfer_ownership": {
+          const result = transferOwnership(state, requiredString("business_id"), characterId,
+            requiredString("to_character_id"),
+            (typeof payload.new_role === "string" ? payload.new_role : "co_owner") as "owner" | "co_owner" | "manager" | "accountant" | "inventory_manager" | "employee",
+            typeof payload.share_percent === "number" ? payload.share_percent as number : 100,
+            date, minuteOfDay, now);
+          data.ownership = result.ownership;
+          data.previous = result.previous;
+          messageText = `Ownership transferred to ${result.ownership.character_id} (${result.ownership.role}).`;
+          break;
+        }
+        case "hire_employee": {
+          const employment = hireEmployee(state, requiredString("business_id"), characterId,
+            requiredString("employee_character_id"),
+            date, minuteOfDay, now, this.businessCatalog);
+          data.employment = employment;
+          messageText = `Employee ${employment.character_id} hired.`;
+          break;
+        }
+        case "fire_employee": {
+          const employment = fireEmployee(state, requiredString("business_id"), characterId,
+            requiredString("employee_character_id"),
+            typeof payload.reason === "string" ? payload.reason as string : "",
+            date, minuteOfDay, now);
+          data.employment = employment;
+          messageText = `Employee ${employment.character_id} released.`;
+          break;
+        }
+        default:
+          throw new Error("business_action_unknown");
+      }
+    } catch (error) {
+      const code = this.errorCode(error);
+      this.send(context, appendOptionalRequestId({
+        type: "business.error",
+        action,
+        code,
+        message: businessErrorMessage(code),
+      }, requestId));
+      return;
+    }
+
+    this.markRequestProcessed(player, requestId);
+    if (!["discover", "view"].includes(action)) this.touchPlayer(player);
+    this.send(context, appendOptionalRequestId({
+      type: "business.result", action, ok: true, message: messageText, data,
+    }, requestId));
+    this.sendCharacterSnapshot(context);
+    await this.flushDirty();
+  }
+
   private programSeatCount(programId: string): number {
     if (!programId) return 0;
     const occupied = new Set<string>();
@@ -1820,6 +2060,7 @@ export class MultiplayerWorld {
       processCareerWorldDate(this.store.state, clock.world_date, now, this.careerCatalog,
         economyAccountPort(this.store.state, this.economyCatalog));
       processEconomyWorldDate(this.store.state, clock.world_date, now, this.economyCatalog);
+      processBusinessWorldDate(this.store.state, clock.world_date, now, this.businessCatalog);
     }
     if (processCareerWorldMinute(this.store.state, clock.world_date, clock.minute_of_day, now, this.careerCatalog) > 0) {
       this.dirty = true;
@@ -1867,6 +2108,10 @@ export class MultiplayerWorld {
     snapshot.life_profile = buildLifeProfile(this.store.state, player.character);
     snapshot.career_profile = buildCareerProfile(this.store.state, player.character, this.careerCatalog);
     snapshot.economy_profile = buildEconomyProfile(this.store.state, player.character.character_id, this.economyCatalog);
+    const ownedBusinesses = Object.values(this.store.state.businesses).filter((biz) => biz.owner_character_id === player.character.character_id);
+    snapshot.business_profiles = ownedBusinesses.map((biz) => {
+      try { return buildBusinessProfile(this.store.state, biz.business_id, this.businessCatalog); } catch { return null; }
+    }).filter((profile): profile is NonNullable<typeof profile> => profile !== null);
     return snapshot;
   }
 

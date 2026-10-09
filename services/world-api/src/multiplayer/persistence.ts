@@ -9,9 +9,11 @@ import { loadLifeCatalog, normalizeWorldClock, isValidDate } from "../life/calen
 import { normalizeLifeWorldState } from "../life/service.js";
 import { initializeCareerWorldState } from "../careers/service.js";
 import { initializeEconomyWorldState } from "../economy/service.js";
+import { initializeBusinessWorldState } from "../businesses/service.js";
 import type { LifeCatalog } from "../life/types.js";
 import type { PersistentCareerMaps } from "../careers/types.js";
 import type { PersistentEconomyMaps } from "../economy/types.js";
+import type { PersistentBusinessMaps } from "../businesses/types.js";
 import {
   WORLD_ID,
   isFiniteNumber,
@@ -336,6 +338,14 @@ function emptyEconomyMaps(): PersistentEconomyMaps {
   };
 }
 
+function emptyBusinessMaps(): PersistentBusinessMaps {
+  return {
+    businesses: {}, businessOwnership: {}, businessBranches: {}, businessProducts: {},
+    businessInventory: {}, businessInventoryMovements: {}, businessTransactions: {},
+    businessExpenses: {}, businessSales: {}, businessProductionRuns: {}, businessEvents: {},
+  };
+}
+
 function emptyLifeMaps(): Pick<
   PersistentWorldState,
   "people" | "households" | "families" | "relationships" | "lifeEvents" | "marriages" | "inheritanceEvents"
@@ -417,8 +427,77 @@ function isEconomyEvent(value: unknown, key: string): boolean {
     (value.transaction_id === undefined || typeof value.transaction_id === "string");
 }
 
+const BUSINESS_STATUSES = new Set(["draft", "active", "suspended", "closed", "insolvent"]);
+const BUSINESS_MODELS = new Set(["retail", "food_service", "service", "production"]);
+const BUSINESS_OWNERSHIP_ROLES = new Set(["owner", "co_owner", "manager", "accountant", "inventory_manager", "employee"]);
+const BUSINESS_TX_KINDS = new Set([
+  "sale_product", "sale_service", "expense_operating", "expense_rent", "expense_salary",
+  "capital_contribution", "owner_withdrawal", "production_cost", "setup_cost", "refund", "purchase_stock",
+]);
+const BUSINESS_PREMISES_TYPES = new Set([
+  "home_based", "market_stall", "shop", "office", "workshop", "restaurant", "farm", "warehouse", "factory", "service_area", "studio",
+]);
+
+function isBusiness(value: unknown, key: string): boolean {
+  return isRecord(value) && value.business_id === key && typeof value.name === "string" && typeof value.description === "string" &&
+    typeof value.template_id === "string" && typeof value.category_id === "string" &&
+    typeof value.model === "string" && BUSINESS_MODELS.has(value.model) &&
+    typeof value.status === "string" && BUSINESS_STATUSES.has(value.status) &&
+    typeof value.primary_location_id === "string" &&
+    typeof value.premises_type === "string" && BUSINESS_PREMISES_TYPES.has(value.premises_type) &&
+    isFiniteNumber(value.reputation_score) && isFiniteNumber(value.balance_ngn) &&
+    isFiniteNumber(value.total_revenue_ngn) && isFiniteNumber(value.total_expenses_ngn) &&
+    isFiniteNumber(value.total_capital_ngn) && isFiniteNumber(value.total_withdrawals_ngn) &&
+    typeof value.created_at === "string" && typeof value.updated_at === "string" &&
+    isValidDate(value.created_world_date) && typeof value.owner_character_id === "string" &&
+    (value.closed_at === null || typeof value.closed_at === "string") &&
+    (value.closed_world_date === null || isValidDate(value.closed_world_date)) &&
+    (value.closure_reason === null || typeof value.closure_reason === "string") &&
+    (value.last_operating_date === null || isValidDate(value.last_operating_date));
+}
+
+function isBusinessOwnership(value: unknown, key: string): boolean {
+  return isRecord(value) && value.ownership_id === key && typeof value.business_id === "string" &&
+    typeof value.character_id === "string" &&
+    typeof value.role === "string" && BUSINESS_OWNERSHIP_ROLES.has(value.role) &&
+    isFiniteNumber(value.share_percent) && value.share_percent >= 0 && value.share_percent <= 100 &&
+    typeof value.created_at === "string" && typeof value.updated_at === "string" &&
+    isValidDate(value.created_world_date) && typeof value.is_founder === "boolean" &&
+    typeof value.active === "boolean";
+}
+
+function isBusinessTransaction(value: unknown, key: string): boolean {
+  return isRecord(value) && value.transaction_id === key && typeof value.business_id === "string" &&
+    typeof value.kind === "string" && BUSINESS_TX_KINDS.has(value.kind) &&
+    isFiniteNumber(value.amount_ngn) && isFiniteNumber(value.balance_before_ngn) && isFiniteNumber(value.balance_after_ngn) &&
+    typeof value.description === "string" && isValidDate(value.world_date) &&
+    isFiniteNumber(value.minute_of_day) && value.minute_of_day >= 0 && value.minute_of_day < 1440 &&
+    typeof value.posted_at === "string" &&
+    (value.reference_id === null || typeof value.reference_id === "string") &&
+    (value.counterparty_character_id === null || typeof value.counterparty_character_id === "string") &&
+    typeof value.idempotency_key === "string";
+}
+
+function isBusinessSale(value: unknown, key: string): boolean {
+  return isRecord(value) && value.sale_id === key && typeof value.business_id === "string" &&
+    (value.product_record_id === null || typeof value.product_record_id === "string") &&
+    typeof value.product_definition_id === "string" &&
+    (value.buyer_character_id === null || typeof value.buyer_character_id === "string") &&
+    isFiniteNumber(value.quantity) && isFiniteNumber(value.unit_price_ngn) && isFiniteNumber(value.total_ngn) &&
+    isValidDate(value.world_date) && isFiniteNumber(value.minute_of_day) &&
+    typeof value.posted_at === "string" && typeof value.is_service === "boolean";
+}
+
+function isBusinessEvent(value: unknown, key: string): boolean {
+  return isRecord(value) && value.event_id === key && typeof value.business_id === "string" &&
+    typeof value.type === "string" && isValidDate(value.world_date) &&
+    isFiniteNumber(value.minute_of_day) && value.minute_of_day >= 0 && value.minute_of_day < 1440 &&
+    typeof value.summary === "string" && isRecord(value.details) &&
+    typeof value.created_at === "string";
+}
+
 function validateState(value: unknown, now: number): PersistentWorldState {
-  if (!isRecord(value) || (value.schemaVersion !== 1 && value.schemaVersion !== 2 && value.schemaVersion !== 3 && value.schemaVersion !== 4) ||
+  if (!isRecord(value) || (value.schemaVersion !== 1 && value.schemaVersion !== 2 && value.schemaVersion !== 3 && value.schemaVersion !== 4 && value.schemaVersion !== 5) ||
     value.worldId !== WORLD_ID || !isRecord(value.worldClock) || !isRecord(value.players)) {
     throw new Error("World data has an invalid schema; refusing to start with reset state.");
   }
@@ -445,7 +524,7 @@ function validateState(value: unknown, now: number): PersistentWorldState {
       throw new Error("World data contains an invalid Stage 5 lifecycle record.");
     }
   }
-  if (schemaVersion === 3 || schemaVersion === 4) {
+  if (schemaVersion === 3 || schemaVersion === 4 || schemaVersion === 5) {
     const careerMapNames = [
       "careerEmployers", "careerVacancies", "careerApplications", "employments", "workSessions", "careerSkills",
       "careerLicenses", "careerReviews", "careerLeaveRequests", "careerEvents", "salaryPayments", "npcCareers",
@@ -469,7 +548,7 @@ function validateState(value: unknown, now: number): PersistentWorldState {
       throw new Error("World data contains an invalid Stage 6 career record.");
     }
   }
-  if (schemaVersion === 4) {
+  if (schemaVersion === 4 || schemaVersion === 5) {
     const economyMapNames = [
       "economyAccounts", "economyTransactions", "economyLoans", "economyCreditScores", "economyEvents",
     ] as const;
@@ -485,9 +564,27 @@ function validateState(value: unknown, now: number): PersistentWorldState {
       throw new Error("World data contains an invalid Stage 7 economy record.");
     }
   }
+  if (schemaVersion === 5) {
+    const businessMapNames = [
+      "businesses", "businessOwnership", "businessBranches", "businessProducts", "businessInventory",
+      "businessInventoryMovements", "businessTransactions", "businessExpenses", "businessSales",
+      "businessProductionRuns", "businessEvents",
+    ] as const;
+    if (businessMapNames.some((name) => !isRecord(value[name]))) {
+      throw new Error("World data is missing Stage 8 business records; refusing to start with reset state.");
+    }
+    const businessMap = (name: typeof businessMapNames[number]): Record<string, unknown> => value[name] as Record<string, unknown>;
+    if (Object.entries(businessMap("businesses")).some(([id, entry]) => !isBusiness(entry, id)) ||
+      Object.entries(businessMap("businessOwnership")).some(([id, entry]) => !isBusinessOwnership(entry, id)) ||
+      Object.entries(businessMap("businessTransactions")).some(([id, entry]) => !isBusinessTransaction(entry, id)) ||
+      Object.entries(businessMap("businessSales")).some(([id, entry]) => !isBusinessSale(entry, id)) ||
+      Object.entries(businessMap("businessEvents")).some(([id, entry]) => !isBusinessEvent(entry, id))) {
+      throw new Error("World data contains an invalid Stage 8 business record.");
+    }
+  }
 
   const catalog: LifeCatalog = loadLifeCatalog();
-  const careerMaps: PersistentCareerMaps = (schemaVersion === 3 || schemaVersion === 4) ? {
+  const careerMaps: PersistentCareerMaps = (schemaVersion === 3 || schemaVersion === 4 || schemaVersion === 5) ? {
     careerEmployers: value.careerEmployers as PersistentCareerMaps["careerEmployers"],
     careerVacancies: value.careerVacancies as PersistentCareerMaps["careerVacancies"],
     careerApplications: value.careerApplications as PersistentCareerMaps["careerApplications"],
@@ -501,15 +598,28 @@ function validateState(value: unknown, now: number): PersistentWorldState {
     salaryPayments: value.salaryPayments as PersistentCareerMaps["salaryPayments"],
     npcCareers: value.npcCareers as PersistentCareerMaps["npcCareers"],
   } : emptyCareerMaps();
-  const economyMaps: PersistentEconomyMaps = schemaVersion === 4 ? {
+  const economyMaps: PersistentEconomyMaps = (schemaVersion === 4 || schemaVersion === 5) ? {
     economyAccounts: value.economyAccounts as PersistentEconomyMaps["economyAccounts"],
     economyTransactions: value.economyTransactions as PersistentEconomyMaps["economyTransactions"],
     economyLoans: value.economyLoans as PersistentEconomyMaps["economyLoans"],
     economyCreditScores: value.economyCreditScores as PersistentEconomyMaps["economyCreditScores"],
     economyEvents: value.economyEvents as PersistentEconomyMaps["economyEvents"],
   } : emptyEconomyMaps();
+  const businessMaps: PersistentBusinessMaps = schemaVersion === 5 ? {
+    businesses: value.businesses as PersistentBusinessMaps["businesses"],
+    businessOwnership: value.businessOwnership as PersistentBusinessMaps["businessOwnership"],
+    businessBranches: value.businessBranches as PersistentBusinessMaps["businessBranches"],
+    businessProducts: value.businessProducts as PersistentBusinessMaps["businessProducts"],
+    businessInventory: value.businessInventory as PersistentBusinessMaps["businessInventory"],
+    businessInventoryMovements: value.businessInventoryMovements as PersistentBusinessMaps["businessInventoryMovements"],
+    businessTransactions: value.businessTransactions as PersistentBusinessMaps["businessTransactions"],
+    businessExpenses: value.businessExpenses as PersistentBusinessMaps["businessExpenses"],
+    businessSales: value.businessSales as PersistentBusinessMaps["businessSales"],
+    businessProductionRuns: value.businessProductionRuns as PersistentBusinessMaps["businessProductionRuns"],
+    businessEvents: value.businessEvents as PersistentBusinessMaps["businessEvents"],
+  } : emptyBusinessMaps();
   const state = {
-    schemaVersion: 4 as const,
+    schemaVersion: 5 as const,
     worldId: WORLD_ID,
     worldClock: normalizeWorldClock(clock, now, catalog),
     players: {} as Record<string, PersistentPlayer>,
@@ -524,6 +634,7 @@ function validateState(value: unknown, now: number): PersistentWorldState {
     } : emptyLifeMaps()),
     ...careerMaps,
     ...economyMaps,
+    ...businessMaps,
   } satisfies PersistentWorldState;
 
   for (const [playerId, rawPlayer] of Object.entries(value.players)) {
@@ -555,13 +666,14 @@ function validateState(value: unknown, now: number): PersistentWorldState {
   normalizeLifeWorldState(state, now);
   initializeCareerWorldState(state, now);
   initializeEconomyWorldState(state, now);
+  initializeBusinessWorldState(state);
   return state;
 }
 
 function initialState(now: number): PersistentWorldState {
   const catalog = loadLifeCatalog();
   const state: PersistentWorldState = {
-    schemaVersion: 4,
+    schemaVersion: 5,
     worldId: WORLD_ID,
     worldClock: normalizeWorldClock({
       day: catalog.calendar.starting_world_day,
@@ -573,9 +685,11 @@ function initialState(now: number): PersistentWorldState {
     ...emptyLifeMaps(),
     ...emptyCareerMaps(),
     ...emptyEconomyMaps(),
+    ...emptyBusinessMaps(),
   };
   initializeCareerWorldState(state, now);
   initializeEconomyWorldState(state, now);
+  initializeBusinessWorldState(state);
   return state;
 }
 

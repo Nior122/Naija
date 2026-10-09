@@ -414,27 +414,31 @@ test("syncCharacterCashFromEconomy updates character money from cash account", (
   assert.equal(player.character.money, 25000);
 });
 
-test("schema version 3 state migrates to version 4 with empty economy maps", async () => {
+test("schema version 4 state migrates to version 5 with empty business maps", async () => {
   const { serverPort, stateFile } = await startServer();
   const { peer, ready } = await createOnlinePeer(serverPort);
   await peer.close();
   const saved = JSON.parse(await readFile(stateFile, "utf8"));
-  assert.equal(saved.schemaVersion, 4);
-  // Simulate a v3 state by removing economy fields
-  saved.schemaVersion = 3;
-  delete saved.economyAccounts;
-  delete saved.economyTransactions;
-  delete saved.economyLoans;
-  delete saved.economyCreditScores;
-  delete saved.economyEvents;
+  assert.equal(saved.schemaVersion, 5);
+  // Simulate a v4 state by removing business fields
+  saved.schemaVersion = 4;
+  delete saved.businesses;
+  delete saved.businessOwnership;
+  delete saved.businessBranches;
+  delete saved.businessProducts;
+  delete saved.businessInventory;
+  delete saved.businessInventoryMovements;
+  delete saved.businessTransactions;
+  delete saved.businessExpenses;
+  delete saved.businessSales;
+  delete saved.businessProductionRuns;
+  delete saved.businessEvents;
   await writeFile(stateFile, JSON.stringify(saved), "utf8");
   const migrated = new WorldStore(stateFile, Date.UTC(2025, 0, 2));
-  assert.equal(migrated.state.schemaVersion, 4);
-  assert.ok(typeof migrated.state.economyAccounts === "object");
-  assert.ok(typeof migrated.state.economyTransactions === "object");
-  assert.ok(typeof migrated.state.economyLoans === "object");
-  assert.ok(typeof migrated.state.economyCreditScores === "object");
-  assert.ok(typeof migrated.state.economyEvents === "object");
+  assert.equal(migrated.state.schemaVersion, 5);
+  assert.ok(typeof migrated.state.businesses === "object");
+  assert.ok(typeof migrated.state.businessOwnership === "object");
+  assert.ok(typeof migrated.state.businessTransactions === "object");
   const characterId = ready.character.character_id;
   const creditScore = migrated.state.economyCreditScores[characterId];
   assert.ok(creditScore);
