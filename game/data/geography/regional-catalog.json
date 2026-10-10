@@ -1,0 +1,2387 @@
+{
+  "schema_version": 1,
+  "world_id": "nigeria-main",
+  "notice": "Regional catalog for Naija: One World. Contains all 36 states plus FCT with metadata, LGAs, and environment profiles.",
+  "country": {
+    "id": "NG",
+    "name": "Nigeria",
+    "capital": "Abuja",
+    "population": 223800000,
+    "area_km2": 923768
+  },
+  "states": [
+    {
+      "id": "ng:state:ab",
+      "name": "Abia",
+      "code": "AB",
+      "capital": "Abia",
+      "region": "southeast",
+      "lgas": [
+        "ng:lga:ab:aba-north",
+        "ng:lga:ab:aba-south",
+        "ng:lga:ab:arochukwu",
+        "ng:lga:ab:bende",
+        "ng:lga:ab:ikwuano",
+        "ng:lga:ab:isiala-ngwa-north",
+        "ng:lga:ab:isiala-ngwa-south",
+        "ng:lga:ab:isuikwuato",
+        "ng:lga:ab:obi-ngwa",
+        "ng:lga:ab:ohafia",
+        "ng:lga:ab:osisioma",
+        "ng:lga:ab:ugwunagbo",
+        "ng:lga:ab:ukwa-east",
+        "ng:lga:ab:ukwa-west",
+        "ng:lga:ab:umu-nneochi",
+        "ng:lga:ab:umuahia-north",
+        "ng:lga:ab:umuahia-south"
+      ],
+      "population": 3700000,
+      "area_km2": 6320,
+      "coordinates": {
+        "center": {
+          "latitude": 5.35,
+          "longitude": 7.47
+        },
+        "bounds": {
+          "west": 7.24,
+          "south": 4.89,
+          "east": 7.92,
+          "north": 5.99
+        }
+      },
+      "environment": {
+        "climate": "tropical",
+        "terrain": "forest",
+        "primary_industries": [
+          "commerce",
+          "agriculture",
+          "manufacturing"
+        ],
+        "languages": [
+          "igbo",
+          "english"
+        ],
+        "cultural_significance": "Commercial hub of southeastern Nigeria",
+        "gameplay_features": [
+          "urban_exploration",
+          "market_trading",
+          "business_ownership"
+        ],
+        "restrictions": []
+      }
+    },
+    {
+      "id": "ng:state:ad",
+      "name": "Adamawa",
+      "code": "AD",
+      "capital": "Adamawa",
+      "region": "northeast",
+      "lgas": [
+        "ng:lga:ad:demsa",
+        "ng:lga:ad:fufore",
+        "ng:lga:ad:ganye",
+        "ng:lga:ad:girei",
+        "ng:lga:ad:gombi",
+        "ng:lga:ad:guyuk",
+        "ng:lga:ad:hong",
+        "ng:lga:ad:jada",
+        "ng:lga:ad:lamurde",
+        "ng:lga:ad:madagali",
+        "ng:lga:ad:maiha",
+        "ng:lga:ad:mayo-belwa",
+        "ng:lga:ad:michika",
+        "ng:lga:ad:mubi-north",
+        "ng:lga:ad:mubi-south",
+        "ng:lga:ad:numan",
+        "ng:lga:ad:shelleng",
+        "ng:lga:ad:song",
+        "ng:lga:ad:toungo",
+        "ng:lga:ad:yola-north",
+        "ng:lga:ad:yola-south"
+      ],
+      "population": 4200000,
+      "area_km2": 36116,
+      "coordinates": {
+        "center": {
+          "latitude": 9.6,
+          "longitude": 12.53
+        },
+        "bounds": {
+          "west": 11.78,
+          "south": 8.12,
+          "east": 13.42,
+          "north": 10.75
+        }
+      },
+      "environment": {
+        "climate": "semi-arid",
+        "terrain": "savanna",
+        "primary_industries": [
+          "agriculture",
+          "livestock",
+          "fishing"
+        ],
+        "languages": [
+          "fulfulde",
+          "hausa",
+          "english"
+        ],
+        "cultural_significance": "Gateway to northeastern Nigeria",
+        "gameplay_features": [
+          "rural_life",
+          "agriculture",
+          "cultural_tourism"
+        ],
+        "restrictions": []
+      }
+    },
+    {
+      "id": "ng:state:ak",
+      "name": "Akwa Ibom",
+      "code": "AK",
+      "capital": "Akwa Ibom",
+      "region": "southsouth",
+      "lgas": [
+        "ng:lga:ak:abak",
+        "ng:lga:ak:eastern-obolo",
+        "ng:lga:ak:eket",
+        "ng:lga:ak:esit-eket",
+        "ng:lga:ak:essien-udim",
+        "ng:lga:ak:etim-ekpo",
+        "ng:lga:ak:etinan",
+        "ng:lga:ak:ibeno",
+        "ng:lga:ak:ibesikpo-asutan",
+        "ng:lga:ak:ibiono-ibom",
+        "ng:lga:ak:ika",
+        "ng:lga:ak:ikono",
+        "ng:lga:ak:ikot-abasi",
+        "ng:lga:ak:ikot-ekpene",
+        "ng:lga:ak:ini",
+        "ng:lga:ak:itu",
+        "ng:lga:ak:mbo",
+        "ng:lga:ak:mkpat-enin",
+        "ng:lga:ak:nsit-atai",
+        "ng:lga:ak:nsit-ibom",
+        "ng:lga:ak:nsit-ubium",
+        "ng:lga:ak:obot-akara",
+        "ng:lga:ak:okobo",
+        "ng:lga:ak:onna",
+        "ng:lga:ak:oron",
+        "ng:lga:ak:oruk-anam",
+        "ng:lga:ak:udung-uko",
+        "ng:lga:ak:ukanafun",
+        "ng:lga:ak:uruan",
+        "ng:lga:ak:urue-offong-oruko",
+        "ng:lga:ak:uyo"
+      ],
+      "population": 5400000,
+      "area_km2": 7081,
+      "coordinates": {
+        "center": {
+          "latitude": 4.89,
+          "longitude": 7.87
+        },
+        "bounds": {
+          "west": 7.53,
+          "south": 4.53,
+          "east": 8.23,
+          "north": 5.4
+        }
+      },
+      "environment": {
+        "climate": "tropical",
+        "terrain": "coastal",
+        "primary_industries": [
+          "oil-and-gas",
+          "agriculture",
+          "fishing"
+        ],
+        "languages": [
+          "ibibio",
+          "efik",
+          "english"
+        ],
+        "cultural_significance": "Oil-rich coastal state",
+        "gameplay_features": [
+          "oil_industry",
+          "coastal_living",
+          "fishing"
+        ],
+        "restrictions": []
+      }
+    },
+    {
+      "id": "ng:state:an",
+      "name": "Anambra",
+      "code": "AN",
+      "capital": "Anambra",
+      "region": "southeast",
+      "lgas": [
+        "ng:lga:an:aguata",
+        "ng:lga:an:anambra-east",
+        "ng:lga:an:anambra-west",
+        "ng:lga:an:anaocha",
+        "ng:lga:an:awka-north",
+        "ng:lga:an:awka-south",
+        "ng:lga:an:ayamelum",
+        "ng:lga:an:dunukofia",
+        "ng:lga:an:ekwusigo",
+        "ng:lga:an:idemili-north",
+        "ng:lga:an:idemili-south",
+        "ng:lga:an:ihiala",
+        "ng:lga:an:njikoka",
+        "ng:lga:an:nnewi-north",
+        "ng:lga:an:nnewi-south",
+        "ng:lga:an:ogbaru",
+        "ng:lga:an:onitsha-north",
+        "ng:lga:an:onitsha-south",
+        "ng:lga:an:orumba-north",
+        "ng:lga:an:orumba-south",
+        "ng:lga:an:oyi"
+      ],
+      "population": 5500000,
+      "area_km2": 4844,
+      "coordinates": {
+        "center": {
+          "latitude": 6.09,
+          "longitude": 6.81
+        },
+        "bounds": {
+          "west": 5.94,
+          "south": 5.25,
+          "east": 7.21,
+          "north": 6.6
+        }
+      },
+      "environment": {
+        "climate": "tropical",
+        "terrain": "forest",
+        "primary_industries": [
+          "commerce",
+          "manufacturing",
+          "agriculture"
+        ],
+        "languages": [
+          "igbo",
+          "english"
+        ],
+        "cultural_significance": "Commercial and industrial center",
+        "gameplay_features": [
+          "urban_exploration",
+          "market_trading",
+          "manufacturing"
+        ],
+        "restrictions": []
+      }
+    },
+    {
+      "id": "ng:state:ba",
+      "name": "Bauchi",
+      "code": "BA",
+      "capital": "Bauchi",
+      "region": "northeast",
+      "lgas": [
+        "ng:lga:ba:alkaleri",
+        "ng:lga:ba:bauchi",
+        "ng:lga:ba:bogoro",
+        "ng:lga:ba:damban",
+        "ng:lga:ba:darazo",
+        "ng:lga:ba:dass",
+        "ng:lga:ba:gamawa",
+        "ng:lga:ba:ganjuwa",
+        "ng:lga:ba:giade",
+        "ng:lga:ba:itas-gadau",
+        "ng:lga:ba:jama-are",
+        "ng:lga:ba:katagum",
+        "ng:lga:ba:kirfi",
+        "ng:lga:ba:misau",
+        "ng:lga:ba:ningi",
+        "ng:lga:ba:shira",
+        "ng:lga:ba:tafawa-balewa",
+        "ng:lga:ba:toro",
+        "ng:lga:ba:warji",
+        "ng:lga:ba:zaki"
+      ],
+      "population": 6500000,
+      "area_km2": 45893,
+      "coordinates": {
+        "center": {
+          "latitude": 11.01,
+          "longitude": 10.04
+        },
+        "bounds": {
+          "west": 9.07,
+          "south": 9.67,
+          "east": 10.79,
+          "north": 12.28
+        }
+      },
+      "environment": {
+        "climate": "semi-arid",
+        "terrain": "savanna",
+        "primary_industries": [
+          "agriculture",
+          "mining",
+          "livestock"
+        ],
+        "languages": [
+          "hausa",
+          "fulfulde",
+          "english"
+        ],
+        "cultural_significance": "Educational center of northeastern Nigeria",
+        "gameplay_features": [
+          "rural_life",
+          "agriculture",
+          "mining"
+        ],
+        "restrictions": []
+      }
+    },
+    {
+      "id": "ng:state:by",
+      "name": "Bayelsa",
+      "code": "BY",
+      "capital": "Bayelsa",
+      "region": "southsouth",
+      "lgas": [
+        "ng:lga:by:brass",
+        "ng:lga:by:ekeremor",
+        "ng:lga:by:kolokuma-opokuma",
+        "ng:lga:by:nembe",
+        "ng:lga:by:ogbia",
+        "ng:lga:by:sagbama",
+        "ng:lga:by:southern-ijaw",
+        "ng:lga:by:yenagoa"
+      ],
+      "population": 2200000,
+      "area_km2": 10773,
+      "coordinates": {
+        "center": {
+          "latitude": 4.84,
+          "longitude": 6.2
+        },
+        "bounds": {
+          "west": 5.78,
+          "south": 4.32,
+          "east": 6.41,
+          "north": 5.17
+        }
+      },
+      "environment": {
+        "climate": "tropical",
+        "terrain": "coastal",
+        "primary_industries": [
+          "oil-and-gas",
+          "fishing",
+          "agriculture"
+        ],
+        "languages": [
+          "ijaw",
+          "english"
+        ],
+        "cultural_significance": "Oil-rich Niger Delta state",
+        "gameplay_features": [
+          "oil_industry",
+          "river_transport",
+          "fishing"
+        ],
+        "restrictions": []
+      }
+    },
+    {
+      "id": "ng:state:be",
+      "name": "Benue",
+      "code": "BE",
+      "capital": "Benue",
+      "region": "northcentral",
+      "lgas": [
+        "ng:lga:be:ado",
+        "ng:lga:be:agatu",
+        "ng:lga:be:apa",
+        "ng:lga:be:buruku",
+        "ng:lga:be:gboko",
+        "ng:lga:be:guma",
+        "ng:lga:be:gwer-east",
+        "ng:lga:be:gwer-west",
+        "ng:lga:be:katsina-ala",
+        "ng:lga:be:konshisha",
+        "ng:lga:be:kwande",
+        "ng:lga:be:logo",
+        "ng:lga:be:makurdi",
+        "ng:lga:be:obi",
+        "ng:lga:be:ogbadibo",
+        "ng:lga:be:ohimini",
+        "ng:lga:be:oju",
+        "ng:lga:be:okpokwu",
+        "ng:lga:be:otukpo",
+        "ng:lga:be:tarka",
+        "ng:lga:be:ukum",
+        "ng:lga:be:ushongo",
+        "ng:lga:be:vandeikya"
+      ],
+      "population": 5700000,
+      "area_km2": 34059,
+      "coordinates": {
+        "center": {
+          "latitude": 7.34,
+          "longitude": 8.6
+        },
+        "bounds": {
+          "west": 7.65,
+          "south": 6.78,
+          "east": 9.65,
+          "north": 7.9
+        }
+      },
+      "environment": {
+        "climate": "tropical",
+        "terrain": "savanna",
+        "primary_industries": [
+          "agriculture",
+          "livestock"
+        ],
+        "languages": [
+          "tiv",
+          "idoma",
+          "english"
+        ],
+        "cultural_significance": "Food basket of the nation",
+        "gameplay_features": [
+          "agriculture",
+          "rural_life",
+          "cultural_festivals"
+        ],
+        "restrictions": []
+      }
+    },
+    {
+      "id": "ng:state:bo",
+      "name": "Borno",
+      "code": "BO",
+      "capital": "Borno",
+      "region": "northeast",
+      "lgas": [
+        "ng:lga:bo:abadam",
+        "ng:lga:bo:askira-uba",
+        "ng:lga:bo:bama",
+        "ng:lga:bo:bayo",
+        "ng:lga:bo:biu",
+        "ng:lga:bo:chibok",
+        "ng:lga:bo:damboa",
+        "ng:lga:bo:dikwa",
+        "ng:lga:bo:gubio",
+        "ng:lga:bo:guzamala",
+        "ng:lga:bo:gwoza",
+        "ng:lga:bo:hawul",
+        "ng:lga:bo:jere",
+        "ng:lga:bo:kaga",
+        "ng:lga:bo:kala-balge",
+        "ng:lga:bo:konduga",
+        "ng:lga:bo:kukawa",
+        "ng:lga:bo:kwaya-kusar",
+        "ng:lga:bo:mafa",
+        "ng:lga:bo:magumeri",
+        "ng:lga:bo:maiduguri",
+        "ng:lga:bo:marte",
+        "ng:lga:bo:mobbar",
+        "ng:lga:bo:monguno",
+        "ng:lga:bo:ngala",
+        "ng:lga:bo:nganzai",
+        "ng:lga:bo:shani"
+      ],
+      "population": 5800000,
+      "area_km2": 70898,
+      "coordinates": {
+        "center": {
+          "latitude": 11.83,
+          "longitude": 13.12
+        },
+        "bounds": {
+          "west": 11.7,
+          "south": 10.18,
+          "east": 14.46,
+          "north": 13.61
+        }
+      },
+      "environment": {
+        "climate": "arid",
+        "terrain": "savanna",
+        "primary_industries": [
+          "agriculture",
+          "livestock",
+          "trade"
+        ],
+        "languages": [
+          "kanuri",
+          "hausa",
+          "english"
+        ],
+        "cultural_significance": "Historic center of Kanem-Borno Empire",
+        "gameplay_features": [
+          "desert_survival",
+          "cultural_heritage",
+          "trade"
+        ],
+        "restrictions": [
+          "security_zones"
+        ]
+      }
+    },
+    {
+      "id": "ng:state:cr",
+      "name": "Cross River",
+      "code": "CR",
+      "capital": "Cross River",
+      "region": "southsouth",
+      "lgas": [
+        "ng:lga:cr:abi",
+        "ng:lga:cr:akamkpa",
+        "ng:lga:cr:akpabuyo",
+        "ng:lga:cr:bakassi",
+        "ng:lga:cr:bekwarra",
+        "ng:lga:cr:biase",
+        "ng:lga:cr:boki",
+        "ng:lga:cr:calabar-municipal",
+        "ng:lga:cr:calabar-south",
+        "ng:lga:cr:etung",
+        "ng:lga:cr:ikom",
+        "ng:lga:cr:obanliku",
+        "ng:lga:cr:obubra",
+        "ng:lga:cr:obudu",
+        "ng:lga:cr:odukpani",
+        "ng:lga:cr:ogoja",
+        "ng:lga:cr:yakurr",
+        "ng:lga:cr:yala"
+      ],
+      "population": 4400000,
+      "area_km2": 22961,
+      "coordinates": {
+        "center": {
+          "latitude": 5.86,
+          "longitude": 8.52
+        },
+        "bounds": {
+          "west": 7.23,
+          "south": 4.58,
+          "east": 9.25,
+          "north": 6.83
+        }
+      },
+      "environment": {
+        "climate": "tropical",
+        "terrain": "forest",
+        "primary_industries": [
+          "tourism",
+          "agriculture",
+          "oil-and-gas"
+        ],
+        "languages": [
+          "efik",
+          "ejagham",
+          "english"
+        ],
+        "cultural_significance": "Tourism capital with Calabar Carnival",
+        "gameplay_features": [
+          "tourism",
+          "cultural_festivals",
+          "rainforest_exploration"
+        ],
+        "restrictions": []
+      }
+    },
+    {
+      "id": "ng:state:de",
+      "name": "Delta",
+      "code": "DE",
+      "capital": "Delta",
+      "region": "southsouth",
+      "lgas": [
+        "ng:lga:de:aniocha-north",
+        "ng:lga:de:aniocha-south",
+        "ng:lga:de:bomadi",
+        "ng:lga:de:burutu",
+        "ng:lga:de:ethiope-east",
+        "ng:lga:de:ethiope-west",
+        "ng:lga:de:ika-north-east",
+        "ng:lga:de:ika-south",
+        "ng:lga:de:isoko-north",
+        "ng:lga:de:isoko-south",
+        "ng:lga:de:ndokwa-east",
+        "ng:lga:de:ndokwa-west",
+        "ng:lga:de:okpe",
+        "ng:lga:de:oshimili-north",
+        "ng:lga:de:oshimili-south",
+        "ng:lga:de:patani",
+        "ng:lga:de:sapele",
+        "ng:lga:de:udu",
+        "ng:lga:de:ughelli-north",
+        "ng:lga:de:ughelli-south",
+        "ng:lga:de:ukwuani",
+        "ng:lga:de:uvwie",
+        "ng:lga:de:warri-north",
+        "ng:lga:de:warri-south",
+        "ng:lga:de:warri-south-west"
+      ],
+      "population": 5600000,
+      "area_km2": 17663,
+      "coordinates": {
+        "center": {
+          "latitude": 6.1,
+          "longitude": 6.3
+        },
+        "bounds": {
+          "west": 5.45,
+          "south": 5.16,
+          "east": 8.72,
+          "north": 9.75
+        }
+      },
+      "environment": {
+        "climate": "tropical",
+        "terrain": "coastal",
+        "primary_industries": [
+          "oil-and-gas",
+          "agriculture",
+          "fishing"
+        ],
+        "languages": [
+          "urhobo",
+          "igor",
+          "english"
+        ],
+        "cultural_significance": "Oil-rich Niger Delta state",
+        "gameplay_features": [
+          "oil_industry",
+          "river_transport",
+          "fishing"
+        ],
+        "restrictions": []
+      }
+    },
+    {
+      "id": "ng:state:eb",
+      "name": "Ebonyi",
+      "code": "EB",
+      "capital": "Ebonyi",
+      "region": "southeast",
+      "lgas": [
+        "ng:lga:eb:abakaliki",
+        "ng:lga:eb:afikpo-north",
+        "ng:lga:eb:afikpo-south",
+        "ng:lga:eb:ebonyi",
+        "ng:lga:eb:ezza-north",
+        "ng:lga:eb:ezza-south",
+        "ng:lga:eb:ikwo",
+        "ng:lga:eb:ishielu",
+        "ng:lga:eb:ivo",
+        "ng:lga:eb:izzi",
+        "ng:lga:eb:ohaozara",
+        "ng:lga:eb:ohaukwu",
+        "ng:lga:eb:onicha"
+      ],
+      "population": 2800000,
+      "area_km2": 5934,
+      "coordinates": {
+        "center": {
+          "latitude": 6.62,
+          "longitude": 7.86
+        },
+        "bounds": {
+          "west": 7.49,
+          "south": 5.89,
+          "east": 8.1,
+          "north": 12.47
+        }
+      },
+      "environment": {
+        "climate": "tropical",
+        "terrain": "forest",
+        "primary_industries": [
+          "agriculture",
+          "mining"
+        ],
+        "languages": [
+          "igbo",
+          "english"
+        ],
+        "cultural_significance": "Rice production center",
+        "gameplay_features": [
+          "agriculture",
+          "mining",
+          "rural_life"
+        ],
+        "restrictions": []
+      }
+    },
+    {
+      "id": "ng:state:ed",
+      "name": "Edo",
+      "code": "ED",
+      "capital": "Edo",
+      "region": "southsouth",
+      "lgas": [
+        "ng:lga:ed:akoko-edo",
+        "ng:lga:ed:egor",
+        "ng:lga:ed:esan-central",
+        "ng:lga:ed:esan-north-east",
+        "ng:lga:ed:esan-south-east",
+        "ng:lga:ed:esan-west",
+        "ng:lga:ed:etsako-central",
+        "ng:lga:ed:etsako-east",
+        "ng:lga:ed:etsako-west",
+        "ng:lga:ed:igueben",
+        "ng:lga:ed:ikpoba-okha",
+        "ng:lga:ed:oredo",
+        "ng:lga:ed:orhionmwon",
+        "ng:lga:ed:ovia-north-east",
+        "ng:lga:ed:ovia-south-west",
+        "ng:lga:ed:owan-east",
+        "ng:lga:ed:owan-west",
+        "ng:lga:ed:uhunmwonde"
+      ],
+      "population": 4200000,
+      "area_km2": 17802,
+      "coordinates": {
+        "center": {
+          "latitude": 6.68,
+          "longitude": 6.05
+        },
+        "bounds": {
+          "west": 5.35,
+          "south": 6.18,
+          "east": 6.69,
+          "north": 7.28
+        }
+      },
+      "environment": {
+        "climate": "tropical",
+        "terrain": "forest",
+        "primary_industries": [
+          "oil-and-gas",
+          "agriculture",
+          "rubber"
+        ],
+        "languages": [
+          "edo",
+          "english"
+        ],
+        "cultural_significance": "Ancient Benin Kingdom heritage",
+        "gameplay_features": [
+          "cultural_heritage",
+          "oil_industry",
+          "agriculture"
+        ],
+        "restrictions": []
+      }
+    },
+    {
+      "id": "ng:state:ek",
+      "name": "Ekiti",
+      "code": "EK",
+      "capital": "Ekiti",
+      "region": "southwest",
+      "lgas": [
+        "ng:lga:ek:ado-ekiti",
+        "ng:lga:ek:efon",
+        "ng:lga:ek:ekiti-east",
+        "ng:lga:ek:ekiti-south-west",
+        "ng:lga:ek:ekiti-west",
+        "ng:lga:ek:emure",
+        "ng:lga:ek:gbonyin",
+        "ng:lga:ek:ido-osi",
+        "ng:lga:ek:ijero",
+        "ng:lga:ek:ikere",
+        "ng:lga:ek:ikole",
+        "ng:lga:ek:ilejemeje",
+        "ng:lga:ek:irepodun-ifelodun",
+        "ng:lga:ek:ise-orun",
+        "ng:lga:ek:moba",
+        "ng:lga:ek:oye"
+      ],
+      "population": 3500000,
+      "area_km2": 6353,
+      "coordinates": {
+        "center": {
+          "latitude": 7.68,
+          "longitude": 5.19
+        },
+        "bounds": {
+          "west": 3.63,
+          "south": 7.37,
+          "east": 5.72,
+          "north": 7.99
+        }
+      },
+      "environment": {
+        "climate": "tropical",
+        "terrain": "plateau",
+        "primary_industries": [
+          "education",
+          "agriculture"
+        ],
+        "languages": [
+          "yoruba",
+          "english"
+        ],
+        "cultural_significance": "Land of honour, education hub",
+        "gameplay_features": [
+          "education",
+          "agriculture",
+          "cultural_heritage"
+        ],
+        "restrictions": []
+      }
+    },
+    {
+      "id": "ng:state:en",
+      "name": "Enugu",
+      "code": "EN",
+      "capital": "Enugu",
+      "region": "southeast",
+      "lgas": [
+        "ng:lga:en:aninri",
+        "ng:lga:en:awgu",
+        "ng:lga:en:enugu-east",
+        "ng:lga:en:enugu-north",
+        "ng:lga:en:enugu-south",
+        "ng:lga:en:ezeagu",
+        "ng:lga:en:igbo-etiti",
+        "ng:lga:en:igbo-eze-north",
+        "ng:lga:en:igbo-eze-south",
+        "ng:lga:en:isi-uzo",
+        "ng:lga:en:nkanu-east",
+        "ng:lga:en:nkanu-west",
+        "ng:lga:en:nsukka",
+        "ng:lga:en:oji-river",
+        "ng:lga:en:udenu",
+        "ng:lga:en:udi",
+        "ng:lga:en:uzo-uwani"
+      ],
+      "population": 4400000,
+      "area_km2": 7161,
+      "coordinates": {
+        "center": {
+          "latitude": 6.55,
+          "longitude": 7.46
+        },
+        "bounds": {
+          "west": 7.2,
+          "south": 6.05,
+          "east": 7.72,
+          "north": 6.98
+        }
+      },
+      "environment": {
+        "climate": "tropical",
+        "terrain": "plateau",
+        "primary_industries": [
+          "coal-mining",
+          "commerce",
+          "education"
+        ],
+        "languages": [
+          "igbo",
+          "english"
+        ],
+        "cultural_significance": "Coal city, eastern Nigeria hub",
+        "gameplay_features": [
+          "urban_exploration",
+          "mining",
+          "education"
+        ],
+        "restrictions": []
+      }
+    },
+    {
+      "id": "ng:state:fc",
+      "name": "Federal Capital Territory",
+      "code": "FC",
+      "capital": "Federal Capital Territory",
+      "region": "northcentral",
+      "lgas": [
+        "ng:lga:fc:abaji",
+        "ng:lga:fc:abuja",
+        "ng:lga:fc:bwari",
+        "ng:lga:fc:gwagwalada",
+        "ng:lga:fc:kuje",
+        "ng:lga:fc:kwali"
+      ],
+      "population": 3500000,
+      "area_km2": 7315,
+      "coordinates": {
+        "center": {
+          "latitude": 8.91,
+          "longitude": 7.19
+        },
+        "bounds": {
+          "west": 6.94,
+          "south": 8.48,
+          "east": 7.48,
+          "north": 9.28
+        }
+      },
+      "environment": {
+        "climate": "tropical",
+        "terrain": "savanna",
+        "primary_industries": [
+          "government",
+          "services",
+          "real-estate"
+        ],
+        "languages": [
+          "english",
+          "hausa",
+          "yoruba",
+          "igbo"
+        ],
+        "cultural_significance": "Nigeria's capital, center of governance",
+        "gameplay_features": [
+          "government_jobs",
+          "diplomacy",
+          "urban_living"
+        ],
+        "restrictions": []
+      }
+    },
+    {
+      "id": "ng:state:go",
+      "name": "Gombe",
+      "code": "GO",
+      "capital": "Gombe",
+      "region": "northeast",
+      "lgas": [
+        "ng:lga:go:akko",
+        "ng:lga:go:balanga",
+        "ng:lga:go:billiri",
+        "ng:lga:go:dukku",
+        "ng:lga:go:funakaye",
+        "ng:lga:go:gombe",
+        "ng:lga:go:kaltungo",
+        "ng:lga:go:kwami",
+        "ng:lga:go:nafada",
+        "ng:lga:go:shongom",
+        "ng:lga:go:yamaltu-deba"
+      ],
+      "population": 3500000,
+      "area_km2": 10000,
+      "coordinates": {
+        "center": {
+          "latitude": 10.29,
+          "longitude": 11.25
+        },
+        "bounds": {
+          "west": 10.77,
+          "south": 9.65,
+          "east": 11.68,
+          "north": 11.13
+        }
+      },
+      "environment": {
+        "climate": "semi-arid",
+        "terrain": "savanna",
+        "primary_industries": [
+          "agriculture",
+          "education"
+        ],
+        "languages": [
+          "hausa",
+          "fulfulde",
+          "english"
+        ],
+        "cultural_significance": "Jewel in the savannah",
+        "gameplay_features": [
+          "education",
+          "agriculture",
+          "rural_life"
+        ],
+        "restrictions": []
+      }
+    },
+    {
+      "id": "ng:state:im",
+      "name": "Imo",
+      "code": "IM",
+      "capital": "Imo",
+      "region": "southeast",
+      "lgas": [
+        "ng:lga:im:aboh-mbaise",
+        "ng:lga:im:ahiazu-mbaise",
+        "ng:lga:im:ehime-mbano",
+        "ng:lga:im:ezinihitte-mbaise",
+        "ng:lga:im:ideato-north",
+        "ng:lga:im:ideato-south",
+        "ng:lga:im:ihitte-uboma",
+        "ng:lga:im:ikeduru",
+        "ng:lga:im:isiala-mbano",
+        "ng:lga:im:isu",
+        "ng:lga:im:mbaitoli",
+        "ng:lga:im:ngor-okpala",
+        "ng:lga:im:njaba",
+        "ng:lga:im:nkwerre",
+        "ng:lga:im:nwangele",
+        "ng:lga:im:obowo",
+        "ng:lga:im:oguta",
+        "ng:lga:im:ohaji-egbema",
+        "ng:lga:im:okigwe",
+        "ng:lga:im:onuimo",
+        "ng:lga:im:orlu",
+        "ng:lga:im:orsu",
+        "ng:lga:im:oru-east",
+        "ng:lga:im:oru-west",
+        "ng:lga:im:owerri-municipal",
+        "ng:lga:im:owerri-north",
+        "ng:lga:im:owerri-west"
+      ],
+      "population": 5400000,
+      "area_km2": 5530,
+      "coordinates": {
+        "center": {
+          "latitude": 5.63,
+          "longitude": 7.13
+        },
+        "bounds": {
+          "west": 6.81,
+          "south": 5.31,
+          "east": 7.55,
+          "north": 5.98
+        }
+      },
+      "environment": {
+        "climate": "tropical",
+        "terrain": "forest",
+        "primary_industries": [
+          "oil-and-gas",
+          "commerce",
+          "education"
+        ],
+        "languages": [
+          "igbo",
+          "english"
+        ],
+        "cultural_significance": "Eastern heartland, oil producer",
+        "gameplay_features": [
+          "oil_industry",
+          "urban_exploration",
+          "education"
+        ],
+        "restrictions": []
+      }
+    },
+    {
+      "id": "ng:state:ji",
+      "name": "Jigawa",
+      "code": "JI",
+      "capital": "Jigawa",
+      "region": "northwest",
+      "lgas": [
+        "ng:lga:ji:auyo",
+        "ng:lga:ji:babura",
+        "ng:lga:ji:biriniwa",
+        "ng:lga:ji:birnin-kudu",
+        "ng:lga:ji:buji",
+        "ng:lga:ji:dutse",
+        "ng:lga:ji:gagarawa",
+        "ng:lga:ji:garki",
+        "ng:lga:ji:gumel",
+        "ng:lga:ji:guri",
+        "ng:lga:ji:gwaram",
+        "ng:lga:ji:gwiwa",
+        "ng:lga:ji:hadejia",
+        "ng:lga:ji:jahun",
+        "ng:lga:ji:kafin-hausa",
+        "ng:lga:ji:kaugama",
+        "ng:lga:ji:kazaure",
+        "ng:lga:ji:kiri-kasama",
+        "ng:lga:ji:kiyawa",
+        "ng:lga:ji:maigatari",
+        "ng:lga:ji:malam-madori",
+        "ng:lga:ji:miga",
+        "ng:lga:ji:ringim",
+        "ng:lga:ji:roni",
+        "ng:lga:ji:sule-tankarkar",
+        "ng:lga:ji:taura",
+        "ng:lga:ji:yankwashi"
+      ],
+      "population": 5200000,
+      "area_km2": 23154,
+      "coordinates": {
+        "center": {
+          "latitude": 12.32,
+          "longitude": 9.44
+        },
+        "bounds": {
+          "west": 8.27,
+          "south": 11.19,
+          "east": 10.48,
+          "north": 12.8
+        }
+      },
+      "environment": {
+        "climate": "semi-arid",
+        "terrain": "savanna",
+        "primary_industries": [
+          "agriculture",
+          "livestock"
+        ],
+        "languages": [
+          "hausa",
+          "fulfulde",
+          "english"
+        ],
+        "cultural_significance": "Agricultural state in the north",
+        "gameplay_features": [
+          "agriculture",
+          "rural_life",
+          "cultural_heritage"
+        ],
+        "restrictions": []
+      }
+    },
+    {
+      "id": "ng:state:kd",
+      "name": "Kaduna",
+      "code": "KD",
+      "capital": "Kaduna",
+      "region": "northwest",
+      "lgas": [
+        "ng:lga:kd:birnin-gwari",
+        "ng:lga:kd:chikun",
+        "ng:lga:kd:giwa",
+        "ng:lga:kd:igabi",
+        "ng:lga:kd:ikara",
+        "ng:lga:kd:jaba",
+        "ng:lga:kd:jema-a",
+        "ng:lga:kd:kachia",
+        "ng:lga:kd:kaduna-north",
+        "ng:lga:kd:kaduna-south",
+        "ng:lga:kd:kagarko",
+        "ng:lga:kd:kajuru",
+        "ng:lga:kd:kaura",
+        "ng:lga:kd:kauru",
+        "ng:lga:kd:kubau",
+        "ng:lga:kd:kudan",
+        "ng:lga:kd:lere",
+        "ng:lga:kd:makarfi",
+        "ng:lga:kd:sabon-gari",
+        "ng:lga:kd:sanga",
+        "ng:lga:kd:soba",
+        "ng:lga:kd:zangon-kataf",
+        "ng:lga:kd:zaria"
+      ],
+      "population": 8000000,
+      "area_km2": 46053,
+      "coordinates": {
+        "center": {
+          "latitude": 10.38,
+          "longitude": 7.88
+        },
+        "bounds": {
+          "west": 6.55,
+          "south": 9.23,
+          "east": 8.68,
+          "north": 11.3
+        }
+      },
+      "environment": {
+        "climate": "tropical",
+        "terrain": "savanna",
+        "primary_industries": [
+          "manufacturing",
+          "agriculture",
+          "education"
+        ],
+        "languages": [
+          "hausa",
+          "english"
+        ],
+        "cultural_significance": "Centre of learning, industrial hub",
+        "gameplay_features": [
+          "urban_exploration",
+          "manufacturing",
+          "education"
+        ],
+        "restrictions": []
+      }
+    },
+    {
+      "id": "ng:state:kn",
+      "name": "Kano",
+      "code": "KN",
+      "capital": "Kano",
+      "region": "northwest",
+      "lgas": [
+        "ng:lga:kn:ajingi",
+        "ng:lga:kn:albasu",
+        "ng:lga:kn:bagwai",
+        "ng:lga:kn:bebeji",
+        "ng:lga:kn:bichi",
+        "ng:lga:kn:bunkure",
+        "ng:lga:kn:dala",
+        "ng:lga:kn:dambatta",
+        "ng:lga:kn:dawakin-kudu",
+        "ng:lga:kn:dawakin-tofa",
+        "ng:lga:kn:doguwa",
+        "ng:lga:kn:fagge",
+        "ng:lga:kn:gabasawa",
+        "ng:lga:kn:garko",
+        "ng:lga:kn:garun-malam",
+        "ng:lga:kn:gaya",
+        "ng:lga:kn:gezawa",
+        "ng:lga:kn:gwale",
+        "ng:lga:kn:gwarzo",
+        "ng:lga:kn:kabo",
+        "ng:lga:kn:kano-municipal",
+        "ng:lga:kn:karaye",
+        "ng:lga:kn:kibiya",
+        "ng:lga:kn:kiru",
+        "ng:lga:kn:kumbotso",
+        "ng:lga:kn:kunchi",
+        "ng:lga:kn:kura",
+        "ng:lga:kn:madobi",
+        "ng:lga:kn:makoda",
+        "ng:lga:kn:minjibir",
+        "ng:lga:kn:nasarawa",
+        "ng:lga:kn:rano",
+        "ng:lga:kn:rimin-gado",
+        "ng:lga:kn:rogo",
+        "ng:lga:kn:shanono",
+        "ng:lga:kn:sumaila",
+        "ng:lga:kn:takai",
+        "ng:lga:kn:tarauni",
+        "ng:lga:kn:tofa",
+        "ng:lga:kn:tsanyawa",
+        "ng:lga:kn:tudun-wada",
+        "ng:lga:kn:ungogo",
+        "ng:lga:kn:warawa",
+        "ng:lga:kn:wudil"
+      ],
+      "population": 13000000,
+      "area_km2": 20131,
+      "coordinates": {
+        "center": {
+          "latitude": 11.8,
+          "longitude": 8.49
+        },
+        "bounds": {
+          "west": 7.83,
+          "south": 8.53,
+          "east": 9.16,
+          "north": 12.5
+        }
+      },
+      "environment": {
+        "climate": "semi-arid",
+        "terrain": "savanna",
+        "primary_industries": [
+          "commerce",
+          "manufacturing",
+          "agriculture"
+        ],
+        "languages": [
+          "hausa",
+          "english"
+        ],
+        "cultural_significance": "Commercial center of northern Nigeria",
+        "gameplay_features": [
+          "market_trading",
+          "commerce",
+          "cultural_heritage"
+        ],
+        "restrictions": []
+      }
+    },
+    {
+      "id": "ng:state:kt",
+      "name": "Katsina",
+      "code": "KT",
+      "capital": "Katsina",
+      "region": "northwest",
+      "lgas": [
+        "ng:lga:kt:bakori",
+        "ng:lga:kt:batagarawa",
+        "ng:lga:kt:batsari",
+        "ng:lga:kt:baure",
+        "ng:lga:kt:bindawa",
+        "ng:lga:kt:charanchi",
+        "ng:lga:kt:dan-musa",
+        "ng:lga:kt:dandume",
+        "ng:lga:kt:danja",
+        "ng:lga:kt:daura",
+        "ng:lga:kt:dutsi",
+        "ng:lga:kt:dutsin-ma",
+        "ng:lga:kt:faskari",
+        "ng:lga:kt:funtua",
+        "ng:lga:kt:ingawa",
+        "ng:lga:kt:jibia",
+        "ng:lga:kt:kafur",
+        "ng:lga:kt:kaita",
+        "ng:lga:kt:kankara",
+        "ng:lga:kt:kankia",
+        "ng:lga:kt:katsina",
+        "ng:lga:kt:kurfi",
+        "ng:lga:kt:kusada",
+        "ng:lga:kt:mai-adua",
+        "ng:lga:kt:malumfashi",
+        "ng:lga:kt:mani",
+        "ng:lga:kt:mashi",
+        "ng:lga:kt:matazu",
+        "ng:lga:kt:musawa",
+        "ng:lga:kt:rimi",
+        "ng:lga:kt:sabuwa",
+        "ng:lga:kt:safana",
+        "ng:lga:kt:sandamu",
+        "ng:lga:kt:zango"
+      ],
+      "population": 7500000,
+      "area_km2": 24192,
+      "coordinates": {
+        "center": {
+          "latitude": 12.44,
+          "longitude": 7.71
+        },
+        "bounds": {
+          "west": 7.03,
+          "south": 11.3,
+          "east": 8.77,
+          "north": 13.19
+        }
+      },
+      "environment": {
+        "climate": "semi-arid",
+        "terrain": "savanna",
+        "primary_industries": [
+          "agriculture",
+          "livestock"
+        ],
+        "languages": [
+          "hausa",
+          "fulfulde",
+          "english"
+        ],
+        "cultural_significance": "Home of hospitality",
+        "gameplay_features": [
+          "agriculture",
+          "rural_life",
+          "cultural_heritage"
+        ],
+        "restrictions": []
+      }
+    },
+    {
+      "id": "ng:state:ke",
+      "name": "Kebbi",
+      "code": "KE",
+      "capital": "Kebbi",
+      "region": "northwest",
+      "lgas": [
+        "ng:lga:ke:aliero",
+        "ng:lga:ke:arewa-dandi",
+        "ng:lga:ke:argungu",
+        "ng:lga:ke:augie",
+        "ng:lga:ke:bagudo",
+        "ng:lga:ke:birnin-kebbi",
+        "ng:lga:ke:bunza",
+        "ng:lga:ke:dandi",
+        "ng:lga:ke:danko-wasagu",
+        "ng:lga:ke:fakai",
+        "ng:lga:ke:gwandu",
+        "ng:lga:ke:jega",
+        "ng:lga:ke:kalgo",
+        "ng:lga:ke:koko-besse",
+        "ng:lga:ke:maiyama",
+        "ng:lga:ke:ngaski",
+        "ng:lga:ke:sakaba",
+        "ng:lga:ke:shanga",
+        "ng:lga:ke:suru",
+        "ng:lga:ke:yauri",
+        "ng:lga:ke:zuru"
+      ],
+      "population": 4000000,
+      "area_km2": 36800,
+      "coordinates": {
+        "center": {
+          "latitude": 11.91,
+          "longitude": 4.82
+        },
+        "bounds": {
+          "west": 4.01,
+          "south": 10.41,
+          "east": 8.67,
+          "north": 12.88
+        }
+      },
+      "environment": {
+        "climate": "semi-arid",
+        "terrain": "savanna",
+        "primary_industries": [
+          "agriculture",
+          "fishing"
+        ],
+        "languages": [
+          "hausa",
+          "english"
+        ],
+        "cultural_significance": "Land of equity",
+        "gameplay_features": [
+          "agriculture",
+          "fishing",
+          "rural_life"
+        ],
+        "restrictions": []
+      }
+    },
+    {
+      "id": "ng:state:ko",
+      "name": "Kogi",
+      "code": "KO",
+      "capital": "Kogi",
+      "region": "northcentral",
+      "lgas": [
+        "ng:lga:ko:adavi",
+        "ng:lga:ko:ajaokuta",
+        "ng:lga:ko:ankpa",
+        "ng:lga:ko:bassa",
+        "ng:lga:ko:dekina",
+        "ng:lga:ko:ibaji",
+        "ng:lga:ko:idah",
+        "ng:lga:ko:igalamela-odolu",
+        "ng:lga:ko:ijumu",
+        "ng:lga:ko:kabba-bunu",
+        "ng:lga:ko:kogi",
+        "ng:lga:ko:lokoja",
+        "ng:lga:ko:mopa-muro",
+        "ng:lga:ko:ofu",
+        "ng:lga:ko:ogori-magongo",
+        "ng:lga:ko:okehi",
+        "ng:lga:ko:okene",
+        "ng:lga:ko:olamaboro",
+        "ng:lga:ko:omala",
+        "ng:lga:ko:yagba-east",
+        "ng:lga:ko:yagba-west"
+      ],
+      "population": 4400000,
+      "area_km2": 29833,
+      "coordinates": {
+        "center": {
+          "latitude": 7.62,
+          "longitude": 6.63
+        },
+        "bounds": {
+          "west": 5.55,
+          "south": 6.87,
+          "east": 7.63,
+          "north": 8.25
+        }
+      },
+      "environment": {
+        "climate": "tropical",
+        "terrain": "savanna",
+        "primary_industries": [
+          "agriculture",
+          "mining",
+          "trade"
+        ],
+        "languages": [
+          "igala",
+          "yoruba",
+          "english"
+        ],
+        "cultural_significance": "Confluence state, central Nigeria",
+        "gameplay_features": [
+          "river_transport",
+          "mining",
+          "trade"
+        ],
+        "restrictions": []
+      }
+    },
+    {
+      "id": "ng:state:kw",
+      "name": "Kwara",
+      "code": "KW",
+      "capital": "Kwara",
+      "region": "northcentral",
+      "lgas": [
+        "ng:lga:kw:asa",
+        "ng:lga:kw:baruten",
+        "ng:lga:kw:edu",
+        "ng:lga:kw:ekiti",
+        "ng:lga:kw:ifelodun",
+        "ng:lga:kw:ilorin-east",
+        "ng:lga:kw:ilorin-south",
+        "ng:lga:kw:ilorin-west",
+        "ng:lga:kw:irepodun",
+        "ng:lga:kw:isin",
+        "ng:lga:kw:kaiama",
+        "ng:lga:kw:moro",
+        "ng:lga:kw:offa",
+        "ng:lga:kw:oke-ero",
+        "ng:lga:kw:oyun",
+        "ng:lga:kw:pategi"
+      ],
+      "population": 3800000,
+      "area_km2": 36825,
+      "coordinates": {
+        "center": {
+          "latitude": 8.6,
+          "longitude": 4.73
+        },
+        "bounds": {
+          "west": 3.25,
+          "south": 8.09,
+          "east": 5.75,
+          "north": 9.61
+        }
+      },
+      "environment": {
+        "climate": "tropical",
+        "terrain": "savanna",
+        "primary_industries": [
+          "agriculture",
+          "education"
+        ],
+        "languages": [
+          "yoruba",
+          "english"
+        ],
+        "cultural_significance": "State of harmony",
+        "gameplay_features": [
+          "education",
+          "agriculture",
+          "cultural_heritage"
+        ],
+        "restrictions": []
+      }
+    },
+    {
+      "id": "ng:state:la",
+      "name": "Lagos",
+      "code": "LA",
+      "capital": "Lagos",
+      "region": "southwest",
+      "lgas": [
+        "ng:lga:la:agege",
+        "ng:lga:la:ajeromi-ifelodun",
+        "ng:lga:la:alimosho",
+        "ng:lga:la:amuwo-odofin",
+        "ng:lga:la:apapa",
+        "ng:lga:la:badagry",
+        "ng:lga:la:epe",
+        "ng:lga:la:eti-osa",
+        "ng:lga:la:ibeju-lekki",
+        "ng:lga:la:ifako-ijaiye",
+        "ng:lga:la:ikeja",
+        "ng:lga:la:ikorodu",
+        "ng:lga:la:kosofe",
+        "ng:lga:la:lagos-island",
+        "ng:lga:la:lagos-mainland",
+        "ng:lga:la:mushin",
+        "ng:lga:la:ojo",
+        "ng:lga:la:oshodi-isolo",
+        "ng:lga:la:somolu",
+        "ng:lga:la:surulere"
+      ],
+      "population": 15000000,
+      "area_km2": 3577,
+      "coordinates": {
+        "center": {
+          "latitude": 6.52,
+          "longitude": 3.34
+        },
+        "bounds": {
+          "west": 2.88,
+          "south": 6.42,
+          "east": 3.98,
+          "north": 6.68
+        }
+      },
+      "environment": {
+        "climate": "tropical",
+        "terrain": "coastal",
+        "primary_industries": [
+          "commerce",
+          "finance",
+          "entertainment",
+          "technology"
+        ],
+        "languages": [
+          "yoruba",
+          "english"
+        ],
+        "cultural_significance": "Commercial capital of Nigeria, entertainment hub",
+        "gameplay_features": [
+          "urban_exploration",
+          "business_ownership",
+          "entertainment",
+          "tech_industry"
+        ],
+        "restrictions": []
+      }
+    },
+    {
+      "id": "ng:state:na",
+      "name": "Nasarawa",
+      "code": "NA",
+      "capital": "Nasarawa",
+      "region": "northcentral",
+      "lgas": [
+        "ng:lga:na:akwanga",
+        "ng:lga:na:awe",
+        "ng:lga:na:doma",
+        "ng:lga:na:karu",
+        "ng:lga:na:keana",
+        "ng:lga:na:keffi",
+        "ng:lga:na:kokona",
+        "ng:lga:na:lafia",
+        "ng:lga:na:nasarawa",
+        "ng:lga:na:nasarawa-egon",
+        "ng:lga:na:obi",
+        "ng:lga:na:toto",
+        "ng:lga:na:wamba"
+      ],
+      "population": 2500000,
+      "area_km2": 27117,
+      "coordinates": {
+        "center": {
+          "latitude": 8.47,
+          "longitude": 7.64
+        },
+        "bounds": {
+          "west": 3.95,
+          "south": 7,
+          "east": 8.8,
+          "north": 9.02
+        }
+      },
+      "environment": {
+        "climate": "tropical",
+        "terrain": "savanna",
+        "primary_industries": [
+          "agriculture",
+          "mining",
+          "tourism"
+        ],
+        "languages": [
+          "english"
+        ],
+        "cultural_significance": "Home of solid minerals",
+        "gameplay_features": [
+          "mining",
+          "tourism",
+          "agriculture"
+        ],
+        "restrictions": []
+      }
+    },
+    {
+      "id": "ng:state:ni",
+      "name": "Niger",
+      "code": "NI",
+      "capital": "Niger",
+      "region": "northcentral",
+      "lgas": [
+        "ng:lga:ni:agaie",
+        "ng:lga:ni:agwara",
+        "ng:lga:ni:bida",
+        "ng:lga:ni:borgu",
+        "ng:lga:ni:bosso",
+        "ng:lga:ni:chanchaga",
+        "ng:lga:ni:edati",
+        "ng:lga:ni:gbako",
+        "ng:lga:ni:gurara",
+        "ng:lga:ni:katcha",
+        "ng:lga:ni:kontagora",
+        "ng:lga:ni:lapai",
+        "ng:lga:ni:lavun",
+        "ng:lga:ni:magama",
+        "ng:lga:ni:mariga",
+        "ng:lga:ni:mashegu",
+        "ng:lga:ni:mokwa",
+        "ng:lga:ni:munya",
+        "ng:lga:ni:paikoro",
+        "ng:lga:ni:rafi",
+        "ng:lga:ni:rijau",
+        "ng:lga:ni:shiroro",
+        "ng:lga:ni:suleja",
+        "ng:lga:ni:tafa",
+        "ng:lga:ni:wushishi"
+      ],
+      "population": 5500000,
+      "area_km2": 76363,
+      "coordinates": {
+        "center": {
+          "latitude": 9.74,
+          "longitude": 6.01
+        },
+        "bounds": {
+          "west": 3.5,
+          "south": 8.82,
+          "east": 7.25,
+          "north": 11.1
+        }
+      },
+      "environment": {
+        "climate": "tropical",
+        "terrain": "savanna",
+        "primary_industries": [
+          "agriculture",
+          "hydroelectric",
+          "tourism"
+        ],
+        "languages": [
+          "hausa",
+          "english"
+        ],
+        "cultural_significance": "Largest state by area, power generation",
+        "gameplay_features": [
+          "tourism",
+          "hydroelectric",
+          "rural_life"
+        ],
+        "restrictions": []
+      }
+    },
+    {
+      "id": "ng:state:og",
+      "name": "Ogun",
+      "code": "OG",
+      "capital": "Ogun",
+      "region": "southwest",
+      "lgas": [
+        "ng:lga:og:abeokuta-north",
+        "ng:lga:og:abeokuta-south",
+        "ng:lga:og:ado-odo-ota",
+        "ng:lga:og:ewekoro",
+        "ng:lga:og:ifo",
+        "ng:lga:og:ijebu-east",
+        "ng:lga:og:ijebu-north",
+        "ng:lga:og:ijebu-north-east",
+        "ng:lga:og:ijebu-ode",
+        "ng:lga:og:ikenne",
+        "ng:lga:og:imeko-afon",
+        "ng:lga:og:ipokia",
+        "ng:lga:og:obafemi-owode",
+        "ng:lga:og:odeda",
+        "ng:lga:og:odogbolu",
+        "ng:lga:og:ogun-waterside",
+        "ng:lga:og:remo-north",
+        "ng:lga:og:shagamu",
+        "ng:lga:og:yewa-north",
+        "ng:lga:og:yewa-south"
+      ],
+      "population": 5200000,
+      "area_km2": 16981,
+      "coordinates": {
+        "center": {
+          "latitude": 6.92,
+          "longitude": 3.5
+        },
+        "bounds": {
+          "west": 2.85,
+          "south": 6.48,
+          "east": 4.4,
+          "north": 7.63
+        }
+      },
+      "environment": {
+        "climate": "tropical",
+        "terrain": "forest",
+        "primary_industries": [
+          "manufacturing",
+          "education",
+          "agriculture"
+        ],
+        "languages": [
+          "yoruba",
+          "english"
+        ],
+        "cultural_significance": "Gateway state, industrial hub",
+        "gameplay_features": [
+          "manufacturing",
+          "education",
+          "urban_exploration"
+        ],
+        "restrictions": []
+      }
+    },
+    {
+      "id": "ng:state:on",
+      "name": "Ondo",
+      "code": "ON",
+      "capital": "Ondo",
+      "region": "southwest",
+      "lgas": [
+        "ng:lga:on:akoko-north-east",
+        "ng:lga:on:akoko-north-west",
+        "ng:lga:on:akoko-south-east",
+        "ng:lga:on:akoko-south-west",
+        "ng:lga:on:akure-north",
+        "ng:lga:on:akure-south",
+        "ng:lga:on:ese-odo",
+        "ng:lga:on:idanre",
+        "ng:lga:on:ifedore",
+        "ng:lga:on:ilaje",
+        "ng:lga:on:ile-oluji-okeigbo",
+        "ng:lga:on:irele",
+        "ng:lga:on:odigbo",
+        "ng:lga:on:okitipupa",
+        "ng:lga:on:ondo-east",
+        "ng:lga:on:ondo-west",
+        "ng:lga:on:ose",
+        "ng:lga:on:owo"
+      ],
+      "population": 5400000,
+      "area_km2": 15500,
+      "coordinates": {
+        "center": {
+          "latitude": 7.05,
+          "longitude": 5.23
+        },
+        "bounds": {
+          "west": 4.72,
+          "south": 6.26,
+          "east": 5.91,
+          "north": 7.64
+        }
+      },
+      "environment": {
+        "climate": "tropical",
+        "terrain": "forest",
+        "primary_industries": [
+          "oil-and-gas",
+          "agriculture",
+          "tourism"
+        ],
+        "languages": [
+          "yoruba",
+          "english"
+        ],
+        "cultural_significance": "Sunshine state, cocoa producer",
+        "gameplay_features": [
+          "agriculture",
+          "oil_industry",
+          "tourism"
+        ],
+        "restrictions": []
+      }
+    },
+    {
+      "id": "ng:state:os",
+      "name": "Osun",
+      "code": "OS",
+      "capital": "Osun",
+      "region": "southwest",
+      "lgas": [
+        "ng:lga:os:aiyedire",
+        "ng:lga:os:atakunmosa-east",
+        "ng:lga:os:atakunmosa-west",
+        "ng:lga:os:ayedaade",
+        "ng:lga:os:boluwaduro",
+        "ng:lga:os:boripe",
+        "ng:lga:os:ede-north",
+        "ng:lga:os:ede-south",
+        "ng:lga:os:egbedore",
+        "ng:lga:os:ejigbo",
+        "ng:lga:os:ife-central",
+        "ng:lga:os:ife-east",
+        "ng:lga:os:ife-north",
+        "ng:lga:os:ife-south",
+        "ng:lga:os:ifedayo",
+        "ng:lga:os:ifelodun",
+        "ng:lga:os:ila",
+        "ng:lga:os:ilesa-east",
+        "ng:lga:os:ilesa-west",
+        "ng:lga:os:irepodun",
+        "ng:lga:os:irewole",
+        "ng:lga:os:isokan",
+        "ng:lga:os:iwo",
+        "ng:lga:os:obokun",
+        "ng:lga:os:odo-otin",
+        "ng:lga:os:ola-oluwa",
+        "ng:lga:os:olorunda",
+        "ng:lga:os:oriade",
+        "ng:lga:os:orolu",
+        "ng:lga:os:osogbo"
+      ],
+      "population": 3500000,
+      "area_km2": 9251,
+      "coordinates": {
+        "center": {
+          "latitude": 7.68,
+          "longitude": 4.55
+        },
+        "bounds": {
+          "west": 4.18,
+          "south": 7.2,
+          "east": 4.98,
+          "north": 8.02
+        }
+      },
+      "environment": {
+        "climate": "tropical",
+        "terrain": "forest",
+        "primary_industries": [
+          "education",
+          "agriculture",
+          "tourism"
+        ],
+        "languages": [
+          "yoruba",
+          "english"
+        ],
+        "cultural_significance": "Land of harmony, cultural heritage",
+        "gameplay_features": [
+          "cultural_heritage",
+          "education",
+          "tourism"
+        ],
+        "restrictions": []
+      }
+    },
+    {
+      "id": "ng:state:oy",
+      "name": "Oyo",
+      "code": "OY",
+      "capital": "Oyo",
+      "region": "southwest",
+      "lgas": [
+        "ng:lga:oy:afijio",
+        "ng:lga:oy:akinyele",
+        "ng:lga:oy:atiba",
+        "ng:lga:oy:atisbo",
+        "ng:lga:oy:egbeda",
+        "ng:lga:oy:ibadan-north",
+        "ng:lga:oy:ibadan-north-east",
+        "ng:lga:oy:ibadan-north-west",
+        "ng:lga:oy:ibadan-south-east",
+        "ng:lga:oy:ibadan-south-west",
+        "ng:lga:oy:ibarapa-central",
+        "ng:lga:oy:ibarapa-east",
+        "ng:lga:oy:ibarapa-north",
+        "ng:lga:oy:ido",
+        "ng:lga:oy:irepo",
+        "ng:lga:oy:iseyin",
+        "ng:lga:oy:itesiwaju",
+        "ng:lga:oy:iwajowa",
+        "ng:lga:oy:kajola",
+        "ng:lga:oy:lagelu",
+        "ng:lga:oy:ogbomosho-north",
+        "ng:lga:oy:ogbomosho-south",
+        "ng:lga:oy:ogo-oluwa",
+        "ng:lga:oy:olorunsogo",
+        "ng:lga:oy:oluyole",
+        "ng:lga:oy:ona-ara",
+        "ng:lga:oy:oorelope",
+        "ng:lga:oy:ori-ire",
+        "ng:lga:oy:oyo-east",
+        "ng:lga:oy:oyo-west",
+        "ng:lga:oy:saki-east",
+        "ng:lga:oy:saki-west",
+        "ng:lga:oy:surulere"
+      ],
+      "population": 7000000,
+      "area_km2": 28454,
+      "coordinates": {
+        "center": {
+          "latitude": 7.78,
+          "longitude": 3.79
+        },
+        "bounds": {
+          "west": 3.05,
+          "south": 6.5,
+          "east": 4.25,
+          "north": 8.83
+        }
+      },
+      "environment": {
+        "climate": "tropical",
+        "terrain": "savanna",
+        "primary_industries": [
+          "agriculture",
+          "education",
+          "commerce"
+        ],
+        "languages": [
+          "yoruba",
+          "english"
+        ],
+        "cultural_significance": "Pace setter state, historic Oyo Empire",
+        "gameplay_features": [
+          "cultural_heritage",
+          "education",
+          "agriculture"
+        ],
+        "restrictions": []
+      }
+    },
+    {
+      "id": "ng:state:pl",
+      "name": "Plateau",
+      "code": "PL",
+      "capital": "Plateau",
+      "region": "northcentral",
+      "lgas": [
+        "ng:lga:pl:barkin-ladi",
+        "ng:lga:pl:bassa",
+        "ng:lga:pl:bokkos",
+        "ng:lga:pl:jos-east",
+        "ng:lga:pl:jos-north",
+        "ng:lga:pl:jos-south",
+        "ng:lga:pl:kanam",
+        "ng:lga:pl:kanke",
+        "ng:lga:pl:langtang-north",
+        "ng:lga:pl:langtang-south",
+        "ng:lga:pl:mangu",
+        "ng:lga:pl:mikang",
+        "ng:lga:pl:pankshin",
+        "ng:lga:pl:qua-an-pan",
+        "ng:lga:pl:riyom",
+        "ng:lga:pl:shendam",
+        "ng:lga:pl:wase"
+      ],
+      "population": 4200000,
+      "area_km2": 30913,
+      "coordinates": {
+        "center": {
+          "latitude": 9.36,
+          "longitude": 9.29
+        },
+        "bounds": {
+          "west": 8.67,
+          "south": 8.63,
+          "east": 9.99,
+          "north": 10.08
+        }
+      },
+      "environment": {
+        "climate": "montane",
+        "terrain": "plateau",
+        "primary_industries": [
+          "tourism",
+          "agriculture",
+          "mining"
+        ],
+        "languages": [
+          "english"
+        ],
+        "cultural_significance": "Home of peace and tourism",
+        "gameplay_features": [
+          "tourism",
+          "mining",
+          "agriculture"
+        ],
+        "restrictions": []
+      }
+    },
+    {
+      "id": "ng:state:ri",
+      "name": "Rivers",
+      "code": "RI",
+      "capital": "Rivers",
+      "region": "southsouth",
+      "lgas": [
+        "ng:lga:ri:abua-odual",
+        "ng:lga:ri:ahoada-east",
+        "ng:lga:ri:ahoada-west",
+        "ng:lga:ri:akuku-toru",
+        "ng:lga:ri:andoni",
+        "ng:lga:ri:asari-toru",
+        "ng:lga:ri:bonny",
+        "ng:lga:ri:degema",
+        "ng:lga:ri:eleme",
+        "ng:lga:ri:emohua",
+        "ng:lga:ri:etche",
+        "ng:lga:ri:gokana",
+        "ng:lga:ri:ikwerre",
+        "ng:lga:ri:khana",
+        "ng:lga:ri:obio-akpor",
+        "ng:lga:ri:ogba-egbema-ndoni",
+        "ng:lga:ri:ogu-bolo",
+        "ng:lga:ri:okrika",
+        "ng:lga:ri:omuma",
+        "ng:lga:ri:opobo-nkoro",
+        "ng:lga:ri:oyigbo",
+        "ng:lga:ri:port-harcourt",
+        "ng:lga:ri:tai"
+      ],
+      "population": 6500000,
+      "area_km2": 11077,
+      "coordinates": {
+        "center": {
+          "latitude": 4.81,
+          "longitude": 7.02
+        },
+        "bounds": {
+          "west": 6.48,
+          "south": 4.43,
+          "east": 7.55,
+          "north": 5.34
+        }
+      },
+      "environment": {
+        "climate": "tropical",
+        "terrain": "coastal",
+        "primary_industries": [
+          "oil-and-gas",
+          "commerce",
+          "fishing"
+        ],
+        "languages": [
+          "english"
+        ],
+        "cultural_significance": "Oil capital, commercial hub",
+        "gameplay_features": [
+          "oil_industry",
+          "urban_exploration",
+          "commerce"
+        ],
+        "restrictions": []
+      }
+    },
+    {
+      "id": "ng:state:so",
+      "name": "Sokoto",
+      "code": "SO",
+      "capital": "Sokoto",
+      "region": "northwest",
+      "lgas": [
+        "ng:lga:so:binji",
+        "ng:lga:so:bodinga",
+        "ng:lga:so:dange-shuni",
+        "ng:lga:so:gada",
+        "ng:lga:so:goronyo",
+        "ng:lga:so:gudu",
+        "ng:lga:so:gwadabawa",
+        "ng:lga:so:illela",
+        "ng:lga:so:isa",
+        "ng:lga:so:kebbe",
+        "ng:lga:so:kware",
+        "ng:lga:so:rabah",
+        "ng:lga:so:sabon-birni",
+        "ng:lga:so:shagari",
+        "ng:lga:so:silame",
+        "ng:lga:so:sokoto-north",
+        "ng:lga:so:sokoto-south",
+        "ng:lga:so:tambuwal",
+        "ng:lga:so:tangaza",
+        "ng:lga:so:tureta",
+        "ng:lga:so:wamako",
+        "ng:lga:so:wurno",
+        "ng:lga:so:yabo"
+      ],
+      "population": 4200000,
+      "area_km2": 25973,
+      "coordinates": {
+        "center": {
+          "latitude": 13.1,
+          "longitude": 5.27
+        },
+        "bounds": {
+          "west": 4.43,
+          "south": 12.13,
+          "east": 6.41,
+          "north": 13.77
+        }
+      },
+      "environment": {
+        "climate": "arid",
+        "terrain": "savanna",
+        "primary_industries": [
+          "agriculture",
+          "livestock"
+        ],
+        "languages": [
+          "hausa",
+          "fulfulde",
+          "english"
+        ],
+        "cultural_significance": "Seat of the caliphate, spiritual center",
+        "gameplay_features": [
+          "cultural_heritage",
+          "agriculture",
+          "rural_life"
+        ],
+        "restrictions": []
+      }
+    },
+    {
+      "id": "ng:state:ta",
+      "name": "Taraba",
+      "code": "TA",
+      "capital": "Taraba",
+      "region": "northeast",
+      "lgas": [
+        "ng:lga:ta:ardo-kola",
+        "ng:lga:ta:bali",
+        "ng:lga:ta:donga",
+        "ng:lga:ta:gashaka",
+        "ng:lga:ta:gassol",
+        "ng:lga:ta:ibi",
+        "ng:lga:ta:jalingo",
+        "ng:lga:ta:karim-lamido",
+        "ng:lga:ta:kurmi",
+        "ng:lga:ta:lau",
+        "ng:lga:ta:sardauna",
+        "ng:lga:ta:takum",
+        "ng:lga:ta:ussa",
+        "ng:lga:ta:wukari",
+        "ng:lga:ta:yorro",
+        "ng:lga:ta:zing"
+      ],
+      "population": 3800000,
+      "area_km2": 54473,
+      "coordinates": {
+        "center": {
+          "latitude": 8.21,
+          "longitude": 10.77
+        },
+        "bounds": {
+          "west": 9.78,
+          "south": 6.95,
+          "east": 11.74,
+          "north": 9.2
+        }
+      },
+      "environment": {
+        "climate": "tropical",
+        "terrain": "plateau",
+        "primary_industries": [
+          "agriculture",
+          "tourism"
+        ],
+        "languages": [
+          "english"
+        ],
+        "cultural_significance": "Nature's gift, diverse ecology",
+        "gameplay_features": [
+          "tourism",
+          "agriculture",
+          "nature_exploration"
+        ],
+        "restrictions": []
+      }
+    },
+    {
+      "id": "ng:state:yo",
+      "name": "Yobe",
+      "code": "YO",
+      "capital": "Yobe",
+      "region": "northeast",
+      "lgas": [
+        "ng:lga:yo:bade",
+        "ng:lga:yo:bursari",
+        "ng:lga:yo:damaturu",
+        "ng:lga:yo:fika",
+        "ng:lga:yo:fune",
+        "ng:lga:yo:geidam",
+        "ng:lga:yo:gujba",
+        "ng:lga:yo:gulani",
+        "ng:lga:yo:jakusko",
+        "ng:lga:yo:karasuwa",
+        "ng:lga:yo:machina",
+        "ng:lga:yo:nangere",
+        "ng:lga:yo:nguru",
+        "ng:lga:yo:potiskum",
+        "ng:lga:yo:tarmuwa",
+        "ng:lga:yo:yunusari",
+        "ng:lga:yo:yusufari"
+      ],
+      "population": 3500000,
+      "area_km2": 10000,
+      "coordinates": {
+        "center": {
+          "latitude": 12.31,
+          "longitude": 11.3
+        },
+        "bounds": {
+          "west": 10,
+          "south": 11,
+          "east": 12.03,
+          "north": 13.18
+        }
+      },
+      "environment": {
+        "climate": "arid",
+        "terrain": "savanna",
+        "primary_industries": [
+          "agriculture",
+          "livestock"
+        ],
+        "languages": [
+          "hausa",
+          "kanuri",
+          "english"
+        ],
+        "cultural_significance": "Pride of the savannah",
+        "gameplay_features": [
+          "agriculture",
+          "rural_life",
+          "cultural_heritage"
+        ],
+        "restrictions": [
+          "security_zones"
+        ]
+      }
+    },
+    {
+      "id": "ng:state:za",
+      "name": "Zamfara",
+      "code": "ZA",
+      "capital": "Zamfara",
+      "region": "northwest",
+      "lgas": [
+        "ng:lga:za:anka",
+        "ng:lga:za:bakura",
+        "ng:lga:za:birnin-magaji-kiyaw",
+        "ng:lga:za:bukkuyum",
+        "ng:lga:za:bungudu",
+        "ng:lga:za:gummi",
+        "ng:lga:za:gusau",
+        "ng:lga:za:kaura-namoda",
+        "ng:lga:za:maradun",
+        "ng:lga:za:maru",
+        "ng:lga:za:shinkafi",
+        "ng:lga:za:talata-mafara",
+        "ng:lga:za:tsafe",
+        "ng:lga:za:zurmi"
+      ],
+      "population": 4200000,
+      "area_km2": 39761,
+      "coordinates": {
+        "center": {
+          "latitude": 12.29,
+          "longitude": 6.3
+        },
+        "bounds": {
+          "west": 5.17,
+          "south": 11.6,
+          "east": 6.9,
+          "north": 13.03
+        }
+      },
+      "environment": {
+        "climate": "semi-arid",
+        "terrain": "savanna",
+        "primary_industries": [
+          "mining",
+          "agriculture"
+        ],
+        "languages": [
+          "hausa",
+          "fulfulde",
+          "english"
+        ],
+        "cultural_significance": "Farming state, mineral wealth",
+        "gameplay_features": [
+          "mining",
+          "agriculture",
+          "rural_life"
+        ],
+        "restrictions": [
+          "security_zones"
+        ]
+      }
+    }
+  ]
+}
