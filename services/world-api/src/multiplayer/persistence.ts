@@ -17,11 +17,13 @@ import { initializeJusticeWorldState } from "../justice/service.js";
 import { emptyPoliceMaps, initializePoliceWorldState } from "../police/service.js";
 import { emptyMilitaryMaps, initializeMilitaryWorldState } from "../military/service.js";
 import { emptyCrimeMaps, initializeCrimeWorldState } from "../crime/service.js";
+import { emptyCultureMaps, initializeCultureWorldState } from "../culture/service.js";
 import type { PersistentElectionMaps } from "../elections/types.js";
 import type { PersistentJusticeMaps } from "../justice/types.js";
 import type { PersistentPoliceMaps } from "../police/types.js";
 import type { PersistentMilitaryMaps } from "../military/types.js";
 import type { PersistentCrimeMaps } from "../crime/types.js";
+import type { PersistentCultureMaps } from "../culture/types.js";
 import type { LifeCatalog } from "../life/types.js";
 import type { PersistentCareerMaps } from "../careers/types.js";
 import type { PersistentEconomyMaps } from "../economy/types.js";
@@ -546,7 +548,7 @@ function isBusinessEvent(value: unknown, key: string): boolean {
 }
 
 function validateState(value: unknown, now: number): PersistentWorldState {
-  if (!isRecord(value) || (value.schemaVersion !== 1 && value.schemaVersion !== 2 && value.schemaVersion !== 3 && value.schemaVersion !== 4 && value.schemaVersion !== 5 && value.schemaVersion !== 6 && value.schemaVersion !== 7 && value.schemaVersion !== 8 && value.schemaVersion !== 9 && value.schemaVersion !== 10 && value.schemaVersion !== 11 && value.schemaVersion !== 12) ||
+  if (!isRecord(value) || (value.schemaVersion !== 1 && value.schemaVersion !== 2 && value.schemaVersion !== 3 && value.schemaVersion !== 4 && value.schemaVersion !== 5 && value.schemaVersion !== 6 && value.schemaVersion !== 7 && value.schemaVersion !== 8 && value.schemaVersion !== 9 && value.schemaVersion !== 10 && value.schemaVersion !== 11 && value.schemaVersion !== 12 && value.schemaVersion !== 13) ||
     value.worldId !== WORLD_ID || !isRecord(value.worldClock) || !isRecord(value.players)) {
     throw new Error("World data has an invalid schema; refusing to start with reset state.");
   }
@@ -763,8 +765,22 @@ function validateState(value: unknown, now: number): PersistentWorldState {
     crimeRehabilitation: value.crimeRehabilitation as PersistentCrimeMaps["crimeRehabilitation"],
     crimeAudits: value.crimeAudits as PersistentCrimeMaps["crimeAudits"],
   } : emptyCrimeMaps();
+  const cultureMaps: PersistentCultureMaps = schemaVersion >= 13 ? {
+    communities: value.communities as PersistentCultureMaps["communities"],
+    communityMemberships: value.communityMemberships as PersistentCultureMaps["communityMemberships"],
+    institutions: value.institutions as PersistentCultureMaps["institutions"],
+    institutionMemberships: value.institutionMemberships as PersistentCultureMaps["institutionMemberships"],
+    culturalProfiles: value.culturalProfiles as PersistentCultureMaps["culturalProfiles"],
+    communityEvents: value.communityEvents as PersistentCultureMaps["communityEvents"],
+    communityProjects: value.communityProjects as PersistentCultureMaps["communityProjects"],
+    communityAnnouncements: value.communityAnnouncements as PersistentCultureMaps["communityAnnouncements"],
+    communityReputation: value.communityReputation as PersistentCultureMaps["communityReputation"],
+    communityDisputes: value.communityDisputes as PersistentCultureMaps["communityDisputes"],
+    communityContributions: value.communityContributions as PersistentCultureMaps["communityContributions"],
+    communityAudits: value.communityAudits as PersistentCultureMaps["communityAudits"],
+  } : emptyCultureMaps();
   const state = {
-    schemaVersion: 12 as const,
+    schemaVersion: 13 as const,
     worldId: WORLD_ID,
     worldClock: normalizeWorldClock(clock, now, catalog),
     players: {} as Record<string, PersistentPlayer>,
@@ -787,6 +803,7 @@ function validateState(value: unknown, now: number): PersistentWorldState {
     ...policeMaps,
     ...militaryMaps,
     ...crimeMaps,
+    ...cultureMaps,
   } satisfies PersistentWorldState;
 
   for (const [playerId, rawPlayer] of Object.entries(value.players)) {
@@ -825,7 +842,7 @@ function validateState(value: unknown, now: number): PersistentWorldState {
 function initialState(now: number): PersistentWorldState {
   const catalog = loadLifeCatalog();
   const state: PersistentWorldState = {
-    schemaVersion: 12,
+    schemaVersion: 13,
     worldId: WORLD_ID,
     worldClock: normalizeWorldClock({
       day: catalog.calendar.starting_world_day,
@@ -845,6 +862,7 @@ function initialState(now: number): PersistentWorldState {
     ...emptyPoliceMaps(),
     ...emptyMilitaryMaps(),
     ...emptyCrimeMaps(),
+    ...emptyCultureMaps(),
   };
   initializeCareerWorldState(state, now);
   initializeEconomyWorldState(state, now);
@@ -856,6 +874,7 @@ function initialState(now: number): PersistentWorldState {
   initializePoliceWorldState(state);
   initializeMilitaryWorldState(state);
   initializeCrimeWorldState(state);
+  initializeCultureWorldState(state);
   return state;
 }
 

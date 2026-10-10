@@ -4,7 +4,7 @@
 
 ## Current stage and verification gate
 
-**Stage 15 — Crime & Consequences: backend implementation and Node tests pass; crime integrates with Stage 6 (careers), Stage 7 (economy), Stage 10 (government), Stage 12 (justice), and Stage 13 (police); Godot client/runtime verification is blocked.** Stages 0–14 remain preserved on the same `nigeria-main` world. The server still owns one shared online timeline. The earlier Stage 5 Godot limitation is still open; Stages 6–15 do not resolve it.
+**Stage 16 — Religion, Culture & Community: backend implementation and Node tests pass; culture integrates with Stage 3 (geography), Stage 5 (life), Stage 6 (careers), Stage 7 (economy), Stage 10 (government), and Stage 12 (justice); Godot client/runtime verification is blocked.** Stages 0–15 remain preserved on the same `nigeria-main` world. The server still owns one shared online timeline. The earlier Stage 5 Godot limitation is still open; Stages 6–16 do not resolve it.
 
 Godot 4.7.2 is not installed (`godot: command not found`). Project import, engine type-checking, scenes, rendered careers UI, clicks through work/application flows, offline client journeys, and Godot multiplayer/reconnect/save runtime behavior have not been run. Do not infer client success from Node tests or gdtoolkit.
 
@@ -400,6 +400,47 @@ Schema version advanced to 12 with 9 new persistent maps. `services/world-api/sr
 | Schema-v11 to v12 migration with crime maps | Persistence test | **Passed (Node)** |
 | WebSocket crime actions | WebSocket test | **Passed (Node)** |
 | Godot project import, engine typing, client crime UI | Godot unavailable | **Blocked / not run** |
+
+## Stage 16 implementation
+
+- `game/data/culture/catalog.json` configures 15 community types, 10 institution categories, 5 religious categories, 15 institution roles, 7 festival categories, 9 project categories, 15 languages, 10 festival definitions, project status transitions, and anti-exploit rules.
+- Community creation with geographic linkage (state, LGA, ward, settlement).
+- Voluntary community/institution membership with age checks and role support.
+- Religious institutions with configurable categories and gathering schedules.
+- Traditional institutions with leadership tracking.
+- Cultural profiles with languages, religious affiliation, cultural interests (all voluntary).
+- Festival definitions linked to regions and categories.
+- Community events with attendance tracking and capacity.
+- Community projects with lifecycle (proposed → active → completed), contributions, and volunteer tracking.
+- Community announcements with scope (community/institution/regional).
+- Community disputes with mediation and justice system referral.
+- Community reputation with participation, trust, and decay.
+- Audit trails for all significant actions.
+- Integration: geographic linkage, life profile, government interface boundaries, economy integration for project budgets.
+
+Schema version advanced to 13 with 12 new persistent maps. `services/world-api/src/culture/` contains typed catalogue, service, and exports. `services/world-api/src/multiplayer/world-engine.ts` integrates `culture.action` commands with 26 actions and cultural profiles in character snapshots.
+
+## Stage 16 acceptance coverage
+
+| Area | Evidence | Result |
+|---|---|---|
+| Catalogue structure, community types, institutions | `services/world-api/test/culture.test.mjs` | **Passed (Node)** |
+| Community creation with age enforcement | Culture service tests | **Passed (Node)** |
+| Community membership join/leave | Culture service tests | **Passed (Node)** |
+| Duplicate membership prevention | Culture service tests | **Passed (Node)** |
+| Institution creation and membership | Culture service tests | **Passed (Node)** |
+| Cultural profile update and queries | Culture service tests | **Passed (Node)** |
+| Event creation and attendance | Culture service tests | **Passed (Node)** |
+| Event cancellation | Culture service tests | **Passed (Node)** |
+| Project lifecycle and contributions | Culture service tests | **Passed (Node)** |
+| Project transition validation | Culture service tests | **Passed (Node)** |
+| Announcements | Culture service tests | **Passed (Node)** |
+| Disputes and resolution | Culture service tests | **Passed (Node)** |
+| Reputation decay | Culture service tests | **Passed (Node)** |
+| Error messages | Culture service tests | **Passed (Node)** |
+| Schema-v12 to v13 migration with culture maps | Persistence test | **Passed (Node)** |
+| WebSocket culture actions | WebSocket test | **Passed (Node)** |
+| Godot project import, engine typing, client culture UI | Godot unavailable | **Blocked / not run** |
 
 ## Stage 11 acceptance coverage
 

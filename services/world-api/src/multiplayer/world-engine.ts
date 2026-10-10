@@ -180,6 +180,8 @@ import { MilitaryCatalogService, MilitaryService, initializeMilitaryWorldState, 
 import type { ServiceBranchId, AssignmentTypeId, EquipmentCategoryId, NationalSecurityEventCategoryId } from "../military/types.js";
 import { CrimeCatalogService, CrimeService, initializeCrimeWorldState, seedCrimeWorld, crimeErrorMessage } from "../crime/index.js";
 import type { CrimeCategoryId, CrimeIncidentStatusId, ParticipantRoleId } from "../crime/types.js";
+import { CultureCatalogService, CultureService, initializeCultureWorldState, seedCultureWorld, cultureErrorMessage } from "../culture/index.js";
+import type { CommunityTypeId, InstitutionCategoryId, ProjectCategoryId, ProjectStatusId, ReligiousCategoryId } from "../culture/types.js";
 import { loadLifeCatalog, dateForWorldDay, isValidDate, worldClockSnapshot } from "../life/calendar.js";
 import {
   advanceWorldLife,
@@ -535,6 +537,7 @@ export class MultiplayerWorld {
   private readonly policeCatalog = new PoliceCatalogService();
   private readonly militaryCatalog = new MilitaryCatalogService();
   private readonly crimeCatalog = new CrimeCatalogService();
+  private readonly cultureCatalog = new CultureCatalogService();
   private readonly lifeCatalog = loadLifeCatalog();
   private lastTickAt: number;
   private lastBroadcastAt = 0;
@@ -827,6 +830,7 @@ export class MultiplayerWorld {
       case "police.action": await this.policeAction(context, player, message, requestId); return;
       case "military.action": await this.militaryAction(context, player, message, requestId); return;
       case "crime.action": await this.crimeAction(context, player, message, requestId); return;
+      case "culture.action": await this.cultureAction(context, player, message, requestId); return;
       case "chat.send": this.handleChat(context, player, message, requestId); return;
       case "player.interact": this.handlePlayerInteraction(context, player, message, requestId); return;
       case "relationship.progress": await this.progressRelationship(context, player, message, requestId); return;
@@ -938,6 +942,8 @@ export class MultiplayerWorld {
     seedMilitaryWorld(this.store.state, this.store.state.worldClock.world_date);
     initializeCrimeWorldState(this.store.state);
     seedCrimeWorld();
+    initializeCultureWorldState(this.store.state);
+    seedCultureWorld();
     this.playerByTokenHash.set(tokenHash, playerId);
     this.playerByCreationKeyHash.set(creationKeyHash, playerId);
     // The upcoming snapshot includes all current changes; keep later concurrent dirtiness intact.
@@ -3606,6 +3612,299 @@ export class MultiplayerWorld {
     await this.flushDirty();
   }
 
+  private async cultureAction(
+    context: ConnectionContext,
+    player: PersistentPlayer,
+    message: Record<string, unknown>,
+    requestId?: string,
+  ): Promise<void> {
+    const data = message;
+    const action = typeof data.action === "string" ? data.action : "";
+    if (!action || action.length > 48) {
+      this.send(context, appendOptionalRequestId({
+        type: "culture.error", action: "", code: "culture_action_invalid",
+        message: "Choose a supported culture action.",
+      }, requestId));
+      return;
+    }
+
+    const characterId = player.character.character_id;
+    const worldDate = this.store.state.worldClock.world_date;
+    const cultureService = new CultureService(this.store.state, this.cultureCatalog);
+    let messageText = "";
+    const responseData: Record<string, unknown> = {};
+
+    try {
+      switch (action) {
+        case "list_community_types": {
+          const types = this.cultureCatalog.get().community_types;
+          responseData.types = types;
+          messageText = `Found ${types.length} community types.`;
+          break;
+        }
+        case "list_institution_categories": {
+          const categories = this.cultureCatalog.get().institution_categories;
+          responseData.categories = categories;
+          messageText = `Found ${categories.length} institution categories.`;
+          break;
+        }
+        case "list_languages": {
+          const languages = this.cultureCatalog.get().languages;
+          responseData.languages = languages;
+          messageText = `Found ${languages.length} languages.`;
+          break;
+        }
+        case "list_festivals": {
+          const festivals = this.cultureCatalog.get().festival_definitions;
+          responseData.festivals = festivals;
+          messageText = `Found ${festivals.length} festival definitions.`;
+          break;
+        }
+        case "list_religious_categories": {
+          const categories = this.cultureCatalog.get().religious_categories;
+          responseData.categories = categories;
+          messageText = `Found ${categories.length} religious categories.`;
+          break;
+        }
+        case "create_community": {
+          const name = typeof data.name === "string" ? data.name : "";
+          const description = typeof data.description === "string" ? data.description : "";
+          const communityType = typeof data.community_type === "string" ? data.community_type as CommunityTypeId : "" as CommunityTypeId;
+          if (!name || !communityType) throw new Error("culture_community_type_invalid");
+          const community = cultureService.createCommunity({
+            name, description, community_type: communityType,
+            state_id: typeof data.state_id === "string" ? data.state_id : null,
+            lga_id: typeof data.lga_id === "string" ? data.lga_id : null,
+            ward_id: typeof data.ward_id === "string" ? data.ward_id : null,
+            settlement_id: typeof data.settlement_id === "string" ? data.settlement_id : null,
+            cultural_associations: Array.isArray(data.cultural_associations) ? data.cultural_associations as string[] : [],
+            languages: Array.isArray(data.languages) ? data.languages as string[] : [],
+            creator_character_id: characterId,
+            creator_age: player.character.age,
+          }, worldDate);
+          responseData.community = community;
+          messageText = `Community "${name}" created.`;
+          break;
+        }
+        case "list_communities": {
+          const stateId = typeof data.state_id === "string" ? data.state_id : undefined;
+          const lgaId = typeof data.lga_id === "string" ? data.lga_id : undefined;
+          const type = typeof data.community_type === "string" ? data.community_type as CommunityTypeId : undefined;
+          const communities = cultureService.listCommunities(stateId, lgaId, type);
+          responseData.communities = communities.map((c) => ({ community_id: c.community_id, name: c.name, community_type: c.community_type, state_id: c.state_id, lga_id: c.lga_id, status: c.status }));
+          messageText = `Found ${communities.length} communities.`;
+          break;
+        }
+        case "view_community": {
+          const communityId = typeof data.community_id === "string" ? data.community_id : "";
+          if (!communityId) throw new Error("culture_community_not_found");
+          const snapshot = cultureService.getCommunitySnapshot(communityId);
+          if (!snapshot) throw new Error("culture_community_not_found");
+          responseData.community = snapshot;
+          messageText = `Community: ${snapshot.name} (${snapshot.member_count} members)`;
+          break;
+        }
+        case "join_community": {
+          const communityId = typeof data.community_id === "string" ? data.community_id : "";
+          if (!communityId) throw new Error("culture_community_not_found");
+          const membership = cultureService.joinCommunity(communityId, characterId, player.character.age, worldDate);
+          responseData.membership = membership;
+          messageText = "Joined community.";
+          break;
+        }
+        case "leave_community": {
+          const communityId = typeof data.community_id === "string" ? data.community_id : "";
+          if (!communityId) throw new Error("culture_community_not_found");
+          cultureService.leaveCommunity(communityId, characterId, worldDate);
+          messageText = "Left community.";
+          break;
+        }
+        case "my_memberships": {
+          const memberships = cultureService.getCharacterMemberships(characterId);
+          responseData.memberships = memberships.map((m) => ({ membership_id: m.membership_id, community_id: m.community_id, status: m.status, roles: m.roles, joined_at: m.joined_at }));
+          messageText = `Found ${memberships.length} memberships.`;
+          break;
+        }
+        case "create_institution": {
+          const name = typeof data.name === "string" ? data.name : "";
+          const category = typeof data.category === "string" ? data.category as InstitutionCategoryId : "" as InstitutionCategoryId;
+          const generalCategory = typeof data.general_category === "string" ? data.general_category as import("../culture/types.js").InstitutionGeneralCategory : "community" as import("../culture/types.js").InstitutionGeneralCategory;
+          const description = typeof data.description === "string" ? data.description : "";
+          if (!name || !category) throw new Error("culture_institution_category_invalid");
+          const institution = cultureService.createInstitution({
+            name, category, general_category: generalCategory,
+            religious_category: typeof data.religious_category === "string" ? data.religious_category as ReligiousCategoryId : null,
+            description,
+            community_id: typeof data.community_id === "string" ? data.community_id : null,
+            state_id: typeof data.state_id === "string" ? data.state_id : null,
+            lga_id: typeof data.lga_id === "string" ? data.lga_id : null,
+            settlement_id: typeof data.settlement_id === "string" ? data.settlement_id : null,
+            creator_character_id: characterId,
+            creator_age: player.character.age,
+          }, worldDate);
+          responseData.institution = institution;
+          messageText = `Institution "${name}" created.`;
+          break;
+        }
+        case "list_institutions": {
+          const communityId = typeof data.community_id === "string" ? data.community_id : undefined;
+          const stateId = typeof data.state_id === "string" ? data.state_id : undefined;
+          const institutions = cultureService.listInstitutions(communityId, stateId);
+          responseData.institutions = institutions.map((i) => ({ institution_id: i.institution_id, name: i.name, category: i.category, general_category: i.general_category, community_id: i.community_id, state_id: i.state_id, member_count: i.member_count, status: i.status }));
+          messageText = `Found ${institutions.length} institutions.`;
+          break;
+        }
+        case "join_institution": {
+          const institutionId = typeof data.institution_id === "string" ? data.institution_id : "";
+          if (!institutionId) throw new Error("culture_institution_not_found");
+          const membership = cultureService.joinInstitution(institutionId, characterId, player.character.age, worldDate);
+          responseData.membership = membership;
+          messageText = "Joined institution.";
+          break;
+        }
+        case "leave_institution": {
+          const institutionId = typeof data.institution_id === "string" ? data.institution_id : "";
+          if (!institutionId) throw new Error("culture_institution_not_found");
+          cultureService.leaveInstitution(institutionId, characterId, worldDate);
+          messageText = "Left institution.";
+          break;
+        }
+        case "update_cultural_profile": {
+          const languagesSpoken = Array.isArray(data.languages_spoken) ? data.languages_spoken as string[] : undefined;
+          const preferredLanguage = typeof data.preferred_language === "string" ? data.preferred_language : (data.preferred_language === null ? null : undefined);
+          const religiousAffiliation = typeof data.religious_affiliation === "string" ? data.religious_affiliation as ReligiousCategoryId : (data.religious_affiliation === null ? null : undefined);
+          const culturalInterests = Array.isArray(data.cultural_interests) ? data.cultural_interests as string[] : undefined;
+          const profile = cultureService.updateCulturalProfile({
+            character_id: characterId,
+            ...(languagesSpoken !== undefined ? { languages_spoken: languagesSpoken } : {}),
+            ...(preferredLanguage !== undefined ? { preferred_language: preferredLanguage } : {}),
+            ...(religiousAffiliation !== undefined ? { religious_affiliation: religiousAffiliation } : {}),
+            ...(culturalInterests !== undefined ? { cultural_interests: culturalInterests } : {}),
+          }, worldDate);
+          responseData.profile = profile;
+          messageText = "Cultural profile updated.";
+          break;
+        }
+        case "view_cultural_profile": {
+          const profile = cultureService.getCulturalProfileSnapshot(characterId);
+          responseData.profile = profile;
+          messageText = `Cultural profile: ${profile.community_memberships_count} communities, ${profile.institution_memberships_count} institutions`;
+          break;
+        }
+        case "create_event": {
+          const name = typeof data.name === "string" ? data.name : "";
+          const description = typeof data.description === "string" ? data.description : "";
+          if (!name) throw new Error("culture_name_invalid");
+          const event = cultureService.createEvent({
+            community_id: typeof data.community_id === "string" ? data.community_id : null,
+            institution_id: typeof data.institution_id === "string" ? data.institution_id : null,
+            festival_definition_id: typeof data.festival_definition_id === "string" ? data.festival_definition_id : null,
+            name, description,
+            category: typeof data.category === "string" ? data.category : "cultural",
+            organizer_character_id: characterId,
+            state_id: typeof data.state_id === "string" ? data.state_id : null,
+            lga_id: typeof data.lga_id === "string" ? data.lga_id : null,
+            settlement_id: typeof data.settlement_id === "string" ? data.settlement_id : null,
+            start_world_date: worldDate,
+            capacity: typeof data.capacity === "number" ? data.capacity : null,
+          }, worldDate);
+          responseData.event = event;
+          messageText = `Event "${name}" scheduled.`;
+          break;
+        }
+        case "attend_event": {
+          const eventId = typeof data.event_id === "string" ? data.event_id : "";
+          if (!eventId) throw new Error("culture_event_not_found");
+          cultureService.attendEvent(eventId, characterId, worldDate);
+          messageText = "Event attendance recorded.";
+          break;
+        }
+        case "list_events": {
+          const communityId = typeof data.community_id === "string" ? data.community_id : undefined;
+          const institutionId = typeof data.institution_id === "string" ? data.institution_id : undefined;
+          const events = cultureService.listEvents(communityId, institutionId);
+          responseData.events = events.map((e) => ({ event_id: e.event_id, name: e.name, category: e.category, status: e.status, attendee_count: e.attendee_character_ids.length, start_world_date: e.start_world_date }));
+          messageText = `Found ${events.length} events.`;
+          break;
+        }
+        case "create_project": {
+          const communityId = typeof data.community_id === "string" ? data.community_id : "";
+          const name = typeof data.name === "string" ? data.name : "";
+          const description = typeof data.description === "string" ? data.description : "";
+          const category = typeof data.category === "string" ? data.category as ProjectCategoryId : "community" as ProjectCategoryId;
+          const budget = typeof data.budget === "number" ? data.budget : 0;
+          if (!communityId || !name) throw new Error("culture_community_not_found");
+          const project = cultureService.createProject({
+            community_id: communityId, name, description, category,
+            organizing_institution_id: typeof data.organizing_institution_id === "string" ? data.organizing_institution_id : null,
+            leader_character_id: characterId, budget,
+          }, worldDate);
+          responseData.project = project;
+          messageText = `Project "${name}" proposed.`;
+          break;
+        }
+        case "contribute_to_project": {
+          const projectId = typeof data.project_id === "string" ? data.project_id : "";
+          const contributionType = typeof data.contribution_type === "string" ? data.contribution_type as "financial" | "labor" | "materials" | "expertise" : "labor";
+          const amount = typeof data.amount === "number" ? data.amount : 0;
+          const description = typeof data.description === "string" ? data.description : "";
+          if (!projectId) throw new Error("culture_project_not_found");
+          const contribution = cultureService.contributeToProject(projectId, characterId, contributionType, amount, description, worldDate);
+          responseData.contribution = contribution;
+          messageText = "Contribution recorded.";
+          break;
+        }
+        case "list_projects": {
+          const communityId = typeof data.community_id === "string" ? data.community_id : undefined;
+          const status = typeof data.status === "string" ? data.status as ProjectStatusId : undefined;
+          const projects = cultureService.listProjects(communityId, status);
+          responseData.projects = projects.map((p) => ({ project_id: p.project_id, name: p.name, category: p.category, status: p.status, budget: p.budget, funds_raised: p.funds_raised, volunteer_count: p.volunteer_character_ids.length }));
+          messageText = `Found ${projects.length} projects.`;
+          break;
+        }
+        case "publish_announcement": {
+          const title = typeof data.title === "string" ? data.title : "";
+          const body = typeof data.body === "string" ? data.body : "";
+          if (!title) throw new Error("culture_name_invalid");
+          const announcement = cultureService.publishAnnouncement({
+            community_id: typeof data.community_id === "string" ? data.community_id : null,
+            institution_id: typeof data.institution_id === "string" ? data.institution_id : null,
+            author_character_id: characterId,
+            title, body,
+            scope: typeof data.scope === "string" ? data.scope as "community" | "institution" | "regional" : "community",
+          }, worldDate);
+          responseData.announcement = announcement;
+          messageText = `Announcement "${title}" published.`;
+          break;
+        }
+        case "list_announcements": {
+          const communityId = typeof data.community_id === "string" ? data.community_id : undefined;
+          const institutionId = typeof data.institution_id === "string" ? data.institution_id : undefined;
+          const announcements = cultureService.listAnnouncements(communityId, institutionId);
+          responseData.announcements = announcements.map((a) => ({ announcement_id: a.announcement_id, title: a.title, scope: a.scope, published_at: a.published_at, author_character_id: a.author_character_id }));
+          messageText = `Found ${announcements.length} announcements.`;
+          break;
+        }
+        default:
+          throw new Error("culture_action_unknown");
+      }
+    } catch (error) {
+      const code = this.errorCode(error);
+      this.send(context, appendOptionalRequestId({
+        type: "culture.error", action, code, message: cultureErrorMessage(code),
+      }, requestId));
+      return;
+    }
+
+    this.markRequestProcessed(player, requestId);
+    if (!["list_community_types", "list_institution_categories", "list_languages", "list_festivals", "list_religious_categories", "list_communities", "view_community", "my_memberships", "list_institutions", "view_cultural_profile", "list_events", "list_projects", "list_announcements"].includes(action)) this.touchPlayer(player);
+    this.send(context, appendOptionalRequestId({
+      type: "culture.result", action, ok: true, message: messageText, data: responseData,
+    }, requestId));
+    this.sendCharacterSnapshot(context);
+    await this.flushDirty();
+  }
+
   private programSeatCount(programId: string): number {
     if (!programId) return 0;
     const occupied = new Set<string>();
@@ -3892,6 +4191,7 @@ export class MultiplayerWorld {
     try { const policeService = new PoliceService(this.store.state, this.policeCatalog); const pp = policeService.getPoliceProfile(player.character.character_id); if (pp.is_officer) snapshot.police_profile = pp; } catch { /* ignore */ }
     try { const militaryService = new MilitaryService(this.store.state, this.militaryCatalog); const mp = militaryService.getMilitaryProfile(player.character.character_id); if (mp.is_service_member) snapshot.military_profile = mp; } catch { /* ignore */ }
     try { const crimeService = new CrimeService(this.store.state, this.crimeCatalog); const cp = crimeService.getCriminalProfile(player.character.character_id); if (cp.has_criminal_record || cp.notoriety_score > 0) snapshot.criminal_profile = cp; } catch { /* ignore */ }
+    try { const cultureService = new CultureService(this.store.state, this.cultureCatalog); const cup = cultureService.getCulturalProfileSnapshot(player.character.character_id); if (cup.languages_spoken.length > 0 || cup.community_memberships_count > 0 || cup.institution_memberships_count > 0) snapshot.cultural_profile = cup; } catch { /* ignore */ }
     return snapshot;
   }
 
