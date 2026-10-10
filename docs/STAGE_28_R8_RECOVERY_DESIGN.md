@@ -1,6 +1,6 @@
 # Stage 28 — R8: Recovery design (design only, not implemented)
 
-**Status:** DESIGN FOR REVIEW. Nothing in this document is implemented. Key-only recovery is **not** removed, and no code, data, client, or test behaviour changes as a result of this document. Implementation waits for review and an explicit approval. R8 is listed in `docs/STAGE_28_CREATION_KEY_REVIEW.md` (section 5) as "Stop recovery by key alone".
+**Status:** Direction **B** is approved as the design direction (user decision, 2026-10-10). **Implementation is NOT approved.** Section 10 gives the required detail. Its open decisions (section 10.8) must be answered first. Nothing in this document is implemented. Key-only recovery is **not** removed, and no code, data, client, or test behaviour changes as a result of this document. Implementation waits for review and an explicit approval. R8 is listed in `docs/STAGE_28_CREATION_KEY_REVIEW.md` (section 5) as "Stop recovery by key alone".
 
 **Related:** R7 (credential lifecycle, `docs/STAGE_28_R7_CREDENTIAL_LIFECYCLE_DESIGN.md`), the creation-key review (`docs/STAGE_28_CREATION_KEY_REVIEW.md`), and the account/character design (`docs/STAGE_28_ACCOUNT_CHARACTER_DESIGN.md`). Account integration is a separate task and is out of scope here.
 
@@ -132,9 +132,82 @@ Each phase needs tests that run against a copy of a saved world, and a rollback 
 
 ## 9. Decisions needed from the user
 
-1. Choose the direction: B first, or C first, or wait for accounts (A).
+1. ~~Choose the direction~~ **Answered:** B (device-bound session check, then a waiting period). C and A remain later steps.
 2. Approve the waiting-period policy for takeover of a device-bound identity, and the notification channel (if any).
 3. Approve the break-glass procedure (who may reissue a key, and how identity is verified outside the game).
 4. Confirm whether the phase 1 lazy upgrade may run on live data, or only after a dry run on a copy.
 
 **Status:** awaiting review. No implementation started.
+
+---
+
+## 10. Option B: required detail before implementation (design only)
+
+This section answers the four points the user asked for before any code is written: how ownership is verified, how notifications are delivered, how the legitimate player cancels, and what happens when delivery or processing fails. Existing players keep access. Recovery is never silently allowed when notification fails. **Nothing here is implemented.**
+
+### 10.1 What "a valid device session" means (verification)
+
+- The session token is a random 32-byte value held by the device's client storage. The server stores only `tokenHash` (SHA-256). A session is **live** when the identity's socket is connected (the `online` map). A live session is what the server can verify today without new state.
+- **Proposed rule (D1):** an identity has a valid device session when a session token for it is presented on a connected socket. A key-only takeover is refused while that is true (the current `player_already_connected` behaviour, extended to the new flow).
+- **Not decided (D2):** whether a token that was used recently, but whose socket is now closed, also counts as valid. A window would need a constant (for example, "last used within N days"). No value is proposed here, because any value would be invented. Without a window, tokens never expire, so the owner of an offline identity would be treated as having a valid session forever. That would make key-only recovery unreachable. D2 must be answered before implementation.
+- Ownership of a recovery is shown by **possession of the current session token**, not by the key. A key-only holder cannot cancel a pending recovery or pass the session check.
+
+### 10.2 Recovery request and waiting period
+
+1. A key-only request for an identity with **no** valid device session does **not** rotate the token. It creates a **pending recovery** record in the saved world: `playerId`, `requestedAt` (server time), and the requested key version. It stores **no IP address and no requester identifier**.
+2. The pending record is saved in the same serialized commit as the request. If that save fails, the request is refused and nothing changes (fail closed).
+3. The token rotates only when the waiting period has passed and the completion check (10.5) succeeds. Default waiting period: **24 hours** (user proposal). Configurable through an environment variable (name and bounds to be set with the implementation; proposed 1–168 hours). The period is measured from `requestedAt` in server time.
+4. A second key-only request while one is pending does **not** restart the clock. This stops repeated requests from extending the period indefinitely, and it stops an attacker from pushing back the owner's cancel window.
+5. While a recovery is pending, the **current token keeps working**. The owner's access is therefore unchanged during the wait.
+
+### 10.3 Notification delivery
+
+- **There is no out-of-band channel today.** The game has no email, SMS, push, or account contact details. The only channel is the game socket, and an offline owner has no socket.
+- **What can be delivered now:** the pending-recovery notice is sent to any connected socket of the identity, and it is shown on the owner's next `session.resume` with the valid token. The server records `notifiedAt` when the notice is actually sent to a socket. The server does not treat a send as confirmed delivery to a person.
+- **Consequence (decision D3):** a lost-device owner will not be notified until they next log in. An attacker can therefore wait out the 24 hours without any alert reaching the owner. The waiting period protects only owners who log in during that time. This is a real limit, and it must be accepted or rejected explicitly.
+- **Strict reading of "do not permit recovery when notification fails":** completion would require `notifiedAt` to be set, which needs a connected owner. Lost-device owners could then never recover without an operator (break-glass, D). That is a safe outcome, but it removes self-service recovery for lost devices. This is the main product decision (D4).
+
+### 10.4 Cancelling as the legitimate player
+
+- **Automatic cancel:** a successful `session.resume` with the valid token cancels any pending recovery for that identity in the same serialized commit. The owner needs to do nothing beyond signing in.
+- **Explicit cancel:** `identity.recovery.cancel` with the session token. It is refused without the token. The key alone cannot cancel.
+- Cancel and completion run in the serialized queue. Whichever commits first wins. Completion re-checks, inside the queue, that the pending record still exists and that the wait has passed. A cancel that commits after completion has no effect on the new token; the owner then uses the new token, and the cancel reports `no_pending_recovery`.
+
+### 10.5 Completion
+
+- Completion runs only when all of these hold, checked inside the queue: a pending record exists; the waiting period has passed; no valid device session exists (D1/D2); and the notice condition of D4 is met (under the strict rule, `notifiedAt` is set; under the wait-only rule, no notice is required).
+- Completion rotates the session token, clears the pending record, and records the recovery time. It uses the existing token-rotation path and its rollback.
+
+### 10.6 Failure and rollback
+
+| Failure | Behaviour |
+|---|---|
+| Pending record cannot be saved | Request refused; nothing changes; error `persistence_failed` |
+| Notification send fails (socket closed, or client not reading) | Record stays pending with `notifiedAt` unset. Recovery does not complete while D4 requires a notice. The attempt is counted in logs without key or token values |
+| Completion save fails | Token unchanged (existing rollback). Pending record stays. Retry on the next request after the wait |
+| Server restarts during the wait | Pending record is in the saved world; the wait continues from `requestedAt` after restart |
+| Owner resumes during the wait | Pending record cleared; the current token keeps working |
+| Lost response after completion saved | The new token is in the authoritative state but the client never received it. The next key-only presentation after the wait rotates it again (the R7 scenario 2 case). Must be documented for the client team |
+| Clock moves backwards | Waiting uses server time from the saved `requestedAt`. A backwards clock can extend the wait but cannot shorten it. This is noted, not solved |
+
+No failure path grants recovery without the wait and the checks above. No failure path deletes a player, a token, or another identity's data.
+
+### 10.7 Existing players and migration
+
+- Existing tokens and existing identities are **unchanged** on deployment. An identity that is online is refused for key-only takeover exactly as today.
+- The pending-recovery field is optional in the saved world (absent means none), so files written before the change load without it. This is an additive field and needs a load test on a copy of the saved corpus before rollout (the corpus is not currently available; see `docs/STAGE_28_CAPACITY.md`).
+- Old clients keep working for resume. An old client that presents only a key after a pending recovery receives the new pending error. It must be updated to show that state; it cannot be silently given a new session.
+
+### 10.8 Decisions needed before implementation
+
+| ID | Question | Why it matters |
+|---|---|---|
+| D1 | Confirm: a valid device session = a token presented on a connected socket | Enables the core takeover refusal with no new constants |
+| D2 | Should a recently used token (socket closed) also count as valid? If yes, what inactivity window? | Without a window, offline owners are treated as always logged in, so key-only recovery is unreachable |
+| D3 | Accept that a lost-device owner is notified only at their next login (no out-of-band channel today)? | This is the real protection level. An attacker can wait out the period silently |
+| D4 | Strict rule (recovery completes only after a delivered notice) or wait-only rule (completes after the period, with the attempt recorded)? | Strict rule means no self-service recovery for lost devices. Wait-only rule permits recovery without the owner being notified, which the instruction forbids unless the decision changes |
+| D5 | Waiting-period bounds and environment variable name | Default 24 hours is the user proposal; bounds are not set |
+
+**Recommendation for review (not decided):** implement D1 with the live-session rule first; keep key-only recovery for offline identities behind the 24-hour pending period; choose D4 strict for now, so that a lost-device player relies on the break-glass procedure until an out-of-band channel exists (accounts, Option A). Under that choice, self-service recovery of an offline identity is unavailable until a channel exists, and that is a visible product cost.
+
+**Status:** design only. No implementation, client change, schema change, or test has been written for Option B.
