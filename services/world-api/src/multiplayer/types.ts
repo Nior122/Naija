@@ -13,6 +13,7 @@ import type { PersistentMilitaryMaps, MilitaryProfileSnapshot } from "../militar
 import type { PersistentCrimeMaps, CriminalProfileSnapshot } from "../crime/types.js";
 import type { PersistentCultureMaps, CulturalProfileSnapshot } from "../culture/types.js";
 import type { PersistentEntertainmentMaps, EntertainmentProfileSnapshot } from "../entertainment/types.js";
+import type { PersistentSocialMaps } from "../social/types.js";
 import type {
   FamilyPersonRecord,
   FamilyRecord,
@@ -99,6 +100,8 @@ export interface CharacterRecord extends CharacterLifeFields {
   cultural_profile?: CulturalProfileSnapshot;
   /** The character's entertainment profile, if any. */
   entertainment_profile?: EntertainmentProfileSnapshot;
+  /** The character's social network profile, if any. */
+  social_profile?: import("../social/types.js").SocialProfileSnapshot;
 }
 
 export interface PersistentPlayer {
@@ -111,8 +114,8 @@ export interface PersistentPlayer {
   character: CharacterRecord;
 }
 
-export interface PersistentWorldState extends PersistentCareerMaps, PersistentEconomyMaps, PersistentBusinessMaps, PersistentPropertyMaps, PersistentGovernmentMaps, PersistentElectionMaps, PersistentJusticeMaps, PersistentPoliceMaps, PersistentMilitaryMaps, PersistentCrimeMaps, PersistentCultureMaps, PersistentEntertainmentMaps {
-  schemaVersion: 14;
+export interface PersistentWorldState extends PersistentCareerMaps, PersistentEconomyMaps, PersistentBusinessMaps, PersistentPropertyMaps, PersistentGovernmentMaps, PersistentElectionMaps, PersistentJusticeMaps, PersistentPoliceMaps, PersistentMilitaryMaps, PersistentCrimeMaps, PersistentCultureMaps, PersistentEntertainmentMaps, PersistentSocialMaps {
+  schemaVersion: 15;
   worldId: typeof WORLD_ID;
   worldClock: WorldClockState;
   players: Record<string, PersistentPlayer>;

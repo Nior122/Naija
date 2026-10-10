@@ -515,7 +515,7 @@ test("schema version 11 state migrates to version 12 with empty crime maps", asy
   const original = new WorldStore(stateFile, Date.UTC(2025, 0, 1));
   await original.flush();
   const saved = JSON.parse(await readFile(stateFile, "utf8"));
-  assert.equal(saved.schemaVersion, 14);
+  assert.equal(saved.schemaVersion, 15);
   saved.schemaVersion = 11;
   delete saved.crimeIncidents; delete saved.crimeParticipations; delete saved.crimeEvidence;
   delete saved.crimeReports; delete saved.criminalRecords; delete saved.crimeNotoriety;
@@ -528,9 +528,14 @@ test("schema version 11 state migrates to version 12 with empty crime maps", asy
   delete saved.contentRecords; delete saved.entertainmentEvents; delete saved.entertainmentContracts;
   delete saved.newsReports; delete saved.controversies; delete saved.contentModeration;
   delete saved.entertainmentCollaborations; delete saved.entertainmentAudits;
+  delete saved.socialProfiles; delete saved.socialFollows; delete saved.socialFollowRequests;
+  delete saved.socialPosts; delete saved.socialComments; delete saved.socialReactions;
+  delete saved.socialHashtags; delete saved.socialPostHashtags; delete saved.socialNotifications;
+  delete saved.socialBlocks; delete saved.socialMutes; delete saved.socialReports;
+  delete saved.socialAdCampaigns; delete saved.socialTrendingTopics; delete saved.socialAudits;
   await writeFile(stateFile, JSON.stringify(saved), "utf8");
   const migrated = new WorldStore(stateFile, Date.UTC(2025, 0, 2));
-  assert.equal(migrated.state.schemaVersion, 14);
+  assert.equal(migrated.state.schemaVersion, 15);
   assert.ok(typeof migrated.state.crimeIncidents === "object");
   assert.ok(typeof migrated.state.criminalRecords === "object");
   assert.ok(typeof migrated.state.crimeNotoriety === "object");
