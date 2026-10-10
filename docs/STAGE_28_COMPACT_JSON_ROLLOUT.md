@@ -29,7 +29,9 @@
 | default-cap run 1 | compact | 1,059 | 16,774,334 | `docs/evidence/stage28-capacity/default-cap-compact-run1.json` |
 | default-cap run 2 | compact | 1,069 | 16,776,341 | `docs/evidence/stage28-capacity/default-cap-compact-run2.json` |
 | default-cap run 3 | compact | 1,047 | 16,775,869 | `docs/evidence/stage28-capacity/default-cap-compact-run3.json` |
-| default-cap | pretty | see `STAGE_28_CAPACITY.md`, section 5.2 | | Measured after the guard, with `--format pretty` |
+| default-cap, requested 3,000 | pretty | 706 | 16,772,011 | `docs/evidence/stage28-capacity/default-cap-pretty-run1.json`. Measured after the guard, with `--format pretty` |
+| default-cap, requested 2,500 | pretty | 707 | 16,774,936 | `docs/evidence/stage28-capacity/default-cap-pretty-target2500.json` |
+| diagnostic, 700 identities kept | pretty | not refused (700 created) | 16,552,243 | `docs/evidence/stage28-capacity/default-cap-pretty-700-diagnostic.json` |
 
 Compact output is smaller, so more identities fit before the 16 MiB limit. The limit is unchanged. Compact does **not** remove the capacity limit, and it does not make 2,500 or more identities possible. See `STAGE_28_CAPACITY.md`.
 
