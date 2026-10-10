@@ -14,7 +14,7 @@ import { buildPoolConfig, loadDatabaseConfigFromEnv } from "../dist/database/con
  * Set TLS_TEST_CA_FILE to the test CA certificate (PEM) for the verified case.
  */
 
-const DATABASE_KEYS = ["DATABASE_URL", "DB_SSL", "DB_SSL_REJECT_UNAUTHORIZED", "NODE_EXTRA_CA_CERTS"];
+const DATABASE_KEYS = ["DATABASE_URL", "DB_SSL", "DB_SSL_REJECT_UNAUTHORIZED", "NODE_EXTRA_CA_CERTS", "NAIJA_ENV"];
 
 // ---- Part 1: pure policy ---------------------------------------------------------------------
 
@@ -46,7 +46,7 @@ test("TLS policy: sslmode=disable is rejected unless DB_SSL=false is also set", 
     () => buildPoolConfig({ connectionString: "postgres://user@localhost/naija?sslmode=disable" }),
     /requires DB_SSL=false/,
   );
-  const config = buildPoolConfig({ connectionString: "postgres://user@localhost/naija?sslmode=disable", ssl: false });
+  const config = buildPoolConfig({ connectionString: "postgres://user@localhost/naija?sslmode=disable", ssl: false, environment: "development" });
   assert.equal(config.ssl, false);
 });
 
@@ -58,7 +58,7 @@ test("TLS policy: DB_SSL=false conflicts with a verified sslmode in the URL", ()
 });
 
 test("TLS policy: DB_SSL_REJECT_UNAUTHORIZED=false is the only way to turn off certificate checks", () => {
-  const config = buildPoolConfig({ connectionString: "postgres://user@db.example.test/naija", rejectUnauthorized: false });
+  const config = buildPoolConfig({ connectionString: "postgres://user@db.example.test/naija", rejectUnauthorized: false, environment: "test" });
   assert.deepEqual(config.ssl, { rejectUnauthorized: false });
 });
 
@@ -69,6 +69,7 @@ test("TLS policy: environment variables are read into the same policy", () => {
     delete process.env.DB_SSL;
     delete process.env.DB_SSL_REJECT_UNAUTHORIZED;
     assert.deepEqual(buildPoolConfig(loadDatabaseConfigFromEnv()).ssl, { rejectUnauthorized: true });
+    process.env.NAIJA_ENV = "test";
     process.env.DB_SSL_REJECT_UNAUTHORIZED = "false";
     assert.deepEqual(buildPoolConfig(loadDatabaseConfigFromEnv()).ssl, { rejectUnauthorized: false });
   } finally {
@@ -112,7 +113,7 @@ if (TLS_URL) {
 function probe(extraEnv) {
   const env = { ...process.env };
   for (const key of DATABASE_KEYS) delete env[key];
-  Object.assign(env, extraEnv);
+  Object.assign(env, { NAIJA_ENV: "test" }, extraEnv);
   const script = fileURLToPath(new URL("./support/tls-probe.mjs", import.meta.url));
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [script], { env, stdio: ["ignore", "pipe", "pipe"] });

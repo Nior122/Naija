@@ -1,4 +1,6 @@
 import { Pool, type PoolConfig } from "pg";
+import { effectiveEnvironment, isLocalEnvironment, readRuntimeEnvironment, type RuntimeEnvironment } from "../runtime-environment.js";
+import { assertPlaintextHostIsLoopback, classifyPlaintextHost } from "./host-policy.js";
 
 /**
  * Database connection management for Naija: One World
@@ -20,6 +22,11 @@ export interface DatabaseConfig {
   ssl?: boolean;
   /** Defaults to true. Set false only for private CAs in local/test environments. */
   rejectUnauthorized?: boolean;
+  /**
+   * Runtime environment (NAIJA_ENV). Local-only options are refused unless this is "development" or "test".
+   * Undefined is treated as "production" by every policy check.
+   */
+  environment?: RuntimeEnvironment | undefined;
   maxConnections?: number;
   idleTimeoutMs?: number;
   connectionTimeoutMs?: number;
@@ -48,7 +55,14 @@ const VERIFIED_SSLMODES = new Set(["verify-full", "verify-ca", "require"]);
  */
 export function buildPoolConfig(config: DatabaseConfig = {}): PoolConfig {
   const poolConfig: PoolConfig = {};
+  const environment = effectiveEnvironment(config.environment);
+  const local = isLocalEnvironment(environment);
   const sslDisabled = config.ssl === false;
+
+  // pg reads PGHOSTADDR from the environment even when a host is configured, which could redirect a connection.
+  if (process.env.PGHOSTADDR) {
+    throw new Error("PGHOSTADDR is not supported. Set the database host explicitly in DATABASE_URL or DB_HOST.");
+  }
 
   if (config.connectionString) {
     if (!POSTGRES_URL_PATTERN.test(config.connectionString)) {
@@ -59,6 +73,10 @@ export function buildPoolConfig(config: DatabaseConfig = {}): PoolConfig {
       url = new URL(config.connectionString);
     } catch {
       throw new Error("DATABASE_URL could not be parsed as a connection URL.");
+    }
+    // pg lets these parameters override the host in the authority, which would make the host check ambiguous.
+    if (url.searchParams.has("host") || url.searchParams.has("hostaddr")) {
+      throw new Error("host and hostaddr URL parameters are not supported. Put the host in the URL.");
     }
     const sslmode = url.searchParams.get("sslmode");
     if (sslmode !== null) {
@@ -83,6 +101,16 @@ export function buildPoolConfig(config: DatabaseConfig = {}): PoolConfig {
     poolConfig.password = config.password;
   }
 
+  if (sslDisabled) {
+    if (!local) {
+      throw new Error("DB_SSL=false is allowed only when NAIJA_ENV is development or test.");
+    }
+    classifyPlaintextHost(targetHostOf(config));
+  }
+  if (config.rejectUnauthorized === false && !local) {
+    throw new Error("DB_SSL_REJECT_UNAUTHORIZED=false is allowed only when NAIJA_ENV is development or test.");
+  }
+
   poolConfig.ssl = sslDisabled ? false : { rejectUnauthorized: config.rejectUnauthorized ?? true };
   poolConfig.max = config.maxConnections ?? 20;
   poolConfig.idleTimeoutMillis = config.idleTimeoutMs ?? 30000;
@@ -90,6 +118,18 @@ export function buildPoolConfig(config: DatabaseConfig = {}): PoolConfig {
   poolConfig.statement_timeout = config.statementTimeoutMs ?? 30000;
 
   return poolConfig;
+}
+
+/** The host that a connection built from this configuration will reach, or undefined if it cannot be parsed. */
+export function targetHostOf(config: DatabaseConfig): string | undefined {
+  if (config.connectionString) {
+    try {
+      return new URL(config.connectionString).hostname;
+    } catch {
+      return undefined;
+    }
+  }
+  return config.host ?? "localhost";
 }
 
 export class DatabaseConnection {
@@ -113,7 +153,13 @@ export class DatabaseConnection {
       return;
     }
 
-    const pool = new Pool(buildPoolConfig(this.config ?? loadDatabaseConfigFromEnv()));
+    const resolved = this.config ?? loadDatabaseConfigFromEnv();
+    const poolConfig = buildPoolConfig(resolved);
+    if (poolConfig.ssl === false) {
+      // DNS is checked here, at connect time, for the "localhost" name. Failures are not connection errors.
+      await assertPlaintextHostIsLoopback(targetHostOf(resolved));
+    }
+    const pool = new Pool(poolConfig);
     this.pool = pool;
 
     // Test connection
@@ -257,7 +303,7 @@ export function loadDatabaseConfigFromEnv(): DatabaseConfig {
   const connectionString = process.env.DATABASE_URL;
 
   if (connectionString) {
-    const config: DatabaseConfig = { connectionString };
+    const config: DatabaseConfig = { connectionString, environment: readRuntimeEnvironment(process.env, { required: false }) };
     if (process.env.DB_SSL) {
       config.ssl = parseBooleanEnv("DB_SSL", process.env.DB_SSL);
     }
@@ -271,7 +317,7 @@ export function loadDatabaseConfigFromEnv(): DatabaseConfig {
   }
 
   // Fallback to individual environment variables
-  const config: DatabaseConfig = {};
+  const config: DatabaseConfig = { environment: readRuntimeEnvironment(process.env, { required: false }) };
 
   if (process.env.DB_HOST) {
     config.host = process.env.DB_HOST;

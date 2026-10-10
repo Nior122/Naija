@@ -43,16 +43,17 @@ test("Database config: certificate verification is on by default for individual 
   assert.deepEqual(poolConfig.ssl, { rejectUnauthorized: true });
 });
 
-test("Database config: verification can be disabled only by explicit opt-out", () => {
+test("Database config: verification can be disabled only by explicit opt-out in a local environment", () => {
   const poolConfig = buildPoolConfig({
     connectionString: "postgresql://user:pw@db.example.invalid/naija",
     rejectUnauthorized: false,
+    environment: "test",
   });
   assert.deepEqual(poolConfig.ssl, { rejectUnauthorized: false });
 });
 
 test("Database config: ssl=false disables TLS entirely and is explicit", () => {
-  const poolConfig = buildPoolConfig({ host: "localhost", ssl: false });
+  const poolConfig = buildPoolConfig({ host: "localhost", ssl: false, environment: "development" });
   assert.equal(poolConfig.ssl, false);
 });
 
@@ -97,6 +98,7 @@ test("Database connection: a failed connect is reported and the pool is discarde
   const db = new DatabaseConnection({
     connectionString: "postgresql://probe:probe@127.0.0.1:1/probe?sslmode=disable",
     ssl: false, // sslmode=disable is only accepted with an explicit opt-out
+    environment: "development", // plaintext is allowed only in a local environment, and only to loopback
   });
   await assert.rejects(() => db.connect(), /^Error: Database connection failed: /);
   assert.equal(db.isConnectedToDatabase(), false);
