@@ -78,6 +78,9 @@ Shutdown succeeded in all three runs, and the file was kept at the last successf
 |---|---|---|---|---|---|---|---|
 | real-300 (for composition) | 300 | 7,170,916 | 41.5 / 81.8 | — | — | 77.5 | — |
 | real-1000 | 1,000 | 23,574,464 (**over 16 MiB**) | 156.5 / 377.9 | 359.6 / 860.3 / 1,125.7 | 372.2 | 365.3 | 361.6 |
+| real-2500 (pretty, raised limit) | 2,500 | 58,917,782 (**over 16 MiB**) | 313.6 / 700.0 (all 2,501 saves) | 977.2 / 2,783.7 / 11,910.3 | 2,869.3 | 693.5 | not recorded |
+
+`real-saves-2500-raised-limit.json`: 2,500 created, no failure, no shutdown error, marginal 23,567 bytes per identity, finished 2026-10-10T21:17:50Z. The largest single save took 11.1 s and the largest creation 11.9 s. The limit was 1 GiB for this run only. Production keeps the 16 MiB limit, which refuses at about 707 identities.
 
 Real-1000 (pretty-printed, measured before the compact change) shows what the production limit prevents: the file would exceed 16 MiB at about 700 identities. With compact JSON the same limit is reached at about 1,050 identities (section 5.1).
 
@@ -159,7 +162,8 @@ Source: `docs/evidence/stage28-capacity/default-cap-compact-run{1,2,3}.json`. Sa
 - Each run ended with `world_capacity_reached` and a clean shutdown (`shutdown_error: null`). The saved file stayed under the limit in every run.
 - Pretty-format runs, for comparison (section 1.2): 705, 706, and 713 identities.
 - These are single-process loopback runs in the sandbox. They are not production measurements.
-- A run at 2,500 identities or more was **not** done with real saves. Each creation rewrites the whole world, so such a run would take far longer than this phase allows. The earlier no-op-flush runs (section 3) skip the save and do not show what a real save costs at those sizes.
+- **2,500 real saves were done** under a raised 1 GiB test limit (section 3.2). Result: 2,500 created, no failure. This shows the file store can write that many identities when the limit is raised. It says nothing about the production 16 MiB limit.
+- **5,000 and 10,000 real-save runs were not done.** Creation time grew faster than linearly: 372 s at 1,000, 2,869 s at 2,500. Extrapolating that growth (not measured) gives roughly 3.7 hours at 5,000 and 17 hours at 10,000. The no-op-flush runs (section 3.3) skip the save and do not show real save cost at those sizes.
 
 ## 5.2 Pretty format after the compact guard (current default)
 
