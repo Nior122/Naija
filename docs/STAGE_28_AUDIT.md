@@ -16,6 +16,9 @@ This document follows the acceptance evidence rule: every criterion is marked **
 | Secure DATABASE_URL in Arena | BLOCKED |
 | PostgreSQL persistence code (world snapshot, fencing, startup policy) | PARTIAL (tested on local PostgreSQL 18.4 only) |
 | JSON world-state loader and integrity (data-integrity pass) | PARTIAL. Loader fixed and tested offline; see section 10. Not fully resolved. |
+| Record-level validation (property, government, election, justice) | PARTIAL. Implemented and tested; 20 of 48 maps lack a mutation test; see section 11. |
+| Health test design and test isolation | PASS (local). See section 11. |
+| Stage 27 report files | CREATED WITH GAPS. Originals never existed; see section 11. |
 | Money integrity (account balance) | PARTIAL (tested on local PostgreSQL only) |
 | JSON → PostgreSQL importer | DEFERRED by user decision. Not in this commit. |
 | Monitoring (Prometheus endpoint) | PARTIAL (unit-tested; not scraped by a real Prometheus) |
@@ -31,7 +34,7 @@ This document follows the acceptance evidence rule: every criterion is marked **
 
 Credentials were never printed. No connection string appears in this repository.
 
-1. **Can the backend commands run in the sandbox?** Yes. `npm run db:status` and `npm run db:migrate` run against any reachable PostgreSQL. Verified against a local PostgreSQL 18.4 instance on `127.0.0.1:55432` (disposable, not Neon, not production).
+1. **Can the backend commands run in the sandbox?** Yes. `npm run db:status` and `npm run db:migrate` run against any reachable PostgreSQL. Verified against a disposable local PostgreSQL 18.4 cluster on `127.0.0.1:55433` (database `naija_stage28_test`, role `tester`, trust auth; not Neon, not production). The cluster on `127.0.0.1:55432` never accepted connections with any role tried, so it is not evidence for anything in this document.
 2. **Is DATABASE_URL set in the sandbox?** No. The live PostgreSQL tests were run by setting DATABASE_URL to the local instance for that command only.
 3. **How does Arena store secrets?** NOT VERIFIED. A search for Arena's secret configuration returned no relevant documentation, and this session has no tool that reads Arena project settings. Check Arena's project or settings UI for the supported mechanism. Do not assume a secret is injected into the sandbox.
 4. **Which deployment platform will run the server?** Undecided. The repository has no deployment configuration, and CI (`.github/workflows/ci.yml`) has no database secret.
@@ -90,12 +93,18 @@ Use a disposable Neon development or branch database (never production). Give th
 | 40 | 3D multiplayer testing (#11) | NOT TESTED | Godot is not installed in this sandbox. |
 | 41 | Cross-region events, advanced sync, anti-cheat (from Stage 25 list) | NOT IMPLEMENTED | Not started. |
 | 42 | Stage 27 documentation corrections (table count, TLS claim) | PASS | `docs/STAGE_27_DATABASE_ARCHITECTURE.md`: correction note added; 14 tables; `sslmode=verify-full`. |
-| 43 | Stage 27 report files (infrastructure, load test, security and recovery, launch readiness) | NOT IMPLEMENTED | Not created. |
+| 43 | Stage 27 report files (infrastructure, load test, security and recovery, launch readiness) | CREATED WITH GAPS | Four files now exist (`STAGE_27_INFRASTRUCTURE_REPORT.md`, `STAGE_27_LOAD_TEST_REPORT.md`, `STAGE_27_SECURITY_AND_RECOVERY_REPORT.md`, `STAGE_27_LAUNCH_READINESS_REPORT.md`), written from repository evidence and labelled. Stage 27 never produced them (see section 11). The load test report records NOT TESTED; no measurement exists. |
 | 44 | Lint: no new errors compared with the baseline | PASS | Baseline `dc20b80`: 52 errors. Current: 51 errors (46 unused-vars, 5 explicit-any, all pre-existing). Measured with ESLint on `services/world-api/src`. |
-| 45 | Full test suite, default configuration (no database) | PASS | 510 total, 491 pass, 0 fail, 19 skipped. |
-| 46 | Full test suite, against local PostgreSQL 18.4 | PASS | 510 total, 510 pass, 0 fail, 0 skipped. Local instance only; not Neon. |
+| 45 | Full test suite, default configuration (no database) | PASS | Commit `6ae2001`: 602 total, 583 pass, 0 fail, 19 skipped. |
+| 46 | Full test suite, against local PostgreSQL 18.4 | PASS | Commit `6ae2001`: 602 total, 602 pass, 0 fail, 0 skipped (cluster `127.0.0.1:55433`). Local instance only; not Neon. |
 | 47 | Live Neon validation | BLOCKED | Requires a Neon dev or branch database and a secure DATABASE_URL (section 6). |
 | 48 | Production deployment readiness | NOT IMPLEMENTED | Not achieved. Stage 28 cannot be marked complete from this document. |
+| 49 | Record-level validators for property, government, election, and justice maps | PARTIAL | Implemented in `src/multiplayer/record-validation.ts` and wired into `validateState`. Invalid records are rejected, never deleted or regenerated. All 48 map types are validated. Only 28 maps have a mutation test; 20 do not (section 11). Corpus evidence covers 11 maps only. |
+| 50 | Record validator diagnostics do not expose values | PASS | Tests assert the message contains no field values (`record-validation.test.mjs`, no-value-leak test). |
+| 51 | Valid schema-18 world round-trips with no loss and stable IDs | PASS (synthetic and corpus) | Seeded engine-saved world round trip test (`record-validation.test.mjs`). Corpus: 284 files, 0 record loss, 0 ID mismatches (`roundtrip-summary.json`, read-only, outside Git). |
+| 52 | Health test is deterministic about the contract | PASS | The concurrent test asserts the contract (status follows checks; HTTP 503 only for unhealthy). Persistence fail, throw, pass, and warn cases are tested. Disabling the persistence check makes four of them fail. |
+| 53 | Integration tests use an isolated state file; live file unchanged | PASS | `isolation.test.mjs`: every `createApiServer` call in the suite passes `stateFile` or `worldStore`; a temp file is written and the live file is not; running the integration file leaves the live file byte-for-byte unchanged (SHA-256 checked). |
+| 54 | Stage 28 complete | NOT ACHIEVED | Blocked by the items in section 5 and section 11. Not decided from the local test suite. |
 
 ---
 
@@ -109,7 +118,7 @@ Use a disposable Neon development or branch database (never production). Give th
 6. **Live PostgreSQL test file used `test.skip(boolean, …)`, which always skips.** Replaced with the `{ skip }` option.
 7. **Schema-18 validators never ran for career, economy, or business records.** The gates in `validateState` (`schemaVersion === 3 … 9`, `=== 4 … 9`, `=== 5 … 9`) were exact-version checks, so any later schema skipped them. They are now `>= 3`, `>= 4`, `>= 5`. Before this change, a corrupt business record passed `validateState` at schema 18. Regression test: `state-load-regression.test.mjs` "business, party and election records survive schema-18 loads and are validated". All 284 saved-state copies in the test corpus (section 10) pass the stricter validators. The corpus has no business records, so business validation is tested only by the new fixture test.
 8. **`test/integration.test.mjs` wrote the live world file on every test run.** `createApiServer` was called with no `stateFile`, so it fell back to `services/world-api/data/world-state.json` and flushed on shutdown. The test now uses a temporary state file that is removed afterward. The live file was not modified by any test run after this fix (checked by byte comparison against the backup).
-9. **Flaky health assertion in the concurrency test.** The event-loop check is one timing sample. It reports `degraded` when `setImmediate` is delayed more than 50 ms, which happens when test files run in parallel. The test asserted `healthy`. It now accepts `healthy` or `degraded` and fails on anything else. The change does not affect the health check's own thresholds.
+9. **Flaky health assertion in the concurrency test.** The event-loop check is one timing sample, and the heap check depends on load, so the old test (which required `healthy`) failed when the host was busy. The first fix accepted `healthy` or `degraded`. That weakened nothing important, but it still did not test the contract. The test now asserts that every response is HTTP 200, is not `unhealthy`, and follows the health contract (overall status follows the check results; HTTP 503 only for `unhealthy`). Persistence-driven tests cover fail, throw, pass, and warn. Health thresholds are unchanged. See section 11.
 
 ---
 
@@ -121,7 +130,7 @@ Use a disposable Neon development or branch database (never production). Give th
 - **Economy transaction IDs are random at creation.** After fix 1 they are stable across loads. Records that were regenerated by the old bug have no original IDs to recover.
 - **File backend is single-instance only.** It is labeled as development mode.
 - **Local tests use `DB_SSL=false`** against a local server without TLS. They do not exercise the default TLS path.
-- **Record-level validation is missing for four map groups.** `validateState` checks only the map presence for property, government, election, and justice records. A corrupt record in those maps loads without error. Adding validators is a separate task.
+- **Record-level validation is partial.** `validateState` now rejects malformed records in the property, government, election, and justice maps (section 11). Twenty of the 48 map types have no mutation test, and the corpus covers 11 maps. A malformed record in an untested map may still load. Validator enumerations are copied from the domain type unions and can drift if those types change.
 - **NPC career timestamps change on every load.** `refreshNpcCareers` in `src/careers/service.ts` sets `updated_at` to the load time on NPC career rows. This was measured on 833 rows in the corpus. It is metadata churn, not record loss or ID regeneration. It has not been changed, because it is engine behavior.
 - **Metrics endpoints are unauthenticated.** `/metrics` and `/metrics/prometheus` expose connection counts, memory, and performance figures. They contain no secrets, but restrict them at the network or platform layer before public deployment.
 - **Stage 27 password hashing was never verified.** `STAGE_27_DATABASE_ARCHITECTURE.md` lists it as complete. Nothing in this stage checked it. The `accounts` table stores a `password_hash` column; no login route uses it.
@@ -153,10 +162,11 @@ Use a disposable Neon development or branch database (never production). Give th
 
 - `npm run build` (services/world-api): PASS, exit 0.
 - `npx tsc --noEmit -p .`: PASS, exit 0.
-- `npm test` with no database configured (data-integrity pass): 511 total, 492 pass, 0 fail, 19 skipped. Previous pass: 510 total, 491 pass.
-- `DATABASE_URL=… DB_SSL=false NAIJA_ALLOW_DB_TESTS=true npm test` (data-integrity pass, disposable PostgreSQL 18.4 cluster created with `initdb -U tester --auth=trust` on `127.0.0.1:55433`): 511 total, 511 pass, 0 fail, 0 skipped. Previous pass: 510/510 on `127.0.0.1:55432`.
-- ESLint on `services/world-api/src`: baseline 52 errors, current 51 errors (all pre-existing).
-- `npx tsc --noEmit`: PASS, exit 0 (data-integrity pass).
+- `npm test` with no database configured (commit `6ae2001`): 602 total, 583 pass, 0 fail, 19 skipped, exit 0. Previous pass (`1c7d5e9`): 511 total, 492 pass.
+- `DATABASE_URL=postgres://tester@127.0.0.1:55433/naija_stage28_test?sslmode=disable DB_SSL=false NAIJA_ALLOW_DB_TESTS=true npm test` (commit `6ae2001`; cluster `/tmp/pgdata2`, PostgreSQL 18.4, `initdb` with `--auth=trust`, local only): 602 total, 602 pass, 0 fail, 0 skipped, exit 0. The `sslmode=disable` plus `DB_SSL=false` pair is the explicit local-development opt-out required by `connection.ts`. Without it, the live tests fail with "The server does not support SSL connections" (19 failures; this was observed and is a configuration issue, not a code defect). The cluster on `55432` was not used.
+- ESLint on `services/world-api/src`: baseline 52 errors, current 51 errors (all pre-existing; none in `record-validation.ts` or `persistence.ts`).
+- `npx tsc --noEmit`: PASS, exit 0 (commit `6ae2001`).
+- `cmp services/world-api/data/world-state.json /home/user/data-backups/stage28-20261010T143151Z/live/world-state.json`: identical after the default and live runs.
 - `node dist/database/cli.js status` and `migrate` (local PostgreSQL 18.4): status reports version 2, up to date; second `migrate` exits 0.
 
 ---
@@ -305,7 +315,7 @@ Use a **disposable development or test database**. Do not use a database that ho
 **What this does not establish**
 
 - Whether production or live player data was lost. No runtime backup existed before this pass. The 284 copies are output from test runs, not from play. The live file has no player progress. Data loss in any real world file cannot be ruled out, and cannot be checked from the evidence available.
-- Whether the business, election, and other map groups without record validators have corruption. Those groups are not validated, so corruption would load without error.
+- Whether any map has corruption in real play data. Record validators now cover the property, government, election, and justice maps (section 11). The corpus exercises 11 of them; the rest rely on synthetic fixtures.
 
 **Changes made in this pass**
 
@@ -317,6 +327,107 @@ Use a **disposable development or test database**. Do not use a database that ho
 **Open decisions for the user**
 
 1. Confirm the loader fix and the stricter validation. The stricter validation can make a previously accepted invalid saved world fail to start (fail-closed), which is the intended behavior elsewhere in the store. Decide whether that is acceptable for the live file.
-2. Decide whether to add record-level validators for property, government, election, and justice maps.
+2. Review the record-level validators added in `6ae2001` (section 11). Their behaviour on real data is not yet established for maps the corpus does not contain.
 3. Decide whether NPC career `updated_at` should stop changing on load.
+
+---
+
+## 11. Record Validation, Health Test, Isolation, and Stage 27 Reports (commit `6ae2001`)
+
+### 11.1 Record-level validators
+
+Module: `services/world-api/src/multiplayer/record-validation.ts`. Called from `validateState` in `persistence.ts` after seeding, before `return state`. `initialState` is not changed.
+
+Rules:
+- Invalid records are **rejected** (the load fails). They are never deleted, regenerated, or rewritten.
+- The only rewrite is deterministic: an **absent nullable** field becomes `null`. Each such normalization is counted. The corpus produced zero normalizations.
+- Absent required fields fail.
+- Diagnostics name the category, map, record identifier (only if it matches the identifier pattern; otherwise `(non-identifier key)`), field, and invariant. They **never include field values**.
+- References are checked only against maps held in the same world state. Owner and character identifiers that point outside these four domains are checked for syntax only.
+
+Coverage by map (all 48 map keys in the four type interfaces are validated):
+
+| Domain | Maps | Mutation-tested | Corpus-covered (284 files) | No mutation test |
+|---|---|---|---|---|
+| Property | 9 | 5: properties, propertyOwnership, propertyMaintenance, propertyFurnishings, propertyEvents | 4: properties, propertyOwnership, propertyListings, propertyEvents | propertyListings, rentalAgreements, rentalPayments, propertySales |
+| Government | 9 | 4: governmentOrganisations, governmentOffices, governmentRevenue, governmentProjects | 4: governmentOrganisations, governmentOffices, governmentBudgets, governmentEvents | governmentAppointments, governmentBudgets, governmentExpenditure, governmentAnnouncements, governmentEvents |
+| Elections | 13 | 11 (all except politicalProfiles, debates) | 0 | politicalProfiles, debates |
+| Justice | 17 | 8: cases, sentences, legalAudits, judgments, fines, appeals, evidence, settlements | 3: laws, lawProvisions, courts | laws, lawProvisions, legislativeProposals, courts, legalProfessionals, legalRepresentations, caseParticipants, witnesses, hearings |
+| **Total** | **48** | **28** | **11** | **20** |
+
+Maps with no mutation test still have validator code. They are checked by the same functions, but no test proves the rejection path for them. A malformed record in those maps will be caught only if the code is correct, and this has not been demonstrated.
+
+Corpus evidence (read-only, `roundtrip-summary.json` in `/home/user/data-investigation/`): 284 files; 0 validation failures; 0 record loss; 0 ID mismatches; 0 unstable reloads (ignoring the known NPC `updated_at` churn); 0 normalizations; 0 raw record issues. Record counts were nonzero only for the 11 corpus-covered maps. Election maps and most justice maps are absent from the corpus.
+
+Tests: `test/record-validation.test.mjs` (83 test cases across the file, including the regression tests for this area). Fixtures: a valid record set per domain; a mutation table per domain; normalization; no-value-leak; rejected-record-unchanged; a seeded world saved by the real server, loaded twice, with stable IDs and identical contents on the second load; and a test that `validateState` rejects an invalid seeded property.
+
+Enumerations in the validator are copied from the domain type unions. If a union changes, the validator must change too. Nothing enforces that yet.
+
+### 11.2 Health test: what changed and why
+
+The health contract (from `src/monitoring.ts` and `src/app.ts`, unchanged):
+- Overall status is `unhealthy` if any check fails, `degraded` if any check warns, otherwise `healthy`.
+- HTTP 503 is returned only for `unhealthy`. `healthy` and `degraded` return 200.
+- The `persistence` check, when configured, joins the overall status. A fail or a thrown error makes the service `unhealthy`.
+
+The `event_loop` check is a single `setImmediate` latency sample; it warns above 50 ms. The `memory` check warns above 75% of heap. Both depend on host load. The `connections` check counts WebSocket clients, not HTTP requests.
+
+Old test: ten concurrent `/health` requests; each had to be `healthy` or `degraded`; HTTP status not checked. Its guarantee was that no request reported `unhealthy`.
+
+New test design (`test/integration.test.mjs`):
+- **Concurrent test:** ten requests; each must return HTTP 200, must not be `unhealthy`, and must follow the contract. The test does not assert `healthy` and does not assert on the `event_loop` or `memory` values.
+- **Contract helper** `assertHealthContract`: overall status must equal the value derived from the check results, and HTTP status must follow the overall status. A negative test shows the helper rejects inconsistent bodies.
+- **Persistence tests (deterministic):** fail → 503 and `unhealthy`; throw → 503, `unhealthy`, and the message is the fixed text (no error details); pass → persistence reported as `pass` and any `unhealthy` must come from a non-persistence check; warn → status is not `healthy`.
+
+Checked: with the persistence branch disabled in the compiled `app.js` (temporary, restored afterward), four persistence tests fail. With it restored, all 17 integration tests pass.
+
+Production health semantics were not changed.
+
+### 11.3 Test isolation
+
+- `createApiServer()` falls back to `services/world-api/data/world-state.json` when neither `stateFile` nor `worldStore` is given.
+- `test/isolation.test.mjs` proves the following:
+  1. Every `createApiServer({` call in every test file passes `stateFile` or `worldStore` (static check).
+  2. A server with a temporary `stateFile` writes that file on shutdown (positive control), and the live file is unchanged.
+  3. Running `test/integration.test.mjs` as a child process exits 0 and leaves the live file byte-for-byte unchanged (SHA-256 before and after).
+- Live file: SHA-256 `c325380b88e3b087673da8b012bdbe3024cceb86a4d497145f9477ec0951c7c4`, identical to `/home/user/data-backups/stage28-20261010T143151Z/live/world-state.json` (checked with `cmp` after the default run and the live run).
+
+### 11.4 Stage 27 report files: why they were missing
+
+Finding: **the four files were never created.** Evidence:
+- No file with those names or topics exists in the working tree, in any commit reachable from any ref, in the reflog, or in the dangling objects (`git fsck --lost-found`). The dangling commit `171acac` holds an earlier documentation tree; it contains no Stage 27 report.
+- A filesystem search of `/home/user`, `/tmp`, `/root`, and `/var/tmp`, including the read-only `data-backups` and `data-investigation` folders, found none.
+- The Stage 27 document's deliverable list (`STAGE_27_DATABASE_ARCHITECTURE.md`, "Deliverables") lists eight files. None are the four reports.
+- Section 3, row 43 of this audit recorded them as "Not created" before this pass.
+
+What is unknown: whether they were planned in a different session or clone. The repository cannot show that. They are created now, in `docs/`, from evidence, and labelled:
+- `docs/STAGE_27_INFRASTRUCTURE_REPORT.md`
+- `docs/STAGE_27_LOAD_TEST_REPORT.md` (no load test exists; NOT TESTED; no measurements)
+- `docs/STAGE_27_SECURITY_AND_RECOVERY_REPORT.md`
+- `docs/STAGE_27_LAUNCH_READINESS_REPORT.md` (NOT READY)
+
+### 11.5 Still NOT TESTED or BLOCKED
+
+- CA-signed TLS certificate verification: NOT TESTED.
+- Unmigrated-database refusal: NOT TESTED.
+- Real multi-process fencing (the existing fencing test runs two instances in one process): NOT TESTED.
+- Process-kill recovery: NOT TESTED.
+- Down-migration of schema v2: NOT TESTED.
+- Engine account and character wiring (the engine does not read or write `accounts`/`characters`): NOT IMPLEMENTED.
+- Neon connection: BLOCKED.
+- Deployment-platform testing: BLOCKED.
+- 3D multiplayer: NOT TESTED.
+- Load and capacity: NOT TESTED.
+
+Local PostgreSQL results are not evidence for Neon or production.
+
+### 11.6 Open items found in this pass
+
+- **Justice `courts.permitted_categories` inconsistency (not fixed; decision needed).** Seeded courts (`game/data/justice/catalog.json`, `seed_courts`) list **law** categories, for example `supreme` = `constitutional, criminal, civil, commercial, property, employment`. `service.ts` (about lines 660–664) accepts a filing only if the category is in the court's list or the case category's **type** (`civil` or `criminal`) is in it. So `commercial`, `property`, `employment`, `constitutional`, `election`, and `traffic` match no case category ID (`employment_claim`, `property_dispute`, ...) and no case type, and filings in those categories are rejected. `court:nic` lists only `employment`, so under the current code it accepts no filing at all. `civil` and `criminal` work because they are also case types. The validator checks only that the list is an array of strings; it does not enforce this rule. Resolving it needs a decision on which vocabulary the courts list should use, and a test of filings per court.
+- **`world-store.ts` cites a missing file.** Its header refers to `docs/STAGE_28_MULTI_INSTANCE_READINESS.md`, which does not exist. This audit is the Stage 28 record. Not fixed in this pass.
+- **Twenty maps have no mutation test** (section 11.1).
+- **Validator enumerations can drift** from the domain type unions.
+- **Metrics endpoints are unauthenticated** (existing limitation).
+- **Stage 27 password hashing is unverified** (existing limitation).
+- **Build output:** `services/world-api/dist/` is rebuilt for tests and is not committed.
 
