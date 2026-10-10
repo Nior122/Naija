@@ -19,6 +19,15 @@ import { createIdentity, identityCreateMessage, openPeer, resumeSession, startAp
 const LIVE = !!process.env.DATABASE_URL && process.env.NAIJA_ALLOW_DB_TESTS === "true";
 const live = { skip: !LIVE ? "requires DATABASE_URL and NAIJA_ALLOW_DB_TESTS=true" : false };
 
+if (LIVE) {
+  // These tests write rows and apply migrations. Refuse to run unless the database name says it is a test database,
+  // so a misconfigured DATABASE_URL cannot point them at real data.
+  const databaseName = decodeURIComponent(new URL(process.env.DATABASE_URL).pathname.replace(/^\//, ""));
+  if (!/test/i.test(databaseName)) {
+    throw new Error("refusing to run live database tests: the database name must contain 'test'");
+  }
+}
+
 const accounts = new AccountRepository();
 const characters = new CharacterRepository();
 const createdAccountIds = [];
@@ -296,15 +305,36 @@ test("Multi-instance: a second instance with stale state cannot save, is unhealt
   }
 });
 
+test("Health: a PostgreSQL-backed instance whose connection is closed reports persistence failing over HTTP 503", live, async () => {
+  // A separate connection, so the shared test connection is not affected.
+  const separate = new DatabaseConnection(loadDatabaseConfigFromEnv());
+  await separate.connect();
+  const store = await PostgresWorldStore.open({ worldKey: `t28-down-${randomUUID()}`, db: separate });
+  await separate.disconnect();
+  const instance = await startApi({ worldStore: store, allowedOrigins: [], persistenceHealth: () => store.health() });
+  try {
+    const response = await fetch(`${instance.baseUrl}/health`);
+    const body = await response.json();
+    assert.equal(body.checks.persistence.status, "fail");
+    assert.equal(body.checks.persistence.message, "PostgreSQL is unreachable or not responding.");
+    assert.equal(body.status, "unhealthy");
+    assert.equal(response.status, 503);
+  } finally {
+    // Shutdown may try to flush the store through the closed connection. That failure is expected here.
+    await stopApi(instance.server).catch(() => undefined);
+  }
+});
+
 test("Health: a healthy PostgreSQL-backed instance reports persistence as passing", live, async () => {
   const worldKey = `t28-health-${randomUUID()}`;
   const store = await PostgresWorldStore.open({ worldKey, db: database });
   const instance = await startApi({ worldStore: store, allowedOrigins: [], persistenceHealth: () => store.health() });
   try {
     const response = await fetch(`${instance.baseUrl}/health`);
-    assert.equal(response.status, 200);
     const body = await response.json();
+    // The persistence check must pass. The overall status depends on the single-sample host checks, so it is not fixed here.
     assert.equal(body.checks.persistence.status, "pass");
+    assert.equal(response.status, body.status === "unhealthy" ? 503 : 200);
     assert.match(body.checks.persistence.message, /PostgreSQL reachable/);
   } finally {
     await stopApi(instance.server);

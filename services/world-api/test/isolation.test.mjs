@@ -24,18 +24,50 @@ function fingerprint(path) {
   return { exists: true, size: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") };
 }
 
+/**
+ * Returns the text of every createApiServer(...) call in a source file, matching parentheses so that nested
+ * braces and parentheses inside the options object do not end the call early.
+ */
+function createApiServerCalls(source) {
+  const calls = [];
+  const name = "createApiServer(";
+  let index = source.indexOf(name);
+  while (index !== -1) {
+    let depth = 0;
+    let end = source.length - 1;
+    for (let i = index + name.length - 1; i < source.length; i += 1) {
+      if (source[i] === "(") depth += 1;
+      else if (source[i] === ")") {
+        depth -= 1;
+        if (depth === 0) {
+          end = i;
+          break;
+        }
+      }
+    }
+    calls.push(source.slice(index, end + 1));
+    index = source.indexOf(name, index + name.length);
+  }
+  return calls;
+}
+
+const PASSES_STATE = /\bstateFile\b|\bworldStore\b/;
+
+test("Isolation: the call scanner accepts a stateFile after nested braces, and flags calls without one (controls)", () => {
+  assert.deepEqual(createApiServerCalls("x = createApiServer({ a: async () => ({ b: 1 }), stateFile });").map((c) => PASSES_STATE.test(c)), [true]);
+  assert.deepEqual(createApiServerCalls("x = createApiServer({ tickIntervalMs: 100 });").map((c) => PASSES_STATE.test(c)), [false]);
+  assert.deepEqual(createApiServerCalls("x = createApiServer(options);").map((c) => PASSES_STATE.test(c)), [false]);
+  assert.equal(createApiServerCalls("createApiServer({ stateFile }); createApiServer({ worldStore });").length, 2);
+});
+
 test("Isolation: every createApiServer call in the test suite passes a stateFile or worldStore", () => {
   const files = readdirSync(here).filter((name) => name.endsWith(".test.mjs") && name !== "isolation.test.mjs");
   let calls = 0;
   for (const file of files) {
     const source = readFileSync(join(here, file), "utf8");
-    let index = source.indexOf("createApiServer({");
-    while (index !== -1) {
-      const end = source.indexOf("})", index);
-      const call = source.slice(index, end + 2);
+    for (const call of createApiServerCalls(source)) {
       calls += 1;
-      assert.ok(/stateFile|worldStore/.test(call), `${file} has a createApiServer call without stateFile or worldStore: ${call.slice(0, 120)}`);
-      index = source.indexOf("createApiServer({", index + 1);
+      assert.ok(PASSES_STATE.test(call), `${file} has a createApiServer call without stateFile or worldStore: ${call.slice(0, 120)}`);
     }
   }
   assert.ok(calls > 0, "expected to find createApiServer calls in the suite");
