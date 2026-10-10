@@ -8,6 +8,8 @@ import type { ServerOptions } from "./multiplayer/types.js";
 import type { DeathCauseCategory, InheritanceEventRecord, LifeEventRecord } from "./life/types.js";
 import { worldDescriptor } from "./world.js";
 import { monitoring, PROMETHEUS_CONTENT_TYPE, type HealthCheck } from "./monitoring.js";
+import { decideMetricsAccess, type MetricsAccess } from "./metrics-access.js";
+import { assertTestWorldFileIsolation } from "./runtime-environment.js";
 
 const MAX_MESSAGE_BYTES = 8 * 1024;
 
@@ -30,6 +32,11 @@ export interface ApiServerOptions extends ServerOptions {
   readonly worldStore?: WorldStoreLike;
   /** Persistence health reported under /health. Failing checks make the server unhealthy. */
   readonly persistenceHealth?: () => Promise<HealthCheck>;
+  /**
+   * Access policy for /metrics and /metrics/prometheus. Defaults to open for library and test use.
+   * The entry point (index.ts) always passes the policy from the environment; production refuses "open".
+   */
+  readonly metricsAccess?: MetricsAccess;
 }
 
 function sendJson(response: ServerResponse, statusCode: number, body: unknown): void {
@@ -55,7 +62,11 @@ function rejectUpgrade(socket: NodeJS.Socket, statusCode: number, status: string
 /** Creates the existing read-only API plus one bounded, server-authoritative multiplayer world. */
 export function createApiServer(options: ApiServerOptions = {}): ApiServer {
   const websocketPath = options.websocketPath ?? "/ws";
+  const metricsAccess: MetricsAccess = options.metricsAccess ?? { mode: "open" };
   const allowedOrigins = options.allowedOrigins ?? [];
+  if (options.worldStore === undefined) {
+    assertTestWorldFileIsolation(options.stateFile);
+  }
   const stateFile = options.stateFile ?? fileURLToPath(new URL("../data/world-state.json", import.meta.url));
   const store: WorldStoreLike = options.worldStore ?? new WorldStore(stateFile, options.now?.() ?? Date.now());
   const world = new MultiplayerWorld(store, options);
@@ -87,6 +98,19 @@ export function createApiServer(options: ApiServerOptions = {}): ApiServer {
       const statusCode = health.status === "unhealthy" ? 503 : 200;
       sendJson(response, statusCode, health);
       return;
+    }
+
+    if (pathname === "/metrics" || pathname === "/metrics/prometheus") {
+      const decision = decideMetricsAccess(metricsAccess, request.headers.authorization);
+      if (decision === "not_found") {
+        sendJson(response, 404, { error: "not_found" });
+        return;
+      }
+      if (decision === "unauthorized") {
+        response.setHeader("WWW-Authenticate", 'Bearer realm="naija-metrics"');
+        sendJson(response, 401, { error: "unauthorized" });
+        return;
+      }
     }
 
     if (pathname === "/metrics") {

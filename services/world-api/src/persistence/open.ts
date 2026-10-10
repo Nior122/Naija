@@ -3,18 +3,18 @@ import { MigrationManager } from "../database/migrations.js";
 import { PostgresWorldStore } from "../database/world-store.js";
 import { WorldStore, type WorldStoreLike } from "../multiplayer/persistence.js";
 import type { HealthCheck } from "../monitoring.js";
+import { assertTestWorldFileIsolation, readRuntimeEnvironment } from "../runtime-environment.js";
 
 /**
- * Startup policy for world persistence.
+ * Startup policy for world persistence (Stage 28).
  *
- * PERSISTENCE_BACKEND selects the backend:
- * - "postgres": required when DATABASE_URL is configured. The server refuses to start if the
- *   database is unreachable, the schema is not migrated, or no database is configured.
- * - "file": the JSON file at DATA_FILE. Single-instance development mode only. It is logged and
- *   reported in /health as file persistence, never as PostgreSQL persistence.
+ * NAIJA_ENV decides which backends are allowed:
+ * - "production": PostgreSQL only. DATABASE_URL is required. PERSISTENCE_BACKEND=file is refused.
+ * - "development" and "test": PostgreSQL when PERSISTENCE_BACKEND=postgres, or when it is unset and DATABASE_URL is set.
+ *   The JSON file only when PERSISTENCE_BACKEND=file is set explicitly. With neither, startup is refused.
  *
- * When PERSISTENCE_BACKEND is unset: "postgres" if DATABASE_URL is set, otherwise "file".
- * There is no silent fallback from PostgreSQL to a file or memory store.
+ * There is no automatic fallback. A PostgreSQL connection failure, a missing or unmigrated schema, or an invalid
+ * configuration stops startup. It never switches to the JSON file.
  */
 
 export type PersistenceBackend = "postgres" | "file";
@@ -33,14 +33,36 @@ export interface OpenPersistenceOptions {
 }
 
 export function resolvePersistenceBackend(env: NodeJS.ProcessEnv = process.env): PersistenceBackend {
-  const requested = env.PERSISTENCE_BACKEND?.trim().toLowerCase();
-  if (requested === "postgres" || requested === "file") {
-    return requested;
-  }
-  if (requested !== undefined && requested !== "") {
+  const environment = readRuntimeEnvironment(env, { required: true });
+  const requestedRaw = env.PERSISTENCE_BACKEND?.trim().toLowerCase();
+  if (requestedRaw !== undefined && requestedRaw !== "" && requestedRaw !== "postgres" && requestedRaw !== "file") {
     throw new Error('PERSISTENCE_BACKEND must be "postgres" or "file".');
   }
-  return env.DATABASE_URL ? "postgres" : "file";
+  const requested: PersistenceBackend | undefined =
+    requestedRaw === "postgres" || requestedRaw === "file" ? requestedRaw : undefined;
+  const hasDatabaseUrl = Boolean(env.DATABASE_URL);
+
+  if (environment === "production") {
+    if (requested === "file") {
+      throw new Error('PERSISTENCE_BACKEND=file is not allowed when NAIJA_ENV=production. Production requires PostgreSQL.');
+    }
+    if (!hasDatabaseUrl) {
+      throw new Error(
+        "NAIJA_ENV=production requires DATABASE_URL. The server will not start without PostgreSQL; there is no file fallback.",
+      );
+    }
+    return "postgres";
+  }
+
+  if (requested !== undefined) {
+    return requested;
+  }
+  if (hasDatabaseUrl) {
+    return "postgres";
+  }
+  throw new Error(
+    "No persistence backend is configured. Set DATABASE_URL for PostgreSQL, or PERSISTENCE_BACKEND=file for local development or tests. File mode is never selected automatically.",
+  );
 }
 
 export async function openWorldPersistence(options: OpenPersistenceOptions): Promise<WorldPersistence> {
@@ -49,6 +71,7 @@ export async function openWorldPersistence(options: OpenPersistenceOptions): Pro
   const backend = resolvePersistenceBackend();
 
   if (backend === "file") {
+    assertTestWorldFileIsolation(options.stateFile);
     if (process.env.DATABASE_URL) {
       log("[Persistence] PERSISTENCE_BACKEND=file overrides DATABASE_URL; world state is NOT stored in PostgreSQL.");
     }
