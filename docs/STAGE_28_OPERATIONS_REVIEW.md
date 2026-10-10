@@ -56,10 +56,11 @@ tested, not TLS versions or cipher choice, and not a publicly trusted certificat
 
 ### Concerns (reported, not changed)
 
-1. **`DB_SSL=false` is not limited to loopback.** The code accepts it for any host, which would send credentials and
-   data in plaintext to a remote database. The policy says it is for the local test environment only, but the code
-   does not enforce that. Proposed: refuse `DB_SSL=false` unless the host is loopback. This changes configuration
-   behaviour, so it needs approval.
+1. **Resolved in the Stage 28 configuration change.** `DB_SSL=false` is refused for any host except loopback
+   (`127.0.0.0/8`, `::1`, `::ffff:127.x.x.x`, or `localhost` when every address DNS returns is loopback, checked at
+   connect time). It is refused in production. `PGHOSTADDR` and `host`/`hostaddr` URL parameters are refused. Tests:
+   `test/host-policy.test.mjs` (IPv4, IPv6, mapped, remote, hostname-resolution cases, redirects) and
+   `test/tls-verification.test.mjs`. See `docs/STAGE_28_CONFIGURATION.md` §4.
 2. **No `DB_SSL_CA` option.** A private CA can be trusted only through `NODE_EXTRA_CA_CERTS`, which Node reads at
    startup. This is fine for a publicly trusted host such as Neon, but a private-CA deployment would need that
    variable set on the process.
@@ -87,14 +88,16 @@ Evidence level: **no password handling exists to verify.**
 
 Evidence level: **code review and tests of the renderer; no authentication exists.**
 
-- `/metrics` (JSON) and `/metrics/prometheus` (text) are served on the same port as the game API, with **no
-  authentication**.
+- Before the Stage 28 configuration change, `/metrics` (JSON) and `/metrics/prometheus` (text) had **no
+  authentication**. They are now governed by `NAIJA_METRICS_ACCESS` (`token`, `ingress`, `disabled`; `open` for
+  development and test only). Production refuses to start without one of these. Tests:
+  `test/metrics-access.test.mjs` (authorized, missing token, invalid token, disabled, ingress, local open mode).
 - Contents are numeric operational values only: request and connection counts, memory, event-loop delay, CPU percent,
   players online, tick rate and duration, flush counts and durations, uptime. The renderer emits no player IDs,
   tokens, hostnames, or database details.
-- Exposure: operational data is visible to anyone who can reach the port. Recommended: restrict these paths at the
-  ingress, or require a bearer token from configuration. Neither is implemented. Changing this changes the endpoint
-  contract, so it needs approval.
+- Exposure: `ingress` mode depends on the deployed ingress blocking these paths. **That is not verified in any
+  deployment.** The application cannot check it. `token` mode is enforced by the application and tested locally only.
+  See `docs/STAGE_28_CONFIGURATION.md` §5 for the production setup and monitoring-client requirements.
 
 ## 5. Backup and restore (`src/database/backup.ts`, `test/backup-restore.test.mjs`)
 
@@ -121,8 +124,9 @@ Evidence level: **disposable-data PASS; no operator path and no production backu
 
 Not covered: no command-line tool (deliberately, so no live-data operation exists without a reviewed step); no
 scheduling; no encryption of backup files (a backup contains the full world state and must be handled as sensitive);
-no off-site copy; no point-in-time recovery; **no Neon or provider backup/restore was tested**. `pg_dump` is not in the
-sandbox's embedded PostgreSQL binaries, so no dump-format test was done.
+no off-site copy; no point-in-time recovery; **no Neon or provider backup/restore was tested**. `pg_dump` was not found
+on the PATH, under `/usr/lib/postgresql`, or in the embedded PostgreSQL package (`/tmp/pgbin`, which contains only
+`initdb`, `pg_ctl`, and `postgres`), so no dump-format test was done. The restore tests do not use `pg_dump`.
 
 ## 6. What was NOT done (kept honest)
 
@@ -130,5 +134,9 @@ sandbox's embedded PostgreSQL binaries, so no dump-format test was done.
 - Production readiness: not claimed.
 - Real-player data-loss conclusion: UNKNOWN.
 - Engine wiring to account and character tables: NOT IMPLEMENTED (see the design document).
-- Metrics authentication, the `DB_SSL=false` loopback restriction, and the creation-key policy: proposed, not
-  implemented.
+- Creation-key policy (entropy check, rotation): not implemented; the key remains a long-lived bearer credential
+  as described in §3. This is a separate decision.
+- Metrics protection and the `DB_SSL=false` loopback restriction: implemented in the Stage 28 configuration change and
+  tested locally. Ingress protection for `/metrics` is an operator configuration that has not been verified in a
+  deployment.
+- Neon: BLOCKED. Runbook: `docs/STAGE_28_NEON_RUNBOOK.md`.
