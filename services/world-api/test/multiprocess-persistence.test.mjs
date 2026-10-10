@@ -57,8 +57,8 @@ class WriterProcess {
         const line = buffer.slice(0, newline);
         buffer = buffer.slice(newline + 1);
         if (line.startsWith(REPLY_PREFIX)) {
-          const resolve = this.pending.shift();
-          if (resolve) resolve(JSON.parse(line.slice(REPLY_PREFIX.length)));
+          const entry = this.pending.shift();
+          if (entry) entry.resolve(JSON.parse(line.slice(REPLY_PREFIX.length)));
         }
         newline = buffer.indexOf("\n");
       }
@@ -70,16 +70,26 @@ class WriterProcess {
   request(op, fields = {}) {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error(`${this.label}: no reply to ${op}. stderr: ${this.stderr.slice(-500)}`)), REQUEST_TIMEOUT_MS);
-      this.pending.push((reply) => {
-        clearTimeout(timer);
-        resolve(reply);
+      this.pending.push({
+        resolve: (reply) => {
+          clearTimeout(timer);
+          resolve(reply);
+        },
+        abort: () => {
+          clearTimeout(timer);
+          reject(new Error(`${this.label}: the process was killed before its reply to ${op}`));
+        },
       });
       this.child.stdin.write(`${JSON.stringify({ op, ...fields })}\n`);
     });
   }
 
-  /** SIGKILL: no shutdown code runs in the process. Resolves when the OS reports the exit. */
+  /**
+   * SIGKILL: no shutdown code runs in the process. Requests still waiting for a reply are rejected now, and their
+   * timers are cleared, so an abandoned request cannot keep the test process alive. Resolves when the OS reports the exit.
+   */
   async kill() {
+    for (const entry of this.pending.splice(0)) entry.abort();
     if (this.child.exitCode === null && this.child.signalCode === null) this.child.kill("SIGKILL");
     return this.exited;
   }
@@ -243,7 +253,8 @@ test("Multi-process recovery: a writer killed while its save waits on a row lock
   const holder = await holdRowLock(worldKey);
   try {
     await writer.writer.request("set", { minute: 600 });
-    writer.writer.request("flush"); // the reply will never arrive: the process is killed below
+    // The reply will never arrive: the process is killed below. The rejection is expected, so it is handled here.
+    writer.writer.request("flush").catch(() => undefined);
     assert.equal(await waitForLockWaiters(1), 1, "the save must be blocked on the row lock before the kill");
     await writer.writer.kill();
   } finally {

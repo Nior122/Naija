@@ -1,3 +1,4 @@
+import { beginHttpClose } from "./support/http-close.mjs";
 import assert from "node:assert/strict";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -36,7 +37,9 @@ const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, mil
 
 afterEach(async () => {
   for (const server of activeServers) {
+    const httpClosed = beginHttpClose(server);
     await server.shutdown();
+    await httpClosed;
     activeServers.delete(server);
   }
   for (const dir of activeDirectories) {

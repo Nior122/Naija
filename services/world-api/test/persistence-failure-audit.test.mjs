@@ -262,11 +262,17 @@ test("audit CURRENT BEHAVIOUR: while saves are refused by the size limit, /healt
     const response = await fetch(`${started.baseUrl}/health`);
     const body = await response.json();
     // Recorded, not endorsed: /health does not include the last save result or the size limit. It stays
-    // reachable and is not "unhealthy" while every save is refused. Any warning here comes from memory.
-    assert.equal(response.status, 200);
-    assert.notEqual(body.status, "unhealthy");
+    // reachable, and it does not report the save failure. The status is 200 or 503 depending on single-sample
+    // runtime checks (memory, event loop, connections; see the integration tests). Only those may warn or fail.
+    const checkSummary = JSON.stringify(Object.fromEntries(Object.entries(body.checks ?? {}).map(([name, check]) => [name, check.status])));
+    assert.ok([200, 503].includes(response.status), `unexpected /health status ${response.status} (checks: ${checkSummary})`);
+    assert.notEqual(body.checks?.persistence?.status, "fail", `persistence must not report a failure (checks: ${checkSummary})`);
+    const notHealthy = Object.entries(body.checks ?? {}).filter(([, check]) => check.status !== "pass").map(([name]) => name);
+    const runtimeChecks = new Set(["memory", "event_loop", "connections"]);
+    assert.ok(notHealthy.every((name) => runtimeChecks.has(name)),
+      `only memory and event-loop checks may warn or fail (checks: ${checkSummary})`);
     assert.ok(!Object.keys(body.checks ?? {}).some((name) => /save|persist|capacity|world/i.test(name)),
-      `no check in /health reports the save failure (checks: ${Object.keys(body.checks ?? {}).join(", ")})`);
+      `no check in /health reports the save failure (checks: ${checkSummary})`);
     delete backend.store.state.players[seed.playerId].character.test_padding;
   } finally {
     await started.stop().catch(() => undefined);

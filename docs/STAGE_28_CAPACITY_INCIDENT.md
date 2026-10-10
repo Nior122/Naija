@@ -89,27 +89,31 @@ This changes notifications only. It does not change what is stored or how saves 
 4. Recovery notice (G3): design a "saved again" signal, or document that clients must reconnect to re-learn save state.
 5. Keep the 629 investigation open. Locate the original world (if any) and its logs before drawing any conclusion.
 
-## 8. Test-run integrity anomalies (cause partly identified; root cause UNEXPLAINED)
+## 8. Test-run integrity: causes found, fixed in this phase
 
-A green full run has not always reported every test. Each case below exited 0 with no `not ok`, and the count fell below the expected number:
+Earlier full runs sometimes exited 0 with fewer results than expected:
 
 | Run | Expected | Reported | Missing leaf results |
 |---|---|---|---|
-| Default `npm test`, first run of this phase (`/tmp/s28/final-default.log`) | 948 | 946 | 2 from `test/justice-filing.test.mjs` |
-| DB+TLS `npm test`, first run of this phase (`/tmp/s28/final-dbtls.log`) | 971 | 967 | 7 from `test/social.test.mjs` (`Hashtag System` and `Report System`) |
-| Per-file DB run, this phase (`/tmp/s28/perfile-db.tsv`) | 32 | 26 | 6 from `test/social.test.mjs` (run alone, with a database environment) |
+| Default `npm test`, earlier in this phase (`/tmp/s28/final-default.log`) | 948 | 946 | 2 from `test/justice-filing.test.mjs` |
+| DB+TLS `npm test`, earlier in this phase (`/tmp/s28/final-dbtls.log`) | 971 | 967 | 7 from `test/social.test.mjs` |
+| Per-file DB run, earlier in this phase (`/tmp/s28/perfile-db.tsv`) | 32 | 26 | 6 from `test/social.test.mjs` |
 | Earlier default r5 (before this phase) | — | — | all `justice-filing` results |
 
-What is established:
+Causes found and fixed:
 
-- `test/social.test.mjs` contains no database code, and it loses its last describes (`Hashtag System`, `Report System`) in a fraction of runs. Run alone with `node --test --test-force-exit test/social.test.mjs` it was short in **7 of 60** runs. Run alone with `node --test test/social.test.mjs` (no `--test-force-exit`) it was short in **0 of 60**.
-- In the truncated output, the root suite prints `1..0`, and the summary reports 30 tests. The process then exits 0. The runner ended the root before the later describes ran. The file itself has no timers.
-- Without `--test-force-exit`, six files never finish: `businesses`, `economy`, `government`, `integration`, `isolation`, `properties`. They time out at 120 s, which suggests open handles left by those files. Their open handles are not yet identified.
-- Per file, with and without the flag, the counts of the other 56 files match. The flag is therefore not needed for those 56 files.
+1. **Six test files never closed their HTTP listener.** `businesses`, `economy`, `government`, `integration`, `isolation`, and `properties` called only `server.shutdown()`. That stops the world and the WebSocket server, but not the HTTP listener, so the test process did not exit. The production shutdown (`src/index.ts`) closes the listener first. The six files now do the same, through `test/support/http-close.mjs`. No application code changed.
+2. **`--test-force-exit` hid the early end of some files.** `test/social.test.mjs`, run alone with the flag, reported 32 tests in 53 of 60 runs and 27 or 30 in the rest. Without the flag it reported 32 in all 60 runs. The reason the runner ends early with the flag is still **not established**. The flag is removed from `npm test` and from the child command in `isolation.test.mjs`. Without it, the default suite and the DB+TLS suite ran to completion with the expected counts. The DB suite did too, after item 3.
+3. **A latent defect in `test/multiprocess-persistence.test.mjs`.** The killed-writer test left a `flush` request unhandled. The request timed out and rejected after the test ended. Node treats that as an unhandled rejection and exited 1. The writer helper now clears and rejects pending requests on kill, and the test handles the expected rejection. The file went from about 31 s to 2–3 s.
+4. **`test/persistence-failure-audit.test.mjs` asserted a 200 from `/health`.** That assertion is stricter than the test's own comment. The `/health` status is 503 when the single-sample memory or event-loop check fails, and a `connections` warning is possible. The assertion now allows 200 or 503, requires that `persistence` is not `fail`, and allows only the three runtime checks (memory, event loop, connections) to warn or fail. The failure message lists the checks. **Not reproduced:** the 503 seen in one full run. The load explanation is a hypothesis: the audit file passed 8 of 8 standalone runs and 6 of 6 under four busy loops on a 2-core host.
 
-What is not established: why the runner ends the root early when the flag is set. Node v22.22.3 was used. Reruns of the full suite were complete (default 948/948, DB+TLS 971/971), so the omission is intermittent.
+Verification after the fixes (single-process `npm test`, no flag):
 
-Consequence: exit 0 from the full `npm test` run does not prove that every test ran. Use per-file counts. Suggested fix, not made: close the handles in the six hanging files, drop `--test-force-exit`, and assert that each file reports its expected count.
+- Default: 950 total, 913 pass, 0 fail, 37 skipped, exit 0. Three earlier full runs without the flag, and one final run (`/tmp/s28/npmtest-default-final.log`), gave the same result.
+- DB (`naija_stage28_test`): 973 total, 969 pass, 0 fail, 4 skipped (TLS-only), exit 0. The first full run without the flag failed on the multi-process defect (item 3). It passed after that fix.
+- DB+TLS (`localhost:55434`): 973 total, 973 pass, 0 fail, 0 skipped, exit 0.
+
+Still open: the root cause of the early exit under `--test-force-exit` in `social.test.mjs`. The flag is no longer used, so this does not block verification, but it has not been explained.
 
 ## 9. Conflict-branch retry (`4dabe0f`): reproduced, characterized, NOT fixed
 

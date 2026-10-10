@@ -1,3 +1,4 @@
+import { beginHttpClose } from "./support/http-close.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
@@ -80,7 +81,9 @@ test("Isolation: a server with a temporary stateFile writes only to that tempora
     const stateFile = join(directory, "world-state.json");
     const server = createApiServer({ stateFile, tickIntervalMs: 100 });
     await new Promise((resolve) => server.listen(0, resolve));
+    const httpClosed = beginHttpClose(server);
     await server.shutdown();
+    await httpClosed;
     // Positive control: shutdown flushes the world, so the temporary file must now exist.
     assert.equal(existsSync(stateFile), true, "the temporary stateFile should have been written");
     assert.deepEqual(fingerprint(liveFile), before, "the live world file must not change");
@@ -93,7 +96,7 @@ test("Isolation: running the integration test file leaves the live world file by
   const before = fingerprint(liveFile);
   const result = spawnSync(
     process.execPath,
-    ["--test", "--test-force-exit", join(here, "integration.test.mjs")],
+    ["--test", join(here, "integration.test.mjs")],
     { cwd: packageRoot, encoding: "utf8", timeout: 240_000 },
   );
   const after = fingerprint(liveFile);

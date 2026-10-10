@@ -1,3 +1,4 @@
+import { beginHttpClose } from "./support/http-close.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createApiServer } from "../dist/app.js";
@@ -21,7 +22,9 @@ const withServer = async (fn, options = {}) => {
   try {
     await fn({ baseUrl, server, port });
   } finally {
+    const httpClosed = beginHttpClose(server);
     await server.shutdown();
+    await httpClosed;
     rmSync(stateDirectory, { recursive: true, force: true });
   }
 };
