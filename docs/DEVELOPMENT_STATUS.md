@@ -4,7 +4,7 @@
 
 ## Current stage and verification gate
 
-**Stage 18 — Social Network: backend implementation and Node tests pass; entertainment and social network integrate with Stage 5 (life), Stage 6 (careers), Stage 7 (economy), Stage 8 (businesses), Stage 10 (government), Stage 12 (justice), Stage 15 (crime), Stage 16 (culture), and Stage 17 (entertainment); Godot client/runtime verification is blocked.** Stages 0–17 remain preserved on the same `nigeria-main` world. The server still owns one shared online timeline. The earlier Stage 5 Godot limitation is still open; Stages 6–18 do not resolve it.
+**Stage 20 — Living NPC Society: backend implementation and Node tests pass; NPC system integrates with Stage 5 (life), Stage 6 (careers), Stage 7 (economy), Stage 8 (properties), and Stage 19 (transportation); Godot client/runtime verification is blocked.** Stages 0–19 remain preserved on the same `nigeria-main` world. The server still owns one shared online timeline. The earlier Stage 5 Godot limitation is still open; Stages 6–20 do not resolve it.
 
 Godot 4.7.2 is not installed (`godot: command not found`). Project import, engine type-checking, scenes, rendered careers UI, clicks through work/application flows, offline client journeys, and Godot multiplayer/reconnect/save runtime behavior have not been run. Do not infer client success from Node tests or gdtoolkit.
 

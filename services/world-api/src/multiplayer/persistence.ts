@@ -21,6 +21,7 @@ import { emptyCultureMaps, initializeCultureWorldState } from "../culture/servic
 import { emptyEntertainmentMaps, initializeEntertainmentWorldState } from "../entertainment/service.js";
 import { emptySocialMaps, initializeSocialWorldState } from "../social/service.js";
 import { emptyTransportationMaps, initializeTransportationWorldState } from "../transportation/service.js";
+import { emptyNPCMaps, initializeNPCWorldState } from "../npc/service.js";
 import type { PersistentElectionMaps } from "../elections/types.js";
 import type { PersistentJusticeMaps } from "../justice/types.js";
 import type { PersistentPoliceMaps } from "../police/types.js";
@@ -30,6 +31,7 @@ import type { PersistentCultureMaps } from "../culture/types.js";
 import type { PersistentEntertainmentMaps } from "../entertainment/types.js";
 import type { PersistentSocialMaps } from "../social/types.js";
 import type { PersistentTransportationMaps } from "../transportation/types.js";
+import type { PersistentNPCMaps } from "../npc/types.js";
 import type { LifeCatalog } from "../life/types.js";
 import type { PersistentCareerMaps } from "../careers/types.js";
 import type { PersistentEconomyMaps } from "../economy/types.js";
@@ -554,7 +556,7 @@ function isBusinessEvent(value: unknown, key: string): boolean {
 }
 
 function validateState(value: unknown, now: number): PersistentWorldState {
-  if (!isRecord(value) || (value.schemaVersion !== 1 && value.schemaVersion !== 2 && value.schemaVersion !== 3 && value.schemaVersion !== 4 && value.schemaVersion !== 5 && value.schemaVersion !== 6 && value.schemaVersion !== 7 && value.schemaVersion !== 8 && value.schemaVersion !== 9 && value.schemaVersion !== 10 && value.schemaVersion !== 11 && value.schemaVersion !== 12 && value.schemaVersion !== 13 && value.schemaVersion !== 14 && value.schemaVersion !== 15 && value.schemaVersion !== 16) ||
+  if (!isRecord(value) || (value.schemaVersion !== 1 && value.schemaVersion !== 2 && value.schemaVersion !== 3 && value.schemaVersion !== 4 && value.schemaVersion !== 5 && value.schemaVersion !== 6 && value.schemaVersion !== 7 && value.schemaVersion !== 8 && value.schemaVersion !== 9 && value.schemaVersion !== 10 && value.schemaVersion !== 11 && value.schemaVersion !== 12 && value.schemaVersion !== 13 && value.schemaVersion !== 14 && value.schemaVersion !== 15 && value.schemaVersion !== 16 && value.schemaVersion !== 17) ||
     value.worldId !== WORLD_ID || !isRecord(value.worldClock) || !isRecord(value.players)) {
     throw new Error("World data has an invalid schema; refusing to start with reset state.");
   }
@@ -828,8 +830,20 @@ function validateState(value: unknown, now: number): PersistentWorldState {
     cargoShipments: (value.cargoShipments ?? {}) as PersistentTransportationMaps["cargoShipments"],
     driverLicenses: (value.driverLicenses ?? {}) as PersistentTransportationMaps["driverLicenses"],
   } : emptyTransportationMaps();
+  const npcMaps: PersistentNPCMaps = schemaVersion >= 17 ? {
+    npcProfiles: (value.npcProfiles ?? {}) as PersistentNPCMaps["npcProfiles"],
+    npcRoutines: (value.npcRoutines ?? {}) as PersistentNPCMaps["npcRoutines"],
+    npcActivityRecords: (value.npcActivityRecords ?? {}) as PersistentNPCMaps["npcActivityRecords"],
+    npcNeeds: (value.npcNeeds ?? {}) as PersistentNPCMaps["npcNeeds"],
+    npcMovements: (value.npcMovements ?? {}) as PersistentNPCMaps["npcMovements"],
+    npcSocialInteractions: (value.npcSocialInteractions ?? {}) as PersistentNPCMaps["npcSocialInteractions"],
+    npcPopulationConfigs: (value.npcPopulationConfigs ?? {}) as PersistentNPCMaps["npcPopulationConfigs"],
+    npcDecisionLogs: (value.npcDecisionLogs ?? {}) as PersistentNPCMaps["npcDecisionLogs"],
+    npcEventReactions: (value.npcEventReactions ?? {}) as PersistentNPCMaps["npcEventReactions"],
+    npcSimulationState: (value.npcSimulationState ?? null) as PersistentNPCMaps["npcSimulationState"],
+  } : emptyNPCMaps();
   const state = {
-    schemaVersion: 16 as const,
+    schemaVersion: 17 as const,
     worldId: WORLD_ID,
     worldClock: normalizeWorldClock(clock, now, catalog),
     players: {} as Record<string, PersistentPlayer>,
@@ -856,6 +870,7 @@ function validateState(value: unknown, now: number): PersistentWorldState {
     ...entertainmentMaps,
     ...socialMaps,
     ...transportationMaps,
+    ...npcMaps,
   } satisfies PersistentWorldState;
 
   for (const [playerId, rawPlayer] of Object.entries(value.players)) {
@@ -888,13 +903,25 @@ function validateState(value: unknown, now: number): PersistentWorldState {
   initializeCareerWorldState(state, now);
   initializeEconomyWorldState(state, now);
   initializeBusinessWorldState(state);
+  initializePropertyWorldState(state);
+  initializeGovernmentWorldState(state);
+  initializeElectionWorldState(state);
+  initializeJusticeWorldState(state);
+  initializePoliceWorldState(state);
+  initializeMilitaryWorldState(state);
+  initializeCrimeWorldState(state);
+  initializeCultureWorldState(state);
+  initializeEntertainmentWorldState(state);
+  initializeSocialWorldState(state);
+  initializeTransportationWorldState(state);
+  initializeNPCWorldState(state, { year: catalog.calendar.epoch_world_date.year, month: catalog.calendar.epoch_world_date.month, day: catalog.calendar.starting_world_day });
   return state;
 }
 
 function initialState(now: number): PersistentWorldState {
   const catalog = loadLifeCatalog();
   const state: PersistentWorldState = {
-    schemaVersion: 16,
+    schemaVersion: 17,
     worldId: WORLD_ID,
     worldClock: normalizeWorldClock({
       day: catalog.calendar.starting_world_day,
@@ -918,6 +945,7 @@ function initialState(now: number): PersistentWorldState {
     ...emptyEntertainmentMaps(),
     ...emptySocialMaps(),
     ...emptyTransportationMaps(),
+    ...emptyNPCMaps(),
   };
   initializeCareerWorldState(state, now);
   initializeEconomyWorldState(state, now);
@@ -933,6 +961,7 @@ function initialState(now: number): PersistentWorldState {
   initializeEntertainmentWorldState(state);
   initializeSocialWorldState(state);
   initializeTransportationWorldState(state);
+  initializeNPCWorldState(state, { year: catalog.calendar.epoch_world_date.year, month: catalog.calendar.epoch_world_date.month, day: catalog.calendar.starting_world_day });
   return state;
 }
 
