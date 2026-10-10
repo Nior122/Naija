@@ -58,7 +58,7 @@ Measured across all 284 files in the corpus (`/home/user/data-backups/stage28-20
 
 - **Characters:** 283 characters, one in each of 283 files. **All 283 have no recorded location.** None has a malformed location.
 - **Cases:** **0** in any file. No existing filing can change under a stricter rule.
-- **Courts:** 283 files carry a `courts` record with the seven seeded courts. All 283 carry `court:customary-fct` with `["civil", "property", "tenancy_dispute"]`. The live file's `courts` record is empty (`{}`), so none of the seeded courts is stored there (F7).
+- **Courts:** at measurement time (before the Ondo courts), 283 files carried a `courts` record with the seven seeded courts. All 283 carry `court:customary-fct` with `["civil", "property", "tenancy_dispute"]`. The live file's `courts` record is empty (`{}`), so none of the seeded courts is stored there (F7).
 - **Consequence.** The missing-location path covers every existing character, so the state-court jurisdiction check is inactive for saved data. The FCT-versus-Ondo problem (F1) is therefore not yet visible in saved data. It will appear for the first character created with a location.
 
 ## 4. Impact of a stricter matching rule (measured, not implemented)
