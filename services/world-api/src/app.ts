@@ -7,7 +7,7 @@ import { WorldStore } from "./multiplayer/persistence.js";
 import type { ServerOptions } from "./multiplayer/types.js";
 import type { DeathCauseCategory, InheritanceEventRecord, LifeEventRecord } from "./life/types.js";
 import { worldDescriptor } from "./world.js";
-import { monitoring } from "./monitoring.js";
+import { monitoring, PROMETHEUS_CONTENT_TYPE } from "./monitoring.js";
 
 const MAX_MESSAGE_BYTES = 8 * 1024;
 
@@ -29,6 +29,7 @@ export interface ApiServerOptions extends ServerOptions {
 }
 
 function sendJson(response: ServerResponse, statusCode: number, body: unknown): void {
+  if (statusCode >= 500) monitoring.recordError();
   response.writeHead(statusCode, {
     "Cache-Control": "no-store",
     "Content-Type": "application/json; charset=utf-8",
@@ -81,6 +82,16 @@ export function createApiServer(options: ApiServerOptions = {}): ApiServer {
     if (pathname === "/metrics") {
       const metrics = monitoring.getMetrics();
       sendJson(response, 200, metrics);
+      return;
+    }
+
+    if (pathname === "/metrics/prometheus") {
+      response.writeHead(200, {
+        "Cache-Control": "no-store",
+        "Content-Type": PROMETHEUS_CONTENT_TYPE,
+        "X-Content-Type-Options": "nosniff",
+      });
+      response.end(monitoring.getPrometheusMetrics());
       return;
     }
 

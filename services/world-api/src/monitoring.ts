@@ -1,9 +1,12 @@
-import { performance } from "node:perf_hooks";
+import { monitorEventLoopDelay, performance, type IntervalHistogram } from "node:perf_hooks";
 
 /**
  * Lightweight monitoring and metrics collection for Naija: One World
  * Provides health checks, metrics, and observability without external dependencies
  */
+
+/** Content type required by the Prometheus text exposition format, version 0.0.4. */
+export const PROMETHEUS_CONTENT_TYPE = "text/plain; version=0.0.4; charset=utf-8";
 
 export interface HealthStatus {
   status: "healthy" | "degraded" | "unhealthy";
@@ -59,11 +62,31 @@ export class MonitoringService {
   private lastTickDuration: number = 0;
   private playersOnline: number = 0;
   private tickRate: number = 0;
+  private readonly loopDelay: IntervalHistogram;
+  private cpuBaseline: { usage: NodeJS.CpuUsage; at: number };
 
   constructor(version: string = "1.0.0") {
     this.startTime = Date.now();
     this.version = version;
     this.requestStartTime = Date.now();
+    this.loopDelay = monitorEventLoopDelay({ resolution: 20 });
+    this.loopDelay.enable();
+    this.cpuBaseline = { usage: process.cpuUsage(), at: performance.now() };
+  }
+
+  /**
+   * Stop background sampling. The global instance lives for the process lifetime;
+   * tests that create their own instances should call this.
+   */
+  dispose(): void {
+    this.loopDelay.disable();
+  }
+
+  /**
+   * Record a server-side failure (HTTP 5xx). Client errors are not counted here.
+   */
+  recordError(): void {
+    this.errorCount++;
   }
 
   /**
@@ -147,6 +170,17 @@ export class MonitoringService {
     const uptimeSeconds = (Date.now() - this.startTime) / 1000;
     const requestRate = this.totalRequests / Math.max(1, uptimeSeconds);
 
+    // Event-loop delay: p99 over the window since the previous sample (nanoseconds -> ms).
+    const eventLoopDelayMs = this.loopDelay.count > 0 ? this.loopDelay.percentile(99) / 1e6 : 0;
+    this.loopDelay.reset();
+
+    // CPU: user+system time used since the previous sample, as a percent of one core.
+    const now = performance.now();
+    const cpuNow = process.cpuUsage(this.cpuBaseline.usage);
+    const wallMicros = Math.max(1, (now - this.cpuBaseline.at) * 1000);
+    const cpuPercent = ((cpuNow.user + cpuNow.system) / wallMicros) * 100;
+    this.cpuBaseline = { usage: process.cpuUsage(), at: now };
+
     return {
       connections: {
         active: this.activeConnections,
@@ -164,8 +198,8 @@ export class MonitoringService {
         heap_total_mb: Math.round(memUsage.heapTotal / 1024 / 1024),
       },
       performance: {
-        event_loop_delay_ms: 0, // Would need async measurement
-        cpu_percent: 0, // Would need process.cpuUsage() calculation
+        event_loop_delay_ms: Math.round(eventLoopDelayMs * 100) / 100,
+        cpu_percent: Math.round(cpuPercent * 100) / 100,
       },
       world: {
         players_online: this.playersOnline,
@@ -173,6 +207,15 @@ export class MonitoringService {
         last_tick_duration_ms: this.lastTickDuration,
       },
     };
+  }
+
+  /**
+   * Render metrics in the Prometheus text exposition format (served at /metrics/prometheus).
+   * Note: calling this samples event-loop and CPU usage, like getMetrics().
+   */
+  getPrometheusMetrics(): string {
+    const uptimeSeconds = (Date.now() - this.startTime) / 1000;
+    return renderPrometheusMetrics(this.getMetrics(), uptimeSeconds);
   }
 
   /**
@@ -235,8 +278,6 @@ export class MonitoringService {
    * Check connection health
    */
   private checkConnections(): HealthCheck {
-    const activePercent = (this.activeConnections / Math.max(1, this.peakConnections)) * 100;
-
     if (this.activeConnections === 0 && this.totalConnections > 0) {
       return {
         status: "warn",
@@ -285,6 +326,46 @@ export class MonitoringService {
   error(message: string, data?: Record<string, unknown>): void {
     console.error(this.getLogEntry("error", message, data));
   }
+}
+
+interface PrometheusMetricDefinition {
+  name: string;
+  help: string;
+  type: "gauge" | "counter";
+  value: number;
+}
+
+/**
+ * Pure renderer for the Prometheus text format. Exported for tests.
+ * Metric names follow Prometheus conventions (snake_case, unit suffix, _total for counters).
+ */
+export function renderPrometheusMetrics(metrics: ServerMetrics, uptimeSeconds: number): string {
+  const definitions: PrometheusMetricDefinition[] = [
+    { name: "naija_world_api_up", help: "1 while the world API process is serving metrics.", type: "gauge", value: 1 },
+    { name: "naija_world_api_uptime_seconds", help: "Seconds since the monitoring service started.", type: "gauge", value: uptimeSeconds },
+    { name: "naija_world_api_connections_active", help: "Currently open multiplayer WebSocket connections.", type: "gauge", value: metrics.connections.active },
+    { name: "naija_world_api_connections_peak", help: "Highest concurrent WebSocket connection count observed.", type: "gauge", value: metrics.connections.peak },
+    { name: "naija_world_api_connections_total", help: "WebSocket connections accepted since start.", type: "counter", value: metrics.connections.total },
+    { name: "naija_world_api_requests_total", help: "HTTP requests received since start.", type: "counter", value: metrics.requests.total },
+    { name: "naija_world_api_request_errors_total", help: "HTTP responses with a 5xx status since start.", type: "counter", value: metrics.requests.errors },
+    { name: "naija_world_api_memory_rss_megabytes", help: "Resident set size in mebibytes.", type: "gauge", value: metrics.memory.rss_mb },
+    { name: "naija_world_api_memory_heap_used_megabytes", help: "V8 heap used in mebibytes.", type: "gauge", value: metrics.memory.heap_used_mb },
+    { name: "naija_world_api_memory_heap_total_megabytes", help: "V8 heap total in mebibytes.", type: "gauge", value: metrics.memory.heap_total_mb },
+    { name: "naija_world_api_event_loop_delay_p99_milliseconds", help: "p99 event-loop delay over the last sample window.", type: "gauge", value: metrics.performance.event_loop_delay_ms },
+    { name: "naija_world_api_cpu_percent", help: "CPU use since the last sample, as a percent of one core.", type: "gauge", value: metrics.performance.cpu_percent },
+    { name: "naija_world_api_players_online", help: "Players currently online in the multiplayer world.", type: "gauge", value: metrics.world.players_online },
+    { name: "naija_world_api_tick_rate", help: "Configured world simulation tick rate.", type: "gauge", value: metrics.world.tick_rate },
+    { name: "naija_world_api_last_tick_duration_milliseconds", help: "Duration of the most recent world tick.", type: "gauge", value: metrics.world.last_tick_duration_ms },
+  ];
+
+  const lines: string[] = [];
+  for (const metric of definitions) {
+    const value = Number.isFinite(metric.value) ? metric.value : 0;
+    lines.push(`# HELP ${metric.name} ${metric.help}`);
+    lines.push(`# TYPE ${metric.name} ${metric.type}`);
+    lines.push(`${metric.name} ${value}`);
+  }
+  return `${lines.join("\n")}\n`;
 }
 
 // Global monitoring instance
