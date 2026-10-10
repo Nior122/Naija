@@ -293,6 +293,36 @@ test("Law category mapping: each case category maps to the reviewed law category
   assert.deepEqual(actual, REVIEWED);
 });
 
+test("Acceptance matrix: the seeded courts that accept each case category are pinned (any change is a deliberate review)", () => {
+  // Captured after the debt_recovery change from financial to civil. That change left every row unchanged:
+  // debt_recovery is accepted at the same six courts it was accepted at under the former financial mapping.
+  // A change here changes which filings are accepted, so it needs the same review as the mapping table above.
+  const PINNED = {
+    civil_general: ["court:appeal-federal", "court:customary-fct", "court:federal-high", "court:magistrate-fct", "court:state-high-fct", "court:supreme"],
+    contract_dispute: ["court:appeal-federal", "court:customary-fct", "court:federal-high", "court:magistrate-fct", "court:state-high-fct", "court:supreme"],
+    debt_recovery: ["court:appeal-federal", "court:customary-fct", "court:federal-high", "court:magistrate-fct", "court:state-high-fct", "court:supreme"],
+    property_dispute: ["court:appeal-federal", "court:customary-fct", "court:federal-high", "court:magistrate-fct", "court:state-high-fct", "court:supreme"],
+    tenancy_dispute: ["court:appeal-federal", "court:customary-fct", "court:federal-high", "court:magistrate-fct", "court:state-high-fct", "court:supreme"],
+    employment_claim: ["court:appeal-federal", "court:customary-fct", "court:federal-high", "court:magistrate-fct", "court:nic", "court:state-high-fct", "court:supreme"],
+    compensation_claim: ["court:appeal-federal", "court:customary-fct", "court:federal-high", "court:magistrate-fct", "court:state-high-fct", "court:supreme"],
+    criminal_misdemeanor: ["court:appeal-federal", "court:federal-high", "court:magistrate-fct", "court:state-high-fct", "court:supreme"],
+    criminal_felony: ["court:appeal-federal", "court:federal-high", "court:magistrate-fct", "court:state-high-fct", "court:supreme"],
+    regulatory_penalty: ["court:appeal-federal", "court:customary-fct", "court:federal-high", "court:magistrate-fct", "court:state-high-fct", "court:supreme"],
+    commercial_dispute: ["court:appeal-federal", "court:customary-fct", "court:federal-high", "court:magistrate-fct", "court:state-high-fct", "court:supreme"],
+  };
+  const catalog = loadJusticeCatalog();
+  const actual = Object.fromEntries(
+    catalog.case_categories.map((category) => [
+      category.id,
+      catalog.seed_courts
+        .filter((court) => courtHandlesCaseCategory(court, category))
+        .map((court) => court.id)
+        .sort(),
+    ]),
+  );
+  assert.deepEqual(actual, PINNED);
+});
+
 // ─── Compatibility with stored worlds ─────────────────────────────
 
 test("Stored worlds: seeding does not rewrite a court that already exists in the saved world", () => {
