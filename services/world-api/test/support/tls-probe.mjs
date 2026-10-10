@@ -2,9 +2,9 @@
 // (loadDatabaseConfigFromEnv + buildPoolConfig), runs one query, and prints one JSON line.
 // NODE_EXTRA_CA_CERTS must be set in the environment BEFORE node starts, so the parent spawns this file.
 import pg from "pg";
-import { buildPoolConfig, loadDatabaseConfigFromEnv } from "../../dist/database/connection.js";
+import { loadDatabaseConfigFromEnv, resolveDatabasePoolConfig } from "../../dist/database/connection.js";
 
-const pool = new pg.Pool(buildPoolConfig(loadDatabaseConfigFromEnv()));
+const pool = new pg.Pool(await resolveDatabasePoolConfig(loadDatabaseConfigFromEnv()));
 try {
   const result = await pool.query("SELECT ssl FROM pg_stat_ssl WHERE pid = pg_backend_pid()");
   const ssl = result.rows.length === 1 ? result.rows[0].ssl : null;

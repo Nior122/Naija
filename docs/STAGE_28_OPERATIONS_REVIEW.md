@@ -57,9 +57,10 @@ tested, not TLS versions or cipher choice, and not a publicly trusted certificat
 ### Concerns (reported, not changed)
 
 1. **Resolved in the Stage 28 configuration change.** `DB_SSL=false` is refused for any host except loopback
-   (`127.0.0.0/8`, `::1`, `::ffff:127.x.x.x`, or `localhost` when every address DNS returns is loopback, checked at
-   connect time). It is refused in production. `PGHOSTADDR` and `host`/`hostaddr` URL parameters are refused. Tests:
-   `test/host-policy.test.mjs` (IPv4, IPv6, mapped, remote, hostname-resolution cases, redirects) and
+   (`127.0.0.0/8`, `::1`, `::ffff:127.x.x.x`, or `localhost` when every address DNS returns is loopback; the answer is
+   pinned to every pooled socket, so a later DNS change cannot redirect it). It is refused in production. `PGHOSTADDR` and `host`/`hostaddr` URL parameters are refused. Tests:
+   `test/host-policy.test.mjs` (IPv4, IPv6, mapped, remote, hostname-resolution cases, redirects),
+   `test/plaintext-pinning.test.mjs` (the DNS race, control and pinned, against a fake server and live PostgreSQL), and
    `test/tls-verification.test.mjs`. See `docs/STAGE_28_CONFIGURATION.md` §4.
 2. **No `DB_SSL_CA` option.** A private CA can be trusted only through `NODE_EXTRA_CA_CERTS`, which Node reads at
    startup. This is fine for a publicly trusted host such as Neon, but a private-CA deployment would need that

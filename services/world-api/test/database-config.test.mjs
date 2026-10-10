@@ -2,6 +2,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseConnection, buildPoolConfig, loadDatabaseConfigFromEnv } from "../dist/database/connection.js";
 
+/** Validated loopback addresses for plaintext to localhost (what resolvePlaintextAddresses returns). */
+const LOOPBACK = [{ address: "127.0.0.1", family: 4 }];
+
 /**
  * Stage 28: database configuration and TLS rules. These tests never contact a database.
  * Connection-failure coverage uses a closed local port, so it exercises the error path only.
@@ -53,7 +56,8 @@ test("Database config: verification can be disabled only by explicit opt-out in 
 });
 
 test("Database config: ssl=false disables TLS entirely and is explicit", () => {
-  const poolConfig = buildPoolConfig({ host: "localhost", ssl: false, environment: "development" });
+  const poolConfig = buildPoolConfig({ host: "localhost", ssl: false, environment: "development" }, LOOPBACK);
+  assert.equal(typeof poolConfig.stream, "function", "localhost plaintext is pinned to the validated addresses");
   assert.equal(poolConfig.ssl, false);
 });
 

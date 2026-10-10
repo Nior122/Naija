@@ -1,6 +1,8 @@
+import type { LookupAddress } from "node:dns";
+import { Socket, type TcpSocketConnectOpts } from "node:net";
 import { Pool, type PoolConfig } from "pg";
 import { effectiveEnvironment, isLocalEnvironment, readRuntimeEnvironment, type RuntimeEnvironment } from "../runtime-environment.js";
-import { assertPlaintextHostIsLoopback, classifyPlaintextHost } from "./host-policy.js";
+import { classifyPlaintextHost, resolvePlaintextAddresses, type LookupFunction } from "./host-policy.js";
 
 /**
  * Database connection management for Naija: One World
@@ -53,16 +55,85 @@ const VERIFIED_SSLMODES = new Set(["verify-full", "verify-ca", "require"]);
  * - The sslmode parameter is removed from the connection string so it cannot override the policy.
  * Error messages never include the connection string.
  */
-export function buildPoolConfig(config: DatabaseConfig = {}): PoolConfig {
+/**
+ * Redirect parameters that could send a connection somewhere other than the host the configuration names.
+ * pg reads PGHOSTADDR from the environment even when a host is configured. pg also lets host and hostaddr URL
+ * parameters override the host in the authority, which would make the host check ambiguous.
+ */
+function assertNoConnectionRedirects(config: DatabaseConfig): void {
+  if (process.env.PGHOSTADDR) {
+    throw new Error("PGHOSTADDR is not supported. Set the database host explicitly in DATABASE_URL or DB_HOST.");
+  }
+  if (config.connectionString) {
+    let url: URL | undefined;
+    try {
+      url = new URL(config.connectionString);
+    } catch {
+      url = undefined; // reported by buildPoolConfig
+    }
+    if (url !== undefined && (url.searchParams.has("host") || url.searchParams.has("hostaddr"))) {
+      throw new Error("host and hostaddr URL parameters are not supported. Put the host in the URL.");
+    }
+  }
+}
+
+/** Plaintext is allowed only in a local environment, and only to a host the policy classifies as loopback. */
+function assertPlaintextAllowed(config: DatabaseConfig): void {
+  if (!isLocalEnvironment(effectiveEnvironment(config.environment))) {
+    throw new Error("DB_SSL=false is allowed only when NAIJA_ENV is development or test.");
+  }
+  classifyPlaintextHost(targetHostOf(config));
+}
+
+type PinnedLookupCallback = (error: Error | null, address: string | LookupAddress[], family?: number) => void;
+
+/**
+ * Socket factory for plaintext connections to "localhost". Each socket is given the fixed list of addresses that
+ * resolvePlaintextAddresses validated, through Node's `lookup` option. Node then never asks the system resolver,
+ * so no later DNS answer can redirect a pooled connection. Node still tries each validated address in turn.
+ *
+ * pg calls `socket.connect(port, host)`. This factory ignores the host argument because the pinned list is the
+ * only permitted target.
+ */
+export function pinnedPlaintextStream(addresses: readonly LookupAddress[]): () => Socket {
+  const pinned = addresses.map((entry) => ({ address: entry.address, family: entry.family }));
+  if (pinned.length === 0) {
+    throw new Error("A plaintext connection needs at least one validated loopback address.");
+  }
+  const lookup = (_hostname: string, options: { all?: boolean } | number, callback: PinnedLookupCallback): void => {
+    if (typeof options === "object" && options.all === true) {
+      callback(null, pinned.map((entry) => ({ ...entry })));
+      return;
+    }
+    const [first] = pinned;
+    if (first === undefined) {
+      callback(new Error("no validated address"), "");
+      return;
+    }
+    callback(null, first.address, first.family);
+  };
+  return () => {
+    const socket = new Socket();
+    const originalConnect = Socket.prototype.connect as unknown as (this: Socket, options: TcpSocketConnectOpts) => Socket;
+    const connectPinned = (port: number): Socket =>
+      originalConnect.call(socket, { port, host: "localhost", lookup } as TcpSocketConnectOpts);
+    (socket as unknown as { connect: (port: number) => Socket }).connect = connectPinned;
+    return socket;
+  };
+}
+
+/**
+ * Builds the pool configuration. `plaintextAddresses` is required when plaintext is used with the host name
+ * "localhost": it is the list from resolvePlaintextAddresses. Use resolveDatabasePoolConfig rather than calling this
+ * directly, so the lookup cannot be skipped.
+ */
+export function buildPoolConfig(config: DatabaseConfig = {}, plaintextAddresses?: readonly LookupAddress[]): PoolConfig {
   const poolConfig: PoolConfig = {};
   const environment = effectiveEnvironment(config.environment);
   const local = isLocalEnvironment(environment);
   const sslDisabled = config.ssl === false;
 
-  // pg reads PGHOSTADDR from the environment even when a host is configured, which could redirect a connection.
-  if (process.env.PGHOSTADDR) {
-    throw new Error("PGHOSTADDR is not supported. Set the database host explicitly in DATABASE_URL or DB_HOST.");
-  }
+  assertNoConnectionRedirects(config);
 
   if (config.connectionString) {
     if (!POSTGRES_URL_PATTERN.test(config.connectionString)) {
@@ -73,10 +144,6 @@ export function buildPoolConfig(config: DatabaseConfig = {}): PoolConfig {
       url = new URL(config.connectionString);
     } catch {
       throw new Error("DATABASE_URL could not be parsed as a connection URL.");
-    }
-    // pg lets these parameters override the host in the authority, which would make the host check ambiguous.
-    if (url.searchParams.has("host") || url.searchParams.has("hostaddr")) {
-      throw new Error("host and hostaddr URL parameters are not supported. Put the host in the URL.");
     }
     const sslmode = url.searchParams.get("sslmode");
     if (sslmode !== null) {
@@ -102,10 +169,15 @@ export function buildPoolConfig(config: DatabaseConfig = {}): PoolConfig {
   }
 
   if (sslDisabled) {
-    if (!local) {
-      throw new Error("DB_SSL=false is allowed only when NAIJA_ENV is development or test.");
+    assertPlaintextAllowed(config);
+    if (classifyPlaintextHost(targetHostOf(config)) === "localhost-name") {
+      if (plaintextAddresses === undefined) {
+        throw new Error(
+          "DB_SSL=false to localhost requires validated loopback addresses. Connect through DatabaseConnection.connect().",
+        );
+      }
+      poolConfig.stream = pinnedPlaintextStream(plaintextAddresses) as unknown as NonNullable<PoolConfig["stream"]>;
     }
-    classifyPlaintextHost(targetHostOf(config));
   }
   if (config.rejectUnauthorized === false && !local) {
     throw new Error("DB_SSL_REJECT_UNAUTHORIZED=false is allowed only when NAIJA_ENV is development or test.");
@@ -118,6 +190,22 @@ export function buildPoolConfig(config: DatabaseConfig = {}): PoolConfig {
   poolConfig.statement_timeout = config.statementTimeoutMs ?? 30000;
 
   return poolConfig;
+}
+
+/**
+ * The only supported way to get a pool configuration. Redirect and policy checks run first, so a refused
+ * configuration never triggers a lookup. For plaintext to "localhost", the lookup happens here, once; the
+ * validated addresses are pinned to the pool (see pinnedPlaintextStream). Remote TLS is returned unchanged: the
+ * driver resolves the name, and the certificate is verified against that name.
+ */
+export async function resolveDatabasePoolConfig(config: DatabaseConfig, hostLookup?: LookupFunction): Promise<PoolConfig> {
+  assertNoConnectionRedirects(config);
+  if (config.ssl === false) {
+    assertPlaintextAllowed(config);
+    const addresses = await resolvePlaintextAddresses(targetHostOf(config), hostLookup);
+    return buildPoolConfig(config, addresses);
+  }
+  return buildPoolConfig(config);
 }
 
 /** The host that a connection built from this configuration will reach, or undefined if it cannot be parsed. */
@@ -135,14 +223,16 @@ export function targetHostOf(config: DatabaseConfig): string | undefined {
 export class DatabaseConnection {
   private pool: Pool | null = null;
   private config: DatabaseConfig | undefined;
+  private hostLookup: LookupFunction | undefined;
   private isConnected: boolean = false;
 
   /**
    * With no argument, configuration is read from the environment when connect() runs.
    * (Reading it at construction would make the shared singleton ignore DATABASE_URL.)
    */
-  constructor(config?: DatabaseConfig) {
+  constructor(config?: DatabaseConfig, options: { hostLookup?: LookupFunction } = {}) {
     this.config = config;
+    this.hostLookup = options.hostLookup;
   }
 
   /**
@@ -154,11 +244,8 @@ export class DatabaseConnection {
     }
 
     const resolved = this.config ?? loadDatabaseConfigFromEnv();
-    const poolConfig = buildPoolConfig(resolved);
-    if (poolConfig.ssl === false) {
-      // DNS is checked here, at connect time, for the "localhost" name. Failures are not connection errors.
-      await assertPlaintextHostIsLoopback(targetHostOf(resolved));
-    }
+    // Policy, then (for plaintext to localhost) one validated lookup whose addresses are pinned to this pool.
+    const poolConfig = await resolveDatabasePoolConfig(resolved, this.hostLookup);
     const pool = new Pool(poolConfig);
     this.pool = pool;
 

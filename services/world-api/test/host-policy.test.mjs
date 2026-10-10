@@ -15,6 +15,9 @@ import {
 
 const SECRET = "t28-host-secret-do-not-print";
 
+/** Validated loopback addresses for plaintext to localhost (what resolvePlaintextAddresses returns). */
+const LOOPBACK = [{ address: "127.0.0.1", family: 4 }];
+
 test("Loopback addresses: IPv4 127.0.0.0/8 and IPv6 ::1 (including bracketed and expanded forms) are accepted", () => {
   for (const host of ["127.0.0.1", "127.255.255.254", "127.10.20.30", "::1", "[::1]", "0:0:0:0:0:0:0:1", "::ffff:127.0.0.1"]) {
     assert.equal(classifyPlaintextHost(host), "loopback-address", host);
@@ -148,7 +151,7 @@ test("Plaintext: allowed in development and test to loopback, and refused to a r
   for (const environment of ["development", "test"]) {
     assert.equal(buildPoolConfig({ host: "127.0.0.1", ssl: false, environment }).ssl, false);
     assert.equal(buildPoolConfig({ host: "::1", ssl: false, environment }).ssl, false);
-    assert.equal(buildPoolConfig({ host: "localhost", ssl: false, environment }).ssl, false);
+    assert.equal(buildPoolConfig({ host: "localhost", ssl: false, environment }, LOOPBACK).ssl, false);
     assert.throws(() => buildPoolConfig({ host: "db.example.test", ssl: false, environment }), HostPolicyError);
     assert.throws(() => buildPoolConfig({ host: "10.0.0.5", ssl: false, environment }), HostPolicyError);
   }

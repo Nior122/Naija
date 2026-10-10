@@ -82,26 +82,40 @@ export function classifyPlaintextHost(rawHost: string | undefined): PlaintextHos
 }
 
 /**
- * Connect-time check. For "localhost", every address DNS returns must be loopback. A lookup failure, an empty
- * answer, or any non-loopback address refuses the connection.
+ * Connect-time resolution for plaintext. Returns the exact addresses the connection may use.
+ *
+ * - An IP literal resolves to itself. No DNS is involved.
+ * - "localhost" is resolved ONCE, here. Every answer must be loopback; a lookup failure, an empty answer, or any
+ *   non-loopback answer refuses the connection. The returned list is the only set of addresses the pool may use
+ *   (see pinnedPlaintextStream in connection.ts), so a later DNS change cannot redirect a plaintext connection.
  */
-export async function assertPlaintextHostIsLoopback(
+export async function resolvePlaintextAddresses(
   rawHost: string | undefined,
   lookup: LookupFunction = defaultLookup,
-): Promise<void> {
+): Promise<LookupAddress[]> {
   const kind = classifyPlaintextHost(rawHost);
   if (kind === "loopback-address") {
-    return;
+    const address = normalizeHostName(rawHost ?? "");
+    return [{ address, family: isIP(address) }];
   }
-  let addresses: LookupAddress[];
+  let answers: LookupAddress[];
   try {
-    addresses = await lookup("localhost", { all: true, verbatim: true });
+    answers = await lookup("localhost", { all: true, verbatim: true });
   } catch {
     throw new HostPolicyError("DB_SSL=false is refused: localhost could not be resolved to loopback addresses.");
   }
-  if (addresses.length === 0 || !addresses.every((entry) => isLoopbackAddress(entry.address))) {
+  if (answers.length === 0 || !answers.every((entry) => isLoopbackAddress(entry.address))) {
     throw new HostPolicyError(
       "DB_SSL=false is refused: localhost resolves to a non-loopback address on this machine.",
     );
   }
+  return answers.map((entry) => ({ address: entry.address, family: entry.family }));
+}
+
+/** Connect-time check for callers that only need the verdict. See resolvePlaintextAddresses. */
+export async function assertPlaintextHostIsLoopback(
+  rawHost: string | undefined,
+  lookup: LookupFunction = defaultLookup,
+): Promise<void> {
+  await resolvePlaintextAddresses(rawHost, lookup);
 }

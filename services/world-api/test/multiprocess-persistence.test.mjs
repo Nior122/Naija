@@ -16,7 +16,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { after, before, test } from "node:test";
 import pg from "pg";
-import { buildPoolConfig, database, loadDatabaseConfigFromEnv } from "../dist/database/connection.js";
+import { resolveDatabasePoolConfig, database, loadDatabaseConfigFromEnv } from "../dist/database/connection.js";
 import { MigrationManager } from "../dist/database/migrations.js";
 
 const LIVE = !!process.env.DATABASE_URL && process.env.NAIJA_ALLOW_DB_TESTS === "true";
@@ -140,7 +140,7 @@ async function waitForOrphanedSaveToSettle() {
 
 /** A separate connection that holds the world row lock until it commits or rolls back. */
 async function holdRowLock(worldKey) {
-  const client = new pg.Client(buildPoolConfig(loadDatabaseConfigFromEnv()));
+  const client = new pg.Client(await resolveDatabasePoolConfig(loadDatabaseConfigFromEnv()));
   await client.connect();
   await client.query("BEGIN");
   await client.query("SELECT version FROM world_state WHERE key = $1 FOR UPDATE", [worldKey]);

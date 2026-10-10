@@ -54,8 +54,13 @@ Any other variable named in `.env.example` keeps its existing meaning. Unknown `
   `verify-ca`, and `require` are accepted and mapped to verification. They cannot weaken the policy.
 - **`DB_SSL=false` (plaintext)** is allowed only when `NAIJA_ENV` is `development` or `test`, and only to the host
   `127.0.0.1` or any `127.0.0.0/8` address, `::1` (including `[::1]` and `::ffff:127.x.x.x`), or the name `localhost`.
-  For `localhost`, the lookup is checked **at connect time**: every address returned must be loopback. Any other
-  name, any remote address, a unix socket path, a comma-separated host list, or an empty host is refused.
+  For `localhost`, the name is resolved **once**, before the pool is created. Every address returned must be loopback.
+  The validated list is then pinned to every pooled socket, so the driver never asks the system resolver again for
+  that connection. A later DNS change cannot redirect plaintext to another machine. Any other name, any remote
+  address, a unix socket path, a comma-separated host list, or an empty host is refused.
+- **Remote TLS is not pinned.** The name is passed to the driver, which uses it for certificate verification and
+  SNI. A DNS change to another host cannot complete a verified handshake unless that host presents a certificate
+  for the name. Tests: `test/plaintext-pinning.test.mjs`, `test/tls-hostname-binding.test.mjs`.
 - **Redirect parameters are refused**: `PGHOSTADDR` in the environment, and `host` or `hostaddr` URL parameters.
   These could send a connection somewhere other than the host named.
 - **`DB_SSL_REJECT_UNAUTHORIZED=false`** is allowed only in development and test. It never turns TLS off; the

@@ -16,6 +16,9 @@ import { buildPoolConfig, loadDatabaseConfigFromEnv } from "../dist/database/con
 
 const DATABASE_KEYS = ["DATABASE_URL", "DB_SSL", "DB_SSL_REJECT_UNAUTHORIZED", "NODE_EXTRA_CA_CERTS", "NAIJA_ENV"];
 
+/** Validated loopback addresses for plaintext to localhost (what resolvePlaintextAddresses returns). */
+const LOOPBACK = [{ address: "127.0.0.1", family: 4 }];
+
 // ---- Part 1: pure policy ---------------------------------------------------------------------
 
 test("TLS policy: default pool config verifies the server certificate", () => {
@@ -46,7 +49,7 @@ test("TLS policy: sslmode=disable is rejected unless DB_SSL=false is also set", 
     () => buildPoolConfig({ connectionString: "postgres://user@localhost/naija?sslmode=disable" }),
     /requires DB_SSL=false/,
   );
-  const config = buildPoolConfig({ connectionString: "postgres://user@localhost/naija?sslmode=disable", ssl: false, environment: "development" });
+  const config = buildPoolConfig({ connectionString: "postgres://user@localhost/naija?sslmode=disable", ssl: false, environment: "development" }, LOOPBACK);
   assert.equal(config.ssl, false);
 });
 
