@@ -174,7 +174,13 @@ test("HTTP health, world metadata, 404, and read-only method checks remain intac
     const health = await fetch(`${baseUrl}/health`);
     assert.equal(health.status, 200);
     assert.equal(health.headers.get("cache-control"), "no-store");
-    assert.deepEqual(await health.json(), { status: "ok", service: "world-api" });
+    const healthBody = await health.json();
+    assert.equal(healthBody.status, "healthy");
+    assert.equal(healthBody.version, "1.0.0");
+    assert.ok(healthBody.uptime >= 0);
+    assert.ok(healthBody.timestamp > 0);
+    assert.ok(healthBody.checks);
+    assert.ok(healthBody.metrics);
 
     const world = await fetch(`${baseUrl}/api/v1/world`);
     assert.equal(world.status, 200);

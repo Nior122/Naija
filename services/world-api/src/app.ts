@@ -1,4 +1,5 @@
 import { createServer, type Server, type ServerResponse } from "node:http";
+import { performance } from "node:perf_hooks";
 import { WebSocket, WebSocketServer } from "ws";
 import { fileURLToPath } from "node:url";
 import { MultiplayerWorld } from "./multiplayer/world-engine.js";
@@ -6,6 +7,7 @@ import { WorldStore } from "./multiplayer/persistence.js";
 import type { ServerOptions } from "./multiplayer/types.js";
 import type { DeathCauseCategory, InheritanceEventRecord, LifeEventRecord } from "./life/types.js";
 import { worldDescriptor } from "./world.js";
+import { monitoring } from "./monitoring.js";
 
 const MAX_MESSAGE_BYTES = 8 * 1024;
 
@@ -59,7 +61,8 @@ export function createApiServer(options: ApiServerOptions = {}): ApiServer {
     clientTracking: true,
   });
 
-  const server = createServer((request, response) => {
+  const server = createServer(async (request, response) => {
+    monitoring.recordRequest(false); // Track all requests
     const pathname = new URL(request.url ?? "/", "http://localhost").pathname;
 
     if (request.method !== "GET") {
@@ -69,7 +72,15 @@ export function createApiServer(options: ApiServerOptions = {}): ApiServer {
     }
 
     if (pathname === "/health") {
-      sendJson(response, 200, { status: "ok", service: "world-api" });
+      const health = await monitoring.getHealthStatus();
+      const statusCode = health.status === "unhealthy" ? 503 : 200;
+      sendJson(response, statusCode, health);
+      return;
+    }
+
+    if (pathname === "/metrics") {
+      const metrics = monitoring.getMetrics();
+      sendJson(response, 200, metrics);
       return;
     }
 
@@ -110,9 +121,20 @@ export function createApiServer(options: ApiServerOptions = {}): ApiServer {
   });
 
   websocketServer.on("connection", (client, request) => {
+    monitoring.recordConnection();
+    monitoring.info("Client connected", { 
+      ip: request.socket.remoteAddress,
+      total_connections: monitoring.getMetrics().connections.total 
+    });
+    
     world.attach(client, request);
     client.on("pong", () => responsiveSockets.add(client));
     responsiveSockets.add(client);
+    
+    client.on("close", () => {
+      monitoring.recordDisconnection();
+      monitoring.info("Client disconnected");
+    });
   });
 
   const responsiveSockets = new WeakSet<WebSocket>();
@@ -128,7 +150,16 @@ export function createApiServer(options: ApiServerOptions = {}): ApiServer {
   }, 15_000);
   heartbeatTimer.unref();
 
-  const tickTimer = setInterval(() => world.tick(), options.tickIntervalMs ?? 50);
+  const tickTimer = setInterval(() => {
+    const tickStart = performance.now();
+    world.tick();
+    const tickDuration = performance.now() - tickStart;
+    
+    // Update world metrics
+    const playersOnline = websocketServer.clients.size;
+    const tickRate = 1000 / (options.tickIntervalMs ?? 50);
+    monitoring.recordWorldMetrics(playersOnline, tickRate, tickDuration);
+  }, options.tickIntervalMs ?? 50);
   tickTimer.unref();
 
   let shutdownPromise: Promise<void> | null = null;
