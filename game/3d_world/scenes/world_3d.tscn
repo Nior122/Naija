@@ -1,0 +1,83 @@
+[gd_scene load_steps=6 format=3 uid="uid://c3dworld001"]
+
+[ext_resource type="Script" path="res://3d_world/scripts/world_3d_controller.gd" id="1_controller"]
+[ext_resource type="Script" path="res://3d_world/scripts/camera_3d_controller.gd" id="2_camera"]
+[ext_resource type="Script" path="res://3d_world/scripts/character_3d.gd" id="3_character"]
+[ext_resource type="Script" path="res://3d_world/scripts/time_of_day.gd" id="4_time"]
+[ext_resource type="Script" path="res://3d_world/scripts/environment_config.gd" id="5_env"]
+
+[node name="World3D" type="Node3D"]
+script = ExtResource("1_controller")
+
+[node name="Environment" type="Node3D" parent="."]
+script = ExtResource("5_env")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="Environment"]
+transform = Transform3D(0.866, -0.354, 0.354, 0, 0.707, 0.707, -0.5, -0.612, 0.612, 0, 50, 0)
+light_color = Color(1, 0.95, 0.9, 1)
+light_energy = 1.0
+shadow_enabled = true
+directional_shadow_mode = 1
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="Environment"]
+environment = SubResource("Environment_3denv")
+
+[node name="Terrain" type="Node3D" parent="."]
+
+[node name="Ground" type="MeshInstance3D" parent="Terrain"]
+transform = Transform3D(100, 0, 0, 0, 1, 0, 0, 0, 100, 0, -0.1, 0)
+mesh = SubResource("PlaneMesh_ground")
+surface_material_override/0 = SubResource("StandardMaterial3D_ground")
+
+[node name="Buildings" type="Node3D" parent="."]
+
+[node name="Props" type="Node3D" parent="."]
+
+[node name="Characters" type="Node3D" parent="."]
+
+[node name="PlayerCharacter" type="CharacterBody3D" parent="Characters"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0)
+script = ExtResource("3_character")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Characters/PlayerCharacter"]
+shape = SubResource("CapsuleShape3D_player")
+
+[node name="CameraMount" type="Node3D" parent="Characters/PlayerCharacter"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.6, 0)
+
+[node name="Camera3D" type="Camera3D" parent="Characters/PlayerCharacter/CameraMount"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 5)
+current = true
+script = ExtResource("2_camera")
+
+[node name="TimeOfDay" type="Node" parent="."]
+script = ExtResource("4_time")
+
+[sub_resource type="Environment" id="Environment_3denv"]
+background_mode = 1
+background_color = Color(0.5, 0.7, 0.9, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.6, 0.65, 0.75, 1)
+ambient_light_energy = 0.4
+tonemap_mode = 2
+tonemap_exposure = 1.0
+ssao_enabled = true
+ssao_radius = 2.0
+glow_enabled = true
+glow_intensity = 0.3
+fog_enabled = true
+fog_light_color = Color(0.7, 0.75, 0.8, 1)
+fog_density = 0.001
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_ground"]
+size = Vector2(100, 100)
+subdivide_width = 10
+subdivide_depth = 10
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_ground"]
+albedo_color = Color(0.4, 0.35, 0.25, 1)
+roughness = 0.9
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_player"]
+radius = 0.3
+height = 1.8
