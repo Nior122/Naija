@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
 import { database } from "../dist/database/connection.js";
 import { MigrationManager } from "../dist/database/migrations.js";
-import { PostgresWorldStore } from "../dist/database/world-store.js";
+import { PostgresWorldStore, StoredWorldTooLargeError } from "../dist/database/world-store.js";
 import { initialState, WorldStateCapacityError } from "../dist/multiplayer/persistence.js";
 import { uniqueWorldKey } from "./support/creation-fixture.mjs";
 
@@ -99,7 +99,7 @@ describe("persistence failure audit (postgres backend)", { skip: PG_LIVE ? false
     assert.equal(after.value.worldClock.minute_of_day, 42);
   });
 
-  test("CURRENT BEHAVIOUR: health() reports pass while saves are refused by the size limit", async (t) => {
+  test("G1: health() reports fail while saves are refused by the size limit, and pass after a successful save", async (t) => {
     const key = freshKey();
     const store = await PostgresWorldStore.open({ worldKey: key, db: database });
     await store.flush();
@@ -108,9 +108,12 @@ describe("persistence failure audit (postgres backend)", { skip: PG_LIVE ? false
 
     const health = await store.health();
     t.diagnostic(`health after refusal: ${health.status}: ${health.message}`);
-    // Recorded, not endorsed: health reports reachability and the fence only, not the last save result.
-    assert.equal(health.status, "pass");
+    // Previously recorded as a gap (health reported pass). A refused save now fails health until a save succeeds (G1).
+    assert.equal(health.status, "fail");
+    assert.match(health.message, /over its size limit/);
     delete store.state.lifeEvents["pad-record"];
+    await store.flush();
+    assert.equal((await store.health()).status, "pass");
   });
 
   test("a malformed stored row is refused at startup and the row is not overwritten", async () => {
@@ -126,7 +129,7 @@ describe("persistence failure audit (postgres backend)", { skip: PG_LIVE ? false
     assert.equal(String(after.version), String(before.version));
   });
 
-  test("CURRENT BEHAVIOUR: an oversized stored row loads without a size check, and the next save is refused", async (t) => {
+  test("G2: an oversized stored row is refused at load, and the row and version are unchanged", async () => {
     const key = freshKey();
     const fresh = initialState(Date.now());
     // A valid life-event record (the loader checks lifecycle records), with a 16 MiB payload in its data.
@@ -146,11 +149,15 @@ describe("persistence failure audit (postgres backend)", { skip: PG_LIVE ? false
     );
     const before = await storedRow(key);
 
-    // Recorded, not endorsed: the file backend refuses an oversized file at startup; PostgreSQL does not check on load.
-    const store = await PostgresWorldStore.open({ worldKey: key, db: database });
-    t.diagnostic(`oversized row loaded: ${Buffer.byteLength(JSON.stringify(store.state), "utf8")} bytes of state`);
-    await assert.rejects(store.flush(), (error) => error instanceof WorldStateCapacityError);
+    // Previously recorded as a gap (the row loaded and the next save was refused). Now the load itself fails closed.
+    await assert.rejects(PostgresWorldStore.open({ worldKey: key, db: database }), (error) => {
+      assert.ok(error instanceof StoredWorldTooLargeError, `unexpected error type ${error?.name}`);
+      assert.ok(error.storedBytes > 16 * MiB, "the reported size is above the limit");
+      assert.doesNotMatch(error.message, /x{100}/, "the message does not contain world data");
+      return true;
+    });
     const after = await storedRow(key);
     assert.deepEqual(after.value, before.value, "the oversized row is left as it was");
+    assert.equal(String(after.version), String(before.version), "the version does not change");
   });
 });

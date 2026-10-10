@@ -93,3 +93,15 @@ Neon results will not be presented as production evidence. The runbook covers a 
 - No Neon connection, TLS check, or read and write test has been run.
 - No deployment has been inspected, because none is in the repository.
 - R4 is not enabled anywhere. It is disabled by default.
+
+---
+
+## Health endpoints for deployment (continuation)
+
+- `GET /live`: liveness. It does not depend on persistence. Intended for a liveness probe.
+- `GET /health`: readiness. Includes persistence (latest save outcome, fencing, and database reachability). Returns 503
+  when unhealthy. Intended for a readiness probe and for load-balancer membership.
+
+The repository has no deployment, ingress, or probe configuration, so neither endpoint is wired anywhere yet. The
+probe configuration is BLOCKED until a deployment exists. Neon is still BLOCKED (see the Neon runbook). Production is
+not ready. See `STAGE_28_PERSISTENCE_SAFETY.md`.

@@ -252,28 +252,35 @@ test("audit: gameplay after saves stop changes live memory only; a restart loses
   }
 });
 
-test("audit CURRENT BEHAVIOUR: while saves are refused by the size limit, /health stays reachable and reports no save failure", async () => {
+test("G1: while saves are refused by the size limit, /health reports persistence failure, /live stays up, and a later successful save clears it", async () => {
+  // Production wiring (src/index.ts passes persistence.health()). Before G1 this recorded a gap: /health reported no
+  // save failure. The old CURRENT BEHAVIOUR assertion is replaced; see docs/STAGE_28_PERSISTENCE_SAFETY.md.
   const backend = fileBackend();
-  const started = await startCreationServer({ store: backend.store }, LIMIT_OPTIONS);
+  const started = await startCreationServer({ store: backend.store }, { ...LIMIT_OPTIONS, persistenceHealth: () => backend.store.health() });
   try {
     const seed = await createOne(started.websocketUrl, "Health");
     backend.store.state.players[seed.playerId].character.test_padding = "x".repeat(17 * MiB);
     assert.equal((await createOne(started.websocketUrl, "Refused")).code, "world_capacity_reached");
+
     const response = await fetch(`${started.baseUrl}/health`);
     const body = await response.json();
-    // Recorded, not endorsed: /health does not include the last save result or the size limit. It stays
-    // reachable, and it does not report the save failure. The status is 200 or 503 depending on single-sample
-    // runtime checks (memory, event loop, connections; see the integration tests). Only those may warn or fail.
-    const checkSummary = JSON.stringify(Object.fromEntries(Object.entries(body.checks ?? {}).map(([name, check]) => [name, check.status])));
-    assert.ok([200, 503].includes(response.status), `unexpected /health status ${response.status} (checks: ${checkSummary})`);
-    assert.notEqual(body.checks?.persistence?.status, "fail", `persistence must not report a failure (checks: ${checkSummary})`);
-    const notHealthy = Object.entries(body.checks ?? {}).filter(([, check]) => check.status !== "pass").map(([name]) => name);
-    const runtimeChecks = new Set(["memory", "event_loop", "connections"]);
-    assert.ok(notHealthy.every((name) => runtimeChecks.has(name)),
-      `only memory and event-loop checks may warn or fail (checks: ${checkSummary})`);
-    assert.ok(!Object.keys(body.checks ?? {}).some((name) => /save|persist|capacity|world/i.test(name)),
-      `no check in /health reports the save failure (checks: ${checkSummary})`);
+    assert.equal(response.status, 503, "a refused save makes readiness fail");
+    assert.equal(body.checks.persistence.status, "fail");
+    assert.match(body.checks.persistence.message, /over its size limit/);
+    assert.match(body.checks.persistence.message, /not persisted/);
+    // The message carries reason and timing only, never world data.
+    assert.doesNotMatch(body.checks.persistence.message, /Health|Refused|test_padding|xxxx/);
+
+    const live = await fetch(`${started.baseUrl}/live`);
+    assert.equal(live.status, 200, "liveness does not depend on persistence");
+    assert.equal((await live.json()).status, "alive");
+
     delete backend.store.state.players[seed.playerId].character.test_padding;
+    assert.equal((await createOne(started.websocketUrl, "Recovered")).type, "identity.created");
+    const recovered = await fetch(`${started.baseUrl}/health`);
+    const recoveredBody = await recovered.json();
+    assert.equal(recoveredBody.checks.persistence.status, "pass", "a successful save after the failure clears it");
+    assert.notEqual(recovered.status, 503, `readiness must not stay failed (checks: ${JSON.stringify(recoveredBody.checks)})`);
   } finally {
     await started.stop().catch(() => undefined);
   }

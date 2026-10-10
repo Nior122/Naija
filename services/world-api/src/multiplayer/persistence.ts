@@ -1,7 +1,8 @@
 import { performance } from "node:perf_hooks";
-import { monitoring } from "../monitoring.js";
+import { monitoring, type HealthCheck } from "../monitoring.js";
 import { randomUUID } from "node:crypto";
-import { mkdir, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, open, rename, rm } from "node:fs/promises";
+import { SaveStatusTracker, classifySaveFailure } from "../persistence-status.js";
 import { readFileSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { geographicLocationIsValid } from "../geography/catalog.js";
@@ -1014,6 +1015,14 @@ export interface WorldStoreLike {
 
 export type WorldFileFormat = "pretty" | "compact";
 
+/**
+ * Points inside a file save, for fault-injection tests only (see test/file-save-durability.test.mjs).
+ * - before-temp: nothing has been written yet.
+ * - after-temp-sync: the complete temporary file is on disk, and the saved file is still the previous one.
+ * - after-rename: the saved file has been replaced; directory sync has not run yet.
+ */
+export type FileWritePhase = "before-temp" | "after-temp-sync" | "after-rename";
+
 export interface WorldStoreOptions {
   /**
    * Size limit override for tests and the capacity probe only. It must be a positive integer.
@@ -1027,6 +1036,36 @@ export interface WorldStoreOptions {
    * Loading accepts both formats.
    */
   readonly format?: WorldFileFormat;
+  /** Test-only fault injection at a point in the file save. Production code never sets it. */
+  readonly fileWriteFaultHook?: (phase: FileWritePhase) => void | Promise<void>;
+}
+
+/**
+ * Writes a complete file and flushes its data to stable storage before it returns (fsync). The file is created
+ * exclusively, so an existing file is never overwritten.
+ */
+async function writeFileDurably(path: string, data: string): Promise<void> {
+  const handle = await open(path, "wx", 0o600);
+  try {
+    await handle.writeFile(data, "utf8");
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+}
+
+/**
+ * Flushes a directory entry to stable storage (fsync on the directory), so a completed rename survives a power loss.
+ * Node cannot open a directory on Windows, so this is skipped there. See docs/STAGE_28_PERSISTENCE_SAFETY.md.
+ */
+async function syncDirectory(directory: string): Promise<void> {
+  if (process.platform === "win32") return;
+  const handle = await open(directory, "r");
+  try {
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
 }
 
 export class WorldStore implements WorldStoreLike {
@@ -1034,11 +1073,15 @@ export class WorldStore implements WorldStoreLike {
   readonly state: PersistentWorldState;
   private readonly maxBytes: number;
   private readonly format: WorldFileFormat;
+  private readonly fileWriteFaultHook: WorldStoreOptions["fileWriteFaultHook"];
   private writeQueue: Promise<void> = Promise.resolve();
+  /** Outcome of every save this instance has attempted (G1). Reported by health(). */
+  readonly saveStatus = new SaveStatusTracker();
 
   constructor(filePath: string, now: number = Date.now(), options: WorldStoreOptions = {}) {
     this.filePath = resolve(filePath);
     this.format = options.format ?? "pretty";
+    this.fileWriteFaultHook = options.fileWriteFaultHook;
     if (this.format !== "pretty" && this.format !== "compact") throw new Error('format must be "pretty" or "compact".');
     this.maxBytes = options.maxBytes ?? WORLD_STATE_LIMIT_BYTES;
     if (!Number.isSafeInteger(this.maxBytes) || this.maxBytes < 1) throw new Error("maxBytes must be a positive integer.");
@@ -1061,10 +1104,21 @@ export class WorldStore implements WorldStoreLike {
     try {
       await this.writeSnapshot(candidate);
       monitoring.recordPersistenceFlush(true, performance.now() - started);
+      this.saveStatus.recordSuccess(Date.now());
     } catch (error) {
       monitoring.recordPersistenceFlush(false, performance.now() - started);
+      this.saveStatus.recordFailure(classifySaveFailure(error), Date.now());
       throw error;
     }
+  }
+
+  /**
+   * Health of this file store (development mode). Reports the outcome of the latest save (G1). A file store has no
+   * network dependency, so no other check applies.
+   */
+  async health(): Promise<HealthCheck> {
+    const saves = this.saveStatus.check();
+    return { ...saves, message: `File persistence (development mode); not PostgreSQL. ${saves.message}` };
   }
 
   /**
@@ -1080,8 +1134,15 @@ export class WorldStore implements WorldStoreLike {
       await mkdir(dirname(this.filePath), { recursive: true });
       const temporaryPath = `${this.filePath}.${process.pid}.${randomUUID()}.tmp`;
       try {
-        await writeFile(temporaryPath, snapshot, { encoding: "utf8", mode: 0o600 });
+        await this.fileWriteFaultHook?.("before-temp");
+        await writeFileDurably(temporaryPath, snapshot);
+        await this.fileWriteFaultHook?.("after-temp-sync");
         await rename(temporaryPath, this.filePath);
+        await this.fileWriteFaultHook?.("after-rename");
+        // The save is reported as successful only after the directory entry for the new file is synced (where the
+        // platform allows it). A failure here means the new file may not survive a power loss; the save is reported
+        // as failed, and the engine retries it.
+        await syncDirectory(dirname(this.filePath));
         monitoring.recordWorldStateSaved(Buffer.byteLength(snapshot, "utf8"), Object.keys(state.players).length, this.maxBytes);
       } finally {
         await rm(temporaryPath, { force: true });

@@ -616,6 +616,10 @@ export class MultiplayerWorld {
   private capacityEpisodeOpen = false;
   /** True from the first non-capacity save failure until the next successful save. */
   private persistenceEpisodeOpen = false;
+  /** When the first failure notice of the current episode was sent. Null when no notice is open (G3). */
+  private failureNoticeOpenedAt: number | null = null;
+  /** Failed save attempts since the last successful save. Reported in the recovery signal (G3). */
+  private failedSaveAttemptsSinceSuccess = 0;
   private closed = false;
 
   constructor(private readonly store: WorldStoreLike, options: WorldEngineOptions = {}) {
@@ -1086,10 +1090,12 @@ export class MultiplayerWorld {
       this.creationFaultHook?.("before-save");
       await this.store.saveState(draft);
     } catch (error) {
+      this.failedSaveAttemptsSinceSuccess += 1;
       if (error instanceof WorldStateCapacityError) {
         monitoring.recordIdentityCreation("capacity_refused");
         this.sendError(context, "world_capacity_reached", "The world data limit has been reached; no new identities can be saved.", requestId);
         if (this.enterCapacityEpisode()) {
+          this.openFailureNotice();
           console.error("multiplayer world state is over its size limit; saves are refused and the previous file is kept");
           for (const other of this.online.values()) {
             if (other !== context) this.sendError(other, "world_capacity_reached", "The world has reached its size limit. Recent changes are not saved yet.");
@@ -1105,8 +1111,7 @@ export class MultiplayerWorld {
 
     // Committed. Merge without awaiting, and only if no live value that the creation relies on has changed.
     this.creationFaultHook?.("after-save");
-    this.capacityEpisodeOpen = false;
-    this.persistenceEpisodeOpen = false;
+    this.noteSaveSucceeded();
     const conflicts = mergeStateChanges(this.store.state, changes);
     if (conflicts.length > 0) {
       // The saved world now holds the identity, but the live world cannot take it. Save the live world
@@ -1200,9 +1205,9 @@ export class MultiplayerWorld {
     try {
       await this.store.flush();
       this.lastPersistAt = this.now();
-      this.capacityEpisodeOpen = false;
-      this.persistenceEpisodeOpen = false;
+      this.noteSaveSucceeded();
     } catch {
+      this.failedSaveAttemptsSinceSuccess += 1;
       this.dirty = true;
       if (player.tokenHash === tokenHash) player.tokenHash = oldTokenHash;
       if (player.lastSeen === timestamp) player.lastSeen = oldLastSeen;
@@ -4875,6 +4880,32 @@ export class MultiplayerWorld {
     return true;
   }
 
+  private openFailureNotice(): void {
+    if (this.failureNoticeOpenedAt === null) this.failureNoticeOpenedAt = this.now();
+  }
+
+  /**
+   * Called after every successful save. Clears the notice episodes. If a failure notice was sent, sends exactly one
+   * persistence.restored signal to online players and one log line. The signal says only that the save succeeded.
+   * It does not claim anything about changes that were not part of that save (G3).
+   */
+  private noteSaveSucceeded(): void {
+    this.capacityEpisodeOpen = false;
+    this.persistenceEpisodeOpen = false;
+    const failedAttempts = this.failedSaveAttemptsSinceSuccess;
+    this.failedSaveAttemptsSinceSuccess = 0;
+    const openedAt = this.failureNoticeOpenedAt;
+    if (openedAt === null) return;
+    this.failureNoticeOpenedAt = null;
+    const outageSeconds = Math.max(0, Math.round((this.now() - openedAt) / 1000));
+    console.info(
+      `multiplayer world saves recovered after ${failedAttempts} failed attempts over ${outageSeconds} s; this save is complete`,
+    );
+    for (const context of this.online.values()) {
+      this.send(context, { type: "persistence.restored", failedAttempts, outageSeconds });
+    }
+  }
+
   private async flushDirty(): Promise<void> {
     if (!this.dirty || this.flushInFlight) return;
     this.flushInFlight = true;
@@ -4883,25 +4914,33 @@ export class MultiplayerWorld {
     try {
       await this.serialize(() => this.store.flush());
       this.lastPersistAt = this.now();
-      this.capacityEpisodeOpen = false;
-      this.persistenceEpisodeOpen = false;
+      this.noteSaveSucceeded();
     } catch (error) {
       writeFailed = true;
       this.dirty = true;
+      this.failedSaveAttemptsSinceSuccess += 1;
       // A refused save keeps the previous valid file. Nothing is removed to make room.
       if (error instanceof WorldStateCapacityError) {
         // One notice and one log line per episode; retries stay silent until a save succeeds.
         if (this.enterCapacityEpisode()) {
+          this.openFailureNotice();
           console.error("multiplayer world state is over its size limit; saves are refused and the previous file is kept");
           for (const context of this.online.values()) {
             this.sendError(context, "world_capacity_reached", "The world has reached its size limit. Recent changes are not saved yet.");
           }
         }
       } else if (this.enterPersistenceEpisode()) {
-        // One notice and one log line per episode, as for capacity. Retries stay silent until a save succeeds.
-        // Gap: no "saved again" message exists yet, so clients are not told when a later save succeeds.
-        console.error("multiplayer persistence failed; retries continue silently until a save succeeds");
-        for (const context of this.online.values()) this.sendError(context, "persistence_failed", "Server state could not be saved.");
+        // One notice and one log line per episode, as for capacity. Retries continue about once a second until a
+        // save succeeds; the first successful save then sends one persistence.restored signal (G3).
+        this.openFailureNotice();
+        console.error("multiplayer persistence failed; retries continue until a save succeeds");
+        for (const context of this.online.values()) {
+          this.sendError(
+            context,
+            "persistence_failed",
+            "Server state could not be saved. Changes made now may be lost if the server restarts before saving works again.",
+          );
+        }
       }
     } finally {
       this.flushInFlight = false;

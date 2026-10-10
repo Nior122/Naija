@@ -24,6 +24,11 @@ export class FaultyStore {
     return this.inner.filePath;
   }
 
+  /** Health comes from the wrapped store, so injected failures show up exactly as real ones do (G1). */
+  health() {
+    return this.inner.health();
+  }
+
   failNextWrite(message = "injected write failure") {
     this.failures.push({ mode: "fail", error: new Error(message) });
   }
@@ -67,7 +72,11 @@ export class FaultyStore {
       this.heldCount += 1;
       await gate;
     }
-    if (failure?.mode === "fail") throw failure.error;
+    if (failure?.mode === "fail") {
+      // An injected failure never reaches the wrapped store, so record it there, as a real failed save would be.
+      this.inner.saveStatus?.recordFailure("error", Date.now());
+      throw failure.error;
+    }
     await perform();
     this.committedCount += 1;
     const after = this.holdAfter;

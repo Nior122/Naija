@@ -125,3 +125,20 @@ No stage below is implemented by this document. Each stage needs its own review 
 3. Whether the tick's time and needs changes are suspended in Stage 3, or continue and are documented as at risk.
 4. Whether `/health` should show the save state, and under which field name.
 5. The player-facing wording for refused commands and for recovery. This needs a product owner, not an engineer.
+
+---
+
+## Status note (Stage 28 continuation)
+
+The statements above are kept as they were written. The following have changed:
+
+- `/health` now reports a failed save as `fail` (readiness 503) until a later save succeeds. Before, it did not report
+  the save result. The earlier text "`/health` does not report the save state" is out of date.
+- A recovery message, `persistence.restored`, is sent once per failure episode after a successful save. The game client
+  does not display it yet, so players still have no visible "saved again" signal.
+- The save timing in the table above is corrected. Each family handler makes an awaited save attempt at its end
+  (`await this.flushDirty()`), and periodic retries follow a failure. "Periodic save" describes the retries, not the first
+  attempt.
+- The failure notice text now says that changes may be lost on restart until saving works again.
+
+Details, the decision table, and the limitations are in `STAGE_28_PERSISTENCE_SAFETY.md`. Stage 28 remains OPEN.

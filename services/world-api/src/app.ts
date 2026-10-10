@@ -96,6 +96,16 @@ export function createApiServer(options: ApiServerOptions = {}): ApiServer {
       return;
     }
 
+    // Liveness: the process is running and answering HTTP. It does not check persistence, so a failing save never
+    // makes this endpoint fail. Use /health (readiness) to decide whether the instance should receive players. This
+    // endpoint performs no reads or writes of world state.
+    if (pathname === "/live") {
+      sendJson(response, 200, { status: "alive", uptime: Math.round(process.uptime()) });
+      return;
+    }
+
+    // Readiness: includes persistence health (the store's latest save outcome, fencing, and database reachability).
+    // The check only reads state. It never saves, retries, or changes world state.
     if (pathname === "/health") {
       const extra: Record<string, HealthCheck> = {};
       if (options.persistenceHealth) {

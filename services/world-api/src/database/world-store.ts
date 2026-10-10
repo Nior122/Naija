@@ -4,6 +4,7 @@ import { WORLD_ID, type PersistentWorldState } from "../multiplayer/types.js";
 import type { HealthCheck } from "../monitoring.js";
 import { monitoring } from "../monitoring.js";
 import { performance } from "node:perf_hooks";
+import { classifySaveFailure, SaveStatusTracker } from "../persistence-status.js";
 
 /**
  * PostgreSQL-backed world state for Naija: One World.
@@ -39,10 +40,27 @@ export class WorldStateConflictError extends Error {
   }
 }
 
+/**
+ * A stored world is refused at load when its serialized size exceeds the save limit. The size is measured as the save
+ * path measures it (compact JSON, UTF-8 bytes), so a row that the save path could have written loads, and a row it
+ * could not write is refused. The row is not changed, truncated, or migrated. See docs/STAGE_28_PERSISTENCE_SAFETY.md.
+ */
+export class StoredWorldTooLargeError extends Error {
+  constructor(readonly storedBytes: number) {
+    super(
+      `The stored world state is ${storedBytes} bytes, above the ${MAX_SNAPSHOT_BYTES}-byte limit. ` +
+        "The server did not load it, and the database row was not changed. Review it under a documented plan.",
+    );
+    this.name = "StoredWorldTooLargeError";
+  }
+}
+
 export class PostgresWorldStore implements WorldStoreLike {
   private version: number;
   private fenced = false;
   private writeQueue: Promise<void> = Promise.resolve();
+  /** Outcome of every save this instance has attempted (G1). Reported by health(). */
+  readonly saveStatus = new SaveStatusTracker();
 
   private constructor(
     private readonly db: DatabaseConnection,
@@ -84,6 +102,11 @@ export class PostgresWorldStore implements WorldStoreLike {
       }
     }
 
+    // Size is checked before validation and before any write. An oversized row is refused, never loaded.
+    const storedBytes = Buffer.byteLength(JSON.stringify(row.value), "utf8");
+    if (storedBytes > MAX_SNAPSHOT_BYTES) {
+      throw new StoredWorldTooLargeError(storedBytes);
+    }
     const state = validateState(row.value, now);
     return new PostgresWorldStore(db, worldKey, state, Number(row.version));
   }
@@ -107,8 +130,10 @@ export class PostgresWorldStore implements WorldStoreLike {
       try {
         await this.writeSnapshot(candidate);
         monitoring.recordPersistenceFlush(true, performance.now() - started);
+        this.saveStatus.recordSuccess(Date.now());
       } catch (error) {
         monitoring.recordPersistenceFlush(false, performance.now() - started);
+        this.saveStatus.recordFailure(classifySaveFailure(error), Date.now());
         throw error;
       }
     };
@@ -142,7 +167,10 @@ export class PostgresWorldStore implements WorldStoreLike {
     monitoring.recordWorldStateSaved(Buffer.byteLength(snapshot, "utf8"), Object.keys(state.players).length, MAX_SNAPSHOT_BYTES);
   }
 
-  /** Health of this store: fenced stores and unreachable databases report failure. */
+  /**
+   * Health of this store. Fenced stores, unreachable databases, and a failing latest save report failure. A reachable
+   * database alone is not enough: the outcome of the latest save decides whether persistence is healthy (G1).
+   */
   async health(): Promise<HealthCheck> {
     if (this.fenced) {
       return { status: "fail", message: "World state was superseded by another writer; restart required." };
@@ -151,6 +179,8 @@ export class PostgresWorldStore implements WorldStoreLike {
     if (!result.healthy) {
       return { status: "fail", message: "PostgreSQL is unreachable or not responding." };
     }
+    const saves = this.saveStatus.check();
+    if (saves.status === "fail") return saves;
     return {
       status: "pass",
       message: `PostgreSQL reachable; world state version ${this.version}.`,

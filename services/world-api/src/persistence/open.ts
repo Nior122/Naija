@@ -82,7 +82,8 @@ export async function openWorldPersistence(options: OpenPersistenceOptions): Pro
     return {
       backend,
       store,
-      health: async () => ({ status: "pass", message: "File persistence (development mode); not PostgreSQL." }),
+      // Reports the outcome of the latest save, not a static pass (G1).
+      health: () => store.health(),
       close: async () => undefined,
     };
   }

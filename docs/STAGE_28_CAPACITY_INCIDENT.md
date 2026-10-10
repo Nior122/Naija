@@ -131,3 +131,27 @@ Assessment: the gap is inconsistent retry behaviour and a budget over-count, not
 ## 10. Config change in this phase
 
 `readApiConfig` now rejects `PERSISTENCE_BACKEND=file` when `NAIJA_ENV=production`, case-insensitively, with the same message as the startup check. It was previously accepted at config time and refused only at startup. Test: `test/production-persistence-config.test.mjs` (3/3). The pre-fix config fails the rejection case (2 pass, 1 fail), so the test catches the gap.
+
+---
+
+## 11. Continuation status: G1–G5 and capacity follow-up (Task F)
+
+The table in section 4 is the historical record and is not edited. Status after the continuation (details in
+`STAGE_28_PERSISTENCE_SAFETY.md`):
+
+| # | Status after the continuation |
+|---|---|
+| G1 | Changed. `/live` (liveness) and `/health` (readiness). A refused or failing save reports `fail` until a later save succeeds. Health checks do not write. |
+| G2 | Fixed. A PostgreSQL row above 16 MiB is refused at load. The row is unchanged. The file backend is unchanged. |
+| G3 | Fixed on the server. One `persistence.restored` message per failure episode. The game client does not display it yet. |
+| G4 | Mapped (27 families plus identity commands). Warning-only everywhere. No new rejection. The per-family decision table is in the safety document. |
+| G5 | Partly fixed. The temporary file and the directory are synced. Power-loss durability is NOT established. Process-kill tests only. |
+
+Task F (follow-up): the 16 MiB limit is kept. The 629-identity case is still unexplained (709, 709, and 708 on three
+reproductions). No hard state cap has been added. Real saves were measured at 16 MiB (1,047 to 1,069 identities in
+compact form; 706 and 707 in pretty form) and at a 1 GiB test-only limit (1,000 and 2,500). 5,000 and 10,000 were not
+run. No support claim is made beyond the measured points.
+
+Section 9 (the conflict-branch retry) is unchanged. No fix has been made. The design decision is still open.
+
+Stage 28 remains OPEN — PRODUCTION NOT READY.
