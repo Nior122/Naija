@@ -143,6 +143,8 @@ Each phase needs tests that run against a copy of a saved world, and a rollback 
 
 ## 10. Option B: required detail before implementation (design only)
 
+> **Update (2026-10-10):** Section 11 records the adopted direction for review. Where section 11 differs from this section (notably D3 and D4, and the channel), section 11 governs. Section 10 remains as the analysis it was.
+
 This section answers the four points the user asked for before any code is written: how ownership is verified, how notifications are delivered, how the legitimate player cancels, and what happens when delivery or processing fails. Existing players keep access. Recovery is never silently allowed when notification fails. **Nothing here is implemented.**
 
 ### 10.1 What "a valid device session" means (verification)
@@ -211,3 +213,108 @@ No failure path grants recovery without the wait and the checks above. No failur
 **Recommendation for review (not decided):** implement D1 with the live-session rule first; keep key-only recovery for offline identities behind the 24-hour pending period; choose D4 strict for now, so that a lost-device player relies on the break-glass procedure until an out-of-band channel exists (accounts, Option A). Under that choice, self-service recovery of an offline identity is unavailable until a channel exists, and that is a visible product cost.
 
 **Status:** design only. No implementation, client change, schema change, or test has been written for Option B.
+
+## 11. Adopted direction for review (design only; not implemented)
+
+**Status.** Direction adopted for review on 2026-10-10. **No code, client, schema, or test is implemented for this section.** The authentication redesign is not started. Key-only recovery is not removed. Stage 28 remains IN PROGRESS.
+
+### 11.1 The rules
+
+1. **Live session refusal.** A key-only takeover is refused while the identity's device still holds a valid session (section 10.1, D1). This is unchanged in intent.
+2. **Verified channel required for self-service.** Self-service recovery of an identity is allowed only when the identity has a **verified notification channel** tied to it (11.2). An identity with no verified channel cannot complete self-service recovery. It goes to operator-assisted recovery (11.5).
+3. **Notification before takeover, no silent approval.** A pending recovery is created only if the notice to the verified channel was accepted by the provider. If the notice cannot be sent or accepted, nothing changes and the recovery does not start. Nothing is approved silently on a notification failure.
+4. **24-hour wait, cancellable.** Default wait 24 hours from the recorded request time (server time). The owner can cancel during the wait (11.4). The current token keeps working during the wait.
+5. **No secrets in records or logs.** Keys, session tokens, cancel tokens, email addresses, and IP addresses are not written to audit records or logs (11.6).
+6. **Compatible migration.** Existing identities, tokens, and resume behaviour are unchanged on deployment. The channel is an additive, optional record (11.7).
+
+### 11.2 Smallest viable notification channel: verified email
+
+Options compared:
+
+| Channel | Verdict | Reason |
+|---|---|---|
+| In-game socket message | Rejected as the only channel | An owner who has lost the device is offline and cannot see it. Section 10.3 shows the gap. |
+| Verified email tied to the identity | **Proposed (smallest viable)** | Reaches an offline owner. One provider integration. A verification code proves control of the address. |
+| SMS to a verified phone | Possible later | Same proof model, but a telephone provider and number data add cost and a second personal-data class. |
+| Social or third-party account | Rejected | Not verified to the identity, and the game has no account system to link it to (Option A). |
+
+**Enrollment.** Only a player who is signed in on the device can add a channel. The flow is: enter an address; the server sends a one-time code to it (stored as a hash, short expiry, rate-limited); the player enters the code; the address is then marked verified with a time. A player who has not enrolled cannot use self-service recovery.
+
+**Delivery and verification.** "Verified" means the address proved control by returning the code. "Delivered" is not claimed: the provider's acceptance is recorded. Provider bounce notices, if configured, mark the channel unusable and stop self-service until the player re-verifies.
+
+### 11.3 What the smallest channel needs
+
+| Area | Change | Notes |
+|---|---|---|
+| Client | Enrollment screen (address, code); status of channel (none, pending, verified); recovery-pending message; cancel action; message for "operator assistance required" | No client behaviour is invented here. Each screen needs a client test and a UX review. |
+| Identity and account | Optional **identity contact** record linked to `playerId`: address (stored with access controls; encryption at rest is a decision, D8), verified time, code hash, code expiry | No account or character columns are added. The contact is one record per identity, in one authoritative store. |
+| Database | Additive table for contacts and a recovery-pending record, plus an append-only audit table (11.6). Migration in PostgreSQL. | In the file backend the feature is not available (it is development only). This avoids two sources of truth. |
+| Services | Transactional email sender (provider account, API key in the deployment secret store, SPF, DKIM and DMARC for the sending domain); rate limits per identity and per address; cancel endpoint (HTTP POST carrying the one-time token; GET links are avoided because mail scanners often fetch links automatically); operator tooling (11.5) | The sender is an external dependency. Its outage must lead to refusal, not approval. |
+| Tests | Fake sender; code expiry and attempts; race between cancel and completion; notice failure leaves nothing changed; audit contains no secret values; existing identities unchanged | Required before implementation (11.8). |
+
+### 11.4 Recovery flow
+
+1. **Request (lost device).** A key-only request for an identity with no live session:
+   - no verified channel: refused with `recovery_channel_required` and the operator route (11.5). No takeover.
+   - verified channel: a pending record is saved with `requestedAt`, and a notice is sent to the verified address. The notice contains a one-time **cancel token** (random, shown once, stored as a hash, expires at the end of the wait). The notice contains no key, session token, or identity detail beyond what the owner needs.
+   - If the notice is not accepted by the provider, the pending record is not kept, and the request is refused with `recovery_notice_failed`. Nothing changes.
+2. **Wait (24 hours, default).** The current token keeps working. A second request does not restart the clock (section 10.2, rule 4). A bounded number of re-sends is allowed, and each send is audited.
+3. **Cancel.** The owner cancels with (a) the session token on a signed-in device, or (b) the one-time cancel token from the notice. The cancel token proves control of the inbox, which is the second factor a lost-device owner has. A key alone cannot cancel. Cancel is applied inside the serialized queue.
+4. **Completion.** After the wait, and only if the pending record still exists, no live session exists, and the channel is still verified: the session token is rotated (existing rotation path and rollback), the pending record is cleared, and a completion notice is sent to the same address. If that notice is not accepted, completion is still recorded (the takeover has happened) and the failure is audited and retried.
+5. **Race.** Cancel and completion are serialized. Whichever commits first wins. The loser reports `no_pending_recovery` or `already_cancelled`.
+
+### 11.5 Operator-assisted recovery (lost device, no verified channel)
+
+This is a **written procedure**, not a feature. It is proposed, and it needs review before use.
+
+- **Evidence.** The operator must be satisfied of the owner's identity by an agreed method. The game holds little personal evidence (no accounts), so the method must be defined by the team (for example, characteristics recorded in the saved world that only the owner would know). This is a weak control and is stated as such. **The evidence method is an open decision (D9).**
+- **Two people.** One operator requests and a second approves. Both are recorded.
+- **Action.** Re-issue the session token (the old one stops working), or remove the live session. No player data is deleted or changed beyond the token.
+- **Wait.** Whether the 24-hour wait applies to operator action is an open decision (D10). Until it is decided, operator action is not used for takeover of an identity with a live session.
+- **Audit.** Each step is written to the audit table (11.6) with the operator identifier and reason code. No secret values.
+
+### 11.6 Audit (no secrets)
+
+An append-only table with: `occurred_at`, `player_id` (the internal identifier, which the saved world already holds), `event` (one of `contact_added`, `contact_verified`, `contact_removed`, `recovery_requested`, `notice_accepted`, `notice_failed`, `recovery_cancelled`, `recovery_completed`, `recovery_refused`, `operator_reissued`), `actor` (`player`, `system`, or `operator:<id>`), and `reason_code`. It must **not** contain keys, session or cancel tokens, code values, email addresses, IP addresses, names, or free text. A test checks the table's columns and sample rows for these values.
+
+### 11.7 Migration and compatibility
+
+- **Phase 0 (now).** Current behaviour is unchanged. Key-only recovery of an offline identity still works. This is a known risk, and it is recorded here as such.
+- **Phase 1.** Enrollment is available and prompted at sign-in (optional). Self-service recovery applies to identities with a verified channel. Other identities keep Phase 0 behaviour during the transition.
+- **Phase 2 (requires a separate decision, D7).** Key-only self-service for identities **without** a verified channel is withdrawn, and those players use operator-assisted recovery. This is the change that removes key-only recovery for those identities. It must not start until: enrollment has run for a stated period, a replacement route (11.5) is tested, and the affected players have had notice of the change.
+- **Data.** The new tables are additive. Existing saved worlds and PostgreSQL rows are not rewritten. Rollback is to disable the new routes; the tables can stay.
+
+### 11.8 Tests required before implementation
+
+- Live-session refusal (existing behaviour preserved).
+- No channel: refusal with `recovery_channel_required`; no state change.
+- Notice not accepted: no pending record; no state change.
+- Notice accepted: pending record; token unchanged; wait enforced by server time.
+- Cancel with session token and with cancel token; key alone refused; expired cancel token refused.
+- Cancel versus completion race (both orders).
+- Completion when channel is no longer verified: refused.
+- Code expiry, attempt limit, and rate limit for enrollment.
+- Audit rows contain no secret values (table columns and sample rows checked).
+- Existing identities and tokens unchanged after migration; old clients can still resume.
+- Saved-world and PostgreSQL migration tested on copies only.
+
+### 11.9 Decisions needed (not decided here)
+
+| ID | Question | Recommendation |
+|---|---|---|
+| D6 | Accept email as the channel, including its personal-data obligations? | Yes, subject to D8 |
+| D7 | Phase 2 date and notice period for withdrawing key-only self-service | Not set. Must be decided with the player-facing notice |
+| D8 | Encryption at rest for the address; retention and deletion; lawful basis; data-protection review (applicable law for players in Nigeria and for the operator) | Legal and privacy review before any collection |
+| D9 | Operator evidence method for lost-device players | Not set. Must be defined and reviewed |
+| D10 | Does the 24-hour wait apply to operator action? | Recommend yes unless a documented emergency case applies |
+| D11 | Notice re-send limit and cool-down | Not set. Bounded; each send audited |
+| D12 | Who runs the sending domain and provider account, and where the secret lives | Operator decision |
+
+**Notice failure rule (adopted).** If the notice cannot be accepted, recovery does not start, and no silent approval occurs. This is the strict rule of section 10.3 (D4).
+
+### 11.10 What this does not claim
+
+- It does not claim that email proves identity against a determined attacker who controls the inbox. It raises the cost; it does not remove the risk.
+- It does not claim delivery to the person. It claims acceptance by a provider.
+- It does not claim that operator evidence is strong.
+- It does not implement, test, or approve any part of this.
