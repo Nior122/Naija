@@ -560,6 +560,8 @@ export class MultiplayerWorld {
   private gameMillisecondRemainder = 0;
   private dirty = false;
   private flushInFlight = false;
+  /** True from the first refused save (over the size limit) until the next successful save. */
+  private capacityEpisodeOpen = false;
   private closed = false;
 
   constructor(private readonly store: WorldStoreLike, options: WorldEngineOptions = {}) {
@@ -967,6 +969,12 @@ export class MultiplayerWorld {
     } catch (error) {
       if (error instanceof WorldStateCapacityError) {
         this.sendError(context, "world_capacity_reached", "The world data limit has been reached; no new identities can be saved.", requestId);
+        if (this.enterCapacityEpisode()) {
+          console.error("multiplayer world state is over its size limit; saves are refused and the previous file is kept");
+          for (const other of this.online.values()) {
+            if (other !== context) this.sendError(other, "world_capacity_reached", "The world has reached its size limit. Recent changes are not saved yet.");
+          }
+        }
       } else {
         console.error("multiplayer identity persistence failed");
         this.sendError(context, "persistence_failed", "The new identity could not be saved.", requestId);
@@ -975,6 +983,7 @@ export class MultiplayerWorld {
     }
 
     // Committed. Merge without awaiting, and only if no live value that the creation relies on has changed.
+    this.capacityEpisodeOpen = false;
     const conflicts = mergeStateChanges(this.store.state, changes);
     if (conflicts.length > 0) {
       // The saved world now holds the identity, but the live world cannot take it. Save the live world
@@ -1060,6 +1069,7 @@ export class MultiplayerWorld {
     try {
       await this.store.flush();
       this.lastPersistAt = this.now();
+      this.capacityEpisodeOpen = false;
     } catch {
       this.dirty = true;
       if (player.tokenHash === tokenHash) player.tokenHash = oldTokenHash;
@@ -4717,6 +4727,13 @@ export class MultiplayerWorld {
     return error instanceof Error && /^[a-z_]+$/.test(error.message) ? error.message : "internal_error";
   }
 
+  /** Returns true when this refusal opens a new capacity episode (the first refusal since the last successful save). */
+  private enterCapacityEpisode(): boolean {
+    if (this.capacityEpisodeOpen) return false;
+    this.capacityEpisodeOpen = true;
+    return true;
+  }
+
   private async flushDirty(): Promise<void> {
     if (!this.dirty || this.flushInFlight) return;
     this.flushInFlight = true;
@@ -4725,14 +4742,18 @@ export class MultiplayerWorld {
     try {
       await this.serialize(() => this.store.flush());
       this.lastPersistAt = this.now();
+      this.capacityEpisodeOpen = false;
     } catch (error) {
       writeFailed = true;
       this.dirty = true;
       // A refused save keeps the previous valid file. Nothing is removed to make room.
       if (error instanceof WorldStateCapacityError) {
-        console.error("multiplayer world state is over its size limit; the save was refused and the previous file kept");
-        for (const context of this.online.values()) {
-          this.sendError(context, "world_capacity_reached", "The world has reached its size limit. Recent changes are not saved yet.");
+        // One notice and one log line per episode; retries stay silent until a save succeeds.
+        if (this.enterCapacityEpisode()) {
+          console.error("multiplayer world state is over its size limit; saves are refused and the previous file is kept");
+          for (const context of this.online.values()) {
+            this.sendError(context, "world_capacity_reached", "The world has reached its size limit. Recent changes are not saved yet.");
+          }
         }
       } else {
         console.error("multiplayer persistence failed");

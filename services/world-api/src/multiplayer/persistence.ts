@@ -1061,7 +1061,9 @@ export class WorldStore implements WorldStoreLike {
    */
   private async writeSnapshot(state: PersistentWorldState): Promise<void> {
     const write = async (): Promise<void> => {
-      const snapshot = JSON.stringify(state, null, 2);
+      // Compact JSON: the same content and schema as the pretty-printed format written before, about a third smaller.
+      // Files written in either format load the same way.
+      const snapshot = JSON.stringify(state);
       if (Buffer.byteLength(snapshot, "utf8") > this.maxBytes) throw new WorldStateCapacityError();
       await mkdir(dirname(this.filePath), { recursive: true });
       const temporaryPath = `${this.filePath}.${process.pid}.${randomUUID()}.tmp`;
