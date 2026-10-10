@@ -1,14 +1,20 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createApiServer } from "../dist/app.js";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 /**
  * Stage 26 Integration Tests
  * Tests critical paths and end-to-end scenarios
  */
 
+// Each server gets its own state file. Without this, the server falls back to the live
+// services/world-api/data/world-state.json and every test run overwrites the real world.
 const withServer = async (fn) => {
-  const server = createApiServer({ tickIntervalMs: 100 });
+  const stateDirectory = mkdtempSync(join(tmpdir(), "naija-integration-"));
+  const server = createApiServer({ tickIntervalMs: 100, stateFile: join(stateDirectory, "world-state.json") });
   await new Promise((resolve) => server.listen(0, resolve));
   const port = server.address().port;
   const baseUrl = `http://127.0.0.1:${port}`;
@@ -16,6 +22,7 @@ const withServer = async (fn) => {
     await fn({ baseUrl, server, port });
   } finally {
     await server.shutdown();
+    rmSync(stateDirectory, { recursive: true, force: true });
   }
 };
 
@@ -164,9 +171,11 @@ test("Integration: Server handles concurrent requests", async () => {
     
     const results = await Promise.all(promises);
     
-    // All should succeed
+    // All should succeed. The event-loop check is a single timing sample that reports "degraded"
+    // when the host is busy (for example, while other test files run in parallel), so accept
+    // healthy or degraded here. Only "unhealthy" means a real failure.
     results.forEach(result => {
-      assert.equal(result.status, "healthy");
+      assert.ok(["healthy", "degraded"].includes(result.status), `unexpected status ${result.status}`);
     });
   });
 });

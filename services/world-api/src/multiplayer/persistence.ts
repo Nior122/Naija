@@ -588,7 +588,7 @@ export function validateState(value: unknown, now: number): PersistentWorldState
       throw new Error("World data contains an invalid Stage 5 lifecycle record.");
     }
   }
-  if (schemaVersion === 3 || schemaVersion === 4 || schemaVersion === 5 || schemaVersion === 6 || schemaVersion === 7 || schemaVersion === 8 || schemaVersion === 9) {
+  if (schemaVersion >= 3) {
     const careerMapNames = [
       "careerEmployers", "careerVacancies", "careerApplications", "employments", "workSessions", "careerSkills",
       "careerLicenses", "careerReviews", "careerLeaveRequests", "careerEvents", "salaryPayments", "npcCareers",
@@ -612,7 +612,7 @@ export function validateState(value: unknown, now: number): PersistentWorldState
       throw new Error("World data contains an invalid Stage 6 career record.");
     }
   }
-  if (schemaVersion === 4 || schemaVersion === 5 || schemaVersion === 6 || schemaVersion === 7 || schemaVersion === 8 || schemaVersion === 9) {
+  if (schemaVersion >= 4) {
     const economyMapNames = [
       "economyAccounts", "economyTransactions", "economyLoans", "economyCreditScores", "economyEvents",
     ] as const;
@@ -628,7 +628,7 @@ export function validateState(value: unknown, now: number): PersistentWorldState
       throw new Error("World data contains an invalid Stage 7 economy record.");
     }
   }
-  if (schemaVersion === 5 || schemaVersion === 6 || schemaVersion === 7 || schemaVersion === 8 || schemaVersion === 9) {
+  if (schemaVersion >= 5) {
     const businessMapNames = [
       "businesses", "businessOwnership", "businessBranches", "businessProducts", "businessInventory",
       "businessInventoryMovements", "businessTransactions", "businessExpenses", "businessSales",
