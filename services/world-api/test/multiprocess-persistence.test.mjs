@@ -119,6 +119,25 @@ async function waitForLockWaiters(count) {
   throw new Error(`timed out waiting for ${count} blocked save(s)`);
 }
 
+/**
+ * Bounded poll: waits until no other backend in this database is still running or inside a transaction on
+ * world_state. Used after the lock is released: the killed writer's blocked UPDATE may still finish on the server,
+ * so the durable row must be read only once that has settled.
+ */
+async function waitForOrphanedSaveToSettle() {
+  for (let attempt = 0; attempt < 400; attempt += 1) {
+    const rows = await database.query(
+      `SELECT pid FROM pg_stat_activity
+        WHERE datname = current_database() AND pid <> pg_backend_pid()
+          AND state IN ('active', 'idle in transaction', 'idle in transaction (aborted)')
+          AND query LIKE '%world_state%'`,
+    );
+    if (rows.length === 0) return;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error("timed out waiting for the killed writer's save to settle");
+}
+
 /** A separate connection that holds the world row lock until it commits or rolls back. */
 async function holdRowLock(worldKey) {
   const client = new pg.Client(buildPoolConfig(loadDatabaseConfigFromEnv()));
@@ -232,7 +251,9 @@ test("Multi-process recovery: a writer killed while its save waits on a row lock
     await holder.end();
   }
 
-  // The killed process's statement was already issued. Record what the database holds afterwards.
+  // The killed process's statement was already issued. Wait for the server to finish it (or discard it), then
+  // record what the database holds. Reading earlier races with the orphaned statement.
+  await waitForOrphanedSaveToSettle();
   const durable = await rowState(worldKey);
   const recovered = await openWriter(worldKey, "B");
   // A new process must load exactly the durable state, whatever it is.
