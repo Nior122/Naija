@@ -9,6 +9,7 @@ import type { DeathCauseCategory, InheritanceEventRecord, LifeEventRecord } from
 import { worldDescriptor } from "./world.js";
 import { monitoring, PROMETHEUS_CONTENT_TYPE, type HealthCheck } from "./monitoring.js";
 import { decideMetricsAccess, type MetricsAccess } from "./metrics-access.js";
+import { parseTrustedProxies, resolveClientAddress, type TrustedProxies } from "./client-address.js";
 import { assertTestWorldFileIsolation } from "./runtime-environment.js";
 
 const MAX_MESSAGE_BYTES = 8 * 1024;
@@ -39,6 +40,11 @@ export interface ApiServerOptions extends ServerOptions {
    * The entry point (index.ts) always passes the policy from the environment; production refuses "open".
    */
   readonly metricsAccess?: MetricsAccess;
+  /**
+   * Proxies whose X-Forwarded-For header is trusted (NAIJA_TRUSTED_PROXIES). The default trusts none, so the socket
+   * address is always used. See client-address.ts.
+   */
+  readonly trustedProxies?: TrustedProxies;
 }
 
 function sendJson(response: ServerResponse, statusCode: number, body: unknown): void {
@@ -66,6 +72,7 @@ export function createApiServer(options: ApiServerOptions = {}): ApiServer {
   const websocketPath = options.websocketPath ?? "/ws";
   const metricsAccess: MetricsAccess = options.metricsAccess ?? { mode: "open" };
   const allowedOrigins = options.allowedOrigins ?? [];
+  const trustedProxies = options.trustedProxies ?? parseTrustedProxies(undefined);
   if (options.worldStore === undefined) {
     assertTestWorldFileIsolation(options.stateFile);
   }
@@ -174,7 +181,8 @@ export function createApiServer(options: ApiServerOptions = {}): ApiServer {
       total_connections: monitoring.getMetrics().connections.total 
     });
     
-    world.attach(client, request);
+    const clientAddress = resolveClientAddress(request.socket.remoteAddress, request.headers["x-forwarded-for"], trustedProxies);
+    world.attach(client, request, clientAddress);
     client.on("pong", () => responsiveSockets.add(client));
     responsiveSockets.add(client);
     

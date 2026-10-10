@@ -48,6 +48,18 @@ export interface ServerMetrics {
     event_loop_delay_ms: number;
     cpu_percent: number;
   };
+  /**
+   * New-identity creation outcomes since start (counts only; no address, player or key data). Recoveries of existing
+   * identities are not counted here.
+   * accepted: identity saved. limited: refused by the R4 budget. capacity_refused: refused by a record or size limit.
+   * failed: a server-side failure while creating (save, build or conflict).
+   */
+  identity_creation: {
+    accepted: number;
+    limited: number;
+    capacity_refused: number;
+    failed: number;
+  };
   world: {
     players_online: number;
     tick_rate: number;
@@ -83,6 +95,7 @@ export class MonitoringService {
   private flushes: number = 0;
   private flushFailures: number = 0;
   private lastFlushDurationMs: number = 0;
+  private identityCreations = { accepted: 0, limited: 0, capacity_refused: 0, failed: 0 };
   private readonly loopDelay: IntervalHistogram;
   private cpuBaseline: { usage: NodeJS.CpuUsage; at: number };
 
@@ -110,6 +123,11 @@ export class MonitoringService {
     this.flushes++;
     if (!succeeded) this.flushFailures++;
     this.lastFlushDurationMs = Math.round(durationMs * 100) / 100;
+  }
+
+  /** Count one new-identity creation outcome (see ServerMetrics.identity_creation). */
+  recordIdentityCreation(outcome: keyof MonitoringService["identityCreations"]): void {
+    this.identityCreations[outcome] += 1;
   }
 
   /**
@@ -256,6 +274,7 @@ export class MonitoringService {
         total: this.totalConnections,
         peak: this.peakConnections,
       },
+      identity_creation: { ...this.identityCreations },
       requests: {
         total: this.totalRequests,
         errors: this.errorCount,
@@ -422,6 +441,10 @@ export function renderPrometheusMetrics(metrics: ServerMetrics, uptimeSeconds: n
     { name: "naija_world_api_connections_active", help: "Currently open multiplayer WebSocket connections.", type: "gauge", value: metrics.connections.active },
     { name: "naija_world_api_connections_peak", help: "Highest concurrent WebSocket connection count observed.", type: "gauge", value: metrics.connections.peak },
     { name: "naija_world_api_connections_total", help: "WebSocket connections accepted since start.", type: "counter", value: metrics.connections.total },
+    { name: "naija_world_api_identity_creations_accepted_total", help: "New identities saved since start.", type: "counter", value: metrics.identity_creation.accepted },
+    { name: "naija_world_api_identity_creations_limited_total", help: "New identity requests refused by the identity-creation budget since start.", type: "counter", value: metrics.identity_creation.limited },
+    { name: "naija_world_api_identity_creations_capacity_refused_total", help: "New identity requests refused by a world size or record limit since start.", type: "counter", value: metrics.identity_creation.capacity_refused },
+    { name: "naija_world_api_identity_creations_failed_total", help: "New identity requests that failed on the server since start.", type: "counter", value: metrics.identity_creation.failed },
     { name: "naija_world_api_requests_total", help: "HTTP requests received since start.", type: "counter", value: metrics.requests.total },
     { name: "naija_world_api_request_errors_total", help: "HTTP responses with a 5xx status since start.", type: "counter", value: metrics.requests.errors },
     { name: "naija_world_api_memory_rss_megabytes", help: "Resident set size in mebibytes.", type: "gauge", value: metrics.memory.rss_mb },

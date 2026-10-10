@@ -31,6 +31,8 @@ options stay off unless the environment is named.
 | `NAIJA_IDENTITY_LIMIT_PER_IP` | optional: integer 1–1000 (default `10`). Applies only when the budget is enabled. Validated always | as above | as above |
 | `NAIJA_IDENTITY_LIMIT_GLOBAL` | optional: integer 1–100000 (default `100`). Applies only when the budget is enabled. Validated always | as above | as above |
 | `NAIJA_IDENTITY_WINDOW_MINUTES` | optional: integer 1–1440 (default `60`). Rolling window. Applies only when enabled. Validated always | as above | as above |
+| `NAIJA_TRUSTED_PROXIES` | optional: comma-separated IP addresses or CIDR ranges whose `X-Forwarded-For` is read (default: empty, so the header is never read). Invalid values stop startup and are not echoed. Only list a proxy that is the sole route to the API (see `STAGE_28_IDENTITY_BUDGET.md`, section 3) | as above (empty by default) | as above |
+| `NAIJA_WORLD_STATE_FORMAT` | optional: `pretty` (default) or `compact`. **File backend only** (PostgreSQL is unaffected). `compact` is opt-in and must not be enabled for existing saved-world data until `STAGE_28_COMPACT_JSON_ROLLOUT.md` is approved. Invalid values stop startup and are not echoed | not used (file backend refused) | `pretty` or `compact` for temporary files only |
 | `DB_SSL` | `true` or unset. **`false` is refused** | `false` allowed to a **loopback** host only | as development |
 | `DB_SSL_REJECT_UNAUTHORIZED` | `true` or unset. **`false` is refused** | `false` allowed (private test CA) | `false` allowed |
 | `NAIJA_METRICS_ACCESS` | **required**: `token`, `ingress`, or `disabled`. `open` is refused | `token`, `ingress`, `disabled`, or `open` (default open) | as development |

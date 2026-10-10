@@ -85,3 +85,27 @@ test("R4 config: a blank limit uses the default rather than failing", () => {
     windowMs: 60 * 60_000,
   });
 });
+
+test("R4 config: every NAIJA_IDENTITY_* value is validated while disabled, and a rejected value is not echoed", () => {
+  // Added with the R4 trusted-proxy change. Disabled mode still validates each variable it names.
+  const cases = [
+    ["NAIJA_IDENTITY_LIMIT_PER_IP", "-7"],
+    ["NAIJA_IDENTITY_LIMIT_GLOBAL", "100001"],
+    ["NAIJA_IDENTITY_WINDOW_MINUTES", "sixty-secret"],
+  ];
+  for (const [name, value] of cases) {
+    for (const mode of [undefined, "disabled", "enabled"]) {
+      const env = { ...BASE, [name]: value };
+      if (mode !== undefined) env.NAIJA_IDENTITY_BUDGET = mode;
+      assert.throws(
+        () => parseIdentityBudget(env),
+        (error) => {
+          assert.match(error.message, new RegExp(`^${name} must be an integer from \\d+ to \\d+\\.$`));
+          assert.ok(!error.message.includes(value), "the value is not echoed");
+          return true;
+        },
+        `${name}=${value} with mode ${mode ?? "unset"}`,
+      );
+    }
+  }
+});

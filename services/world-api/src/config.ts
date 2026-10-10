@@ -5,6 +5,8 @@ import { resolve } from "node:path";
 import { parseMetricsAccess, type MetricsAccess } from "./metrics-access.js";
 import { readRuntimeEnvironment, type RuntimeEnvironment } from "./runtime-environment.js";
 import type { IdentityBudgetOptions } from "./multiplayer/world-engine.js";
+import type { WorldFileFormat } from "./multiplayer/persistence.js";
+import { parseTrustedProxies, type TrustedProxies } from "./client-address.js";
 
 // The API workspace lives at services/world-api; keep local-only config at the repository root.
 const localEnvFile = new URL("../../../.env", import.meta.url);
@@ -26,6 +28,10 @@ export interface ApiConfig {
   readonly worldStateWarnPercent: readonly number[];
   /** R4 identity-creation budget. Undefined unless NAIJA_IDENTITY_BUDGET=enabled. */
   readonly identityBudget: IdentityBudgetOptions | undefined;
+  /** File-backend save format. Default "pretty". */
+  readonly worldStateFormat: WorldFileFormat;
+  /** NAIJA_TRUSTED_PROXIES. Empty by default: X-Forwarded-For is never read. */
+  readonly trustedProxies: TrustedProxies;
 }
 
 const IDENTITY_BUDGET_DEFAULTS = { perIp: 10, global: 100, windowMinutes: 60 } as const;
@@ -70,6 +76,21 @@ export function parseWorldStateWarnPercent(env: NodeJS.ProcessEnv): readonly num
     values.every((value, index) => index === 0 || value > (values[index - 1] ?? 0));
   if (!valid) throw new Error("WORLD_STATE_WARN_PERCENT must be strictly ascending integers from 1 to 99, for example 75,90.");
   return values;
+}
+
+/**
+ * NAIJA_WORLD_STATE_FORMAT: "pretty" (default) or "compact". File backend only; PostgreSQL is not affected.
+ * Compact output is opt-in until the saved-world validation is approved (docs/STAGE_28_COMPACT_JSON_ROLLOUT.md).
+ * Invalid values stop startup and are not echoed.
+ */
+export function parseWorldStateFormat(env: NodeJS.ProcessEnv): WorldFileFormat {
+  const raw = env.NAIJA_WORLD_STATE_FORMAT;
+  if (raw === undefined || raw.trim() === "") return "pretty";
+  const value = raw.trim();
+  if (value !== "pretty" && value !== "compact") {
+    throw new Error("NAIJA_WORLD_STATE_FORMAT must be 'pretty' or 'compact'.");
+  }
+  return value;
 }
 
 export function readApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
@@ -121,5 +142,7 @@ export function readApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     metricsAccess,
     worldStateWarnPercent: parseWorldStateWarnPercent(env),
     identityBudget: parseIdentityBudget(env),
+    worldStateFormat: parseWorldStateFormat(env),
+    trustedProxies: parseTrustedProxies(env.NAIJA_TRUSTED_PROXIES),
   };
 }

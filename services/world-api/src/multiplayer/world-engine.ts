@@ -1,6 +1,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 import { WebSocket, type RawData } from "ws";
+import { monitoring } from "../monitoring.js";
 import { chunksAreWithinRadius, geographicDistanceMeters } from "../geography/coordinates.js";
 import {
   geographicLocationForMapPosition,
@@ -395,6 +396,15 @@ export interface IdentityBudgetOptions {
 const DEFAULT_MAX_TRACKED_ADDRESSES = 10_000;
 const IDENTITY_LIMITED_CODE = "identity_creation_limited";
 
+/**
+ * Why a new identity was refused by the R4 budget. A retry time is given only for the per-IP and global windows,
+ * which are computed exactly from the saved or recorded creation times. A full address table has no reliable time
+ * (any slot may be taken first), so it gives none.
+ */
+type IdentityBudgetRefusal =
+  | { readonly kind: "window"; readonly waitMs: number }
+  | { readonly kind: "address-table-full" };
+
 function validatedIdentityBudget(budget: IdentityBudgetOptions): IdentityBudgetOptions & { readonly maxTrackedAddresses: number } {
   const maxTrackedAddresses = budget.maxTrackedAddresses ?? DEFAULT_MAX_TRACKED_ADDRESSES;
   const values = [budget.perIpLimit, budget.globalLimit, budget.windowMs, maxTrackedAddresses];
@@ -680,9 +690,13 @@ export class MultiplayerWorld {
     return event;
   }
 
-  attach(socket: WebSocket, request: IncomingMessage): void {
+  /**
+   * `clientAddress` is the address the limits use (see client-address.ts). Without it the socket address is used.
+   * Only app.ts supplies it, after applying the trusted-proxy policy.
+   */
+  attach(socket: WebSocket, request: IncomingMessage, clientAddress?: string): void {
     const now = this.now();
-    const remoteAddress = request.socket.remoteAddress ?? "unknown";
+    const remoteAddress = clientAddress ?? request.socket.remoteAddress ?? "unknown";
     if (this.closed || this.contexts.size >= this.maxConnections) {
       socket.close(1013, "server capacity reached");
       return;
@@ -786,8 +800,8 @@ export class MultiplayerWorld {
     return run;
   }
 
-  /** R4: null when a new identity may be created now; otherwise the wait in ms. Runs inside the persistence queue. */
-  private identityBudgetWaitMs(address: string, now: number): number | null {
+  /** R4: null when a new identity may be created now; otherwise why not. Runs inside the persistence queue. */
+  private identityBudgetRefusal(address: string, now: number): IdentityBudgetRefusal | null {
     const budget = this.identityBudget;
     if (budget === null) return null;
     // Drop expired address entries, then refuse an unknown address while the table is full (fail closed).
@@ -797,18 +811,17 @@ export class MultiplayerWorld {
       else if (live.length !== times.length) this.identityTimesByAddress.set(key, live);
     }
     if (!this.identityTimesByAddress.has(address) && this.identityTimesByAddress.size >= budget.maxTrackedAddresses) {
-      let earliest = Number.POSITIVE_INFINITY;
-      for (const times of this.identityTimesByAddress.values()) earliest = Math.min(earliest, Math.min(...times));
-      return Math.max(1, earliest + budget.windowMs - now);
+      return { kind: "address-table-full" };
     }
     const perIp = waitForIdentitySlot(this.identityTimesByAddress.get(address) ?? [], budget.perIpLimit, budget.windowMs, now);
-    if (perIp !== null) return perIp;
+    if (perIp !== null) return { kind: "window", waitMs: perIp };
     const created: number[] = [];
     for (const player of Object.values(this.store.state.players)) {
       const time = Date.parse(player.createdAt);
       if (Number.isFinite(time)) created.push(time);
     }
-    return waitForIdentitySlot(created, budget.globalLimit, budget.windowMs, now);
+    const global = waitForIdentitySlot(created, budget.globalLimit, budget.windowMs, now);
+    return global === null ? null : { kind: "window", waitMs: global };
   }
 
   private recordIdentityCreated(address: string, now: number): void {
@@ -819,10 +832,20 @@ export class MultiplayerWorld {
     this.identityTimesByAddress.set(address, times);
   }
 
-  /** Says how long to wait without naming the limit that applied, and without any address or player data. */
-  private identityLimitMessage(waitMs: number): string {
-    const minutes = Math.max(1, Math.ceil(waitMs / 60_000));
-    return `Too many new identities were created recently. Try again in about ${minutes} minute${minutes === 1 ? "" : "s"}.`;
+  /**
+   * The refusal sent to the client. It names no limit, address, player or secret. retry_after_seconds is present only
+   * when the time is computed from a window (see IdentityBudgetRefusal).
+   */
+  private identityLimitReply(refusal: IdentityBudgetRefusal): { message: string; retryAfterSeconds?: number } {
+    if (refusal.kind === "address-table-full") {
+      return { message: "Too many new identities are being created right now. Try again later." };
+    }
+    const retryAfterSeconds = Math.max(1, Math.ceil(refusal.waitMs / 1000));
+    const minutes = Math.max(1, Math.ceil(refusal.waitMs / 60_000));
+    return {
+      message: `Too many new identities were created recently. Try again in about ${minutes} minute${minutes === 1 ? "" : "s"}.`,
+      retryAfterSeconds,
+    };
   }
 
   private allowConnection(address: string, now: number): boolean {
@@ -999,12 +1022,15 @@ export class MultiplayerWorld {
     }
     // R4: a recovery above is not a new identity and never uses the budget. A refusal changes nothing.
     const budgetNow = this.now();
-    const budgetWaitMs = this.identityBudgetWaitMs(context.remoteAddress, budgetNow);
-    if (budgetWaitMs !== null) {
-      this.sendError(context, IDENTITY_LIMITED_CODE, this.identityLimitMessage(budgetWaitMs), requestId);
+    const refusal = this.identityBudgetRefusal(context.remoteAddress, budgetNow);
+    if (refusal !== null) {
+      monitoring.recordIdentityCreation("limited");
+      const reply = this.identityLimitReply(refusal);
+      this.sendError(context, IDENTITY_LIMITED_CODE, reply.message, requestId, reply.retryAfterSeconds);
       return;
     }
     if (Object.keys(this.store.state.players).length >= MAX_PERSISTED_PLAYERS) {
+      monitoring.recordIdentityCreation("capacity_refused");
       this.sendError(context, "world_capacity_reached", "The prototype player record limit has been reached.", requestId);
       return;
     }
@@ -1039,6 +1065,7 @@ export class MultiplayerWorld {
     try {
       createStarterFamily(draft, playerId, character, this.now());
     } catch (error) {
+      monitoring.recordIdentityCreation("failed");
       this.sendError(context, this.errorCode(error), "The character family could not be created.", requestId);
       return;
     }
@@ -1047,6 +1074,7 @@ export class MultiplayerWorld {
       this.seedNewIdentityWorlds(draft);
     } catch {
       console.error("multiplayer identity build failed");
+      monitoring.recordIdentityCreation("failed");
       this.sendError(context, "internal_error", "The identity could not be created.", requestId);
       return;
     }
@@ -1057,6 +1085,7 @@ export class MultiplayerWorld {
       await this.store.saveState(draft);
     } catch (error) {
       if (error instanceof WorldStateCapacityError) {
+        monitoring.recordIdentityCreation("capacity_refused");
         this.sendError(context, "world_capacity_reached", "The world data limit has been reached; no new identities can be saved.", requestId);
         if (this.enterCapacityEpisode()) {
           console.error("multiplayer world state is over its size limit; saves are refused and the previous file is kept");
@@ -1066,6 +1095,7 @@ export class MultiplayerWorld {
         }
       } else {
         console.error("multiplayer identity persistence failed");
+        monitoring.recordIdentityCreation("failed");
         this.sendError(context, "persistence_failed", "The new identity could not be saved.", requestId);
       }
       return;
@@ -1086,9 +1116,11 @@ export class MultiplayerWorld {
       } catch {
         console.error("multiplayer identity compensating save failed");
       }
+      monitoring.recordIdentityCreation("failed");
       this.sendError(context, "identity_creation_conflict", "The world changed while the identity was being created. Try again.", requestId);
       return;
     }
+    monitoring.recordIdentityCreation("accepted");
     this.recordIdentityCreated(context.remoteAddress, budgetNow);
     this.playerByTokenHash.set(tokenHash, playerId);
     this.playerByCreationKeyHash.set(creationKeyHash, playerId);
@@ -4803,8 +4835,10 @@ export class MultiplayerWorld {
     });
   }
 
-  private sendError(context: ConnectionContext, code: string, message: string, requestId?: string): void {
-    this.send(context, appendOptionalRequestId({ type: "error", code, message }, requestId));
+  private sendError(context: ConnectionContext, code: string, message: string, requestId?: string, retryAfterSeconds?: number): void {
+    const payload: Record<string, unknown> = { type: "error", code, message };
+    if (retryAfterSeconds !== undefined) payload.retry_after_seconds = retryAfterSeconds;
+    this.send(context, appendOptionalRequestId(payload, requestId));
   }
 
   private invalid(context: ConnectionContext, code: string, requestId?: string): void {
