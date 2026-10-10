@@ -96,6 +96,7 @@ test("Database connection: a failed connect is reported and the pool is discarde
   // Closed local port: the connection is refused immediately, so no credentials or server are involved.
   const db = new DatabaseConnection({
     connectionString: "postgresql://probe:probe@127.0.0.1:1/probe?sslmode=disable",
+    ssl: false, // sslmode=disable is only accepted with an explicit opt-out
   });
   await assert.rejects(() => db.connect(), /^Error: Database connection failed: /);
   assert.equal(db.isConnectedToDatabase(), false);

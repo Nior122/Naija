@@ -24,6 +24,11 @@ export interface HealthCheck {
 }
 
 export interface ServerMetrics {
+  persistence: {
+    flushes: number;
+    flush_failures: number;
+    last_flush_duration_ms: number;
+  };
   connections: {
     active: number;
     total: number;
@@ -62,6 +67,9 @@ export class MonitoringService {
   private lastTickDuration: number = 0;
   private playersOnline: number = 0;
   private tickRate: number = 0;
+  private flushes: number = 0;
+  private flushFailures: number = 0;
+  private lastFlushDurationMs: number = 0;
   private readonly loopDelay: IntervalHistogram;
   private cpuBaseline: { usage: NodeJS.CpuUsage; at: number };
 
@@ -80,6 +88,15 @@ export class MonitoringService {
    */
   dispose(): void {
     this.loopDelay.disable();
+  }
+
+  /**
+   * Record one world-state save attempt. Durations are measured around the write itself.
+   */
+  recordPersistenceFlush(succeeded: boolean, durationMs: number): void {
+    this.flushes++;
+    if (!succeeded) this.flushFailures++;
+    this.lastFlushDurationMs = Math.round(durationMs * 100) / 100;
   }
 
   /**
@@ -129,7 +146,7 @@ export class MonitoringService {
   /**
    * Get comprehensive health status
    */
-  async getHealthStatus(): Promise<HealthStatus> {
+  async getHealthStatus(extraChecks: Record<string, HealthCheck> = {}): Promise<HealthStatus> {
     const checks: Record<string, HealthCheck> = {};
     
     // Check memory usage
@@ -143,6 +160,9 @@ export class MonitoringService {
     // Check connections
     const connectionCheck = this.checkConnections();
     checks.connections = connectionCheck;
+
+    // Caller-supplied checks (for example persistence reachability) join the overall status.
+    Object.assign(checks, extraChecks);
 
     // Determine overall status
     const hasFailure = Object.values(checks).some(c => c.status === "fail");
@@ -182,6 +202,11 @@ export class MonitoringService {
     this.cpuBaseline = { usage: process.cpuUsage(), at: now };
 
     return {
+      persistence: {
+        flushes: this.flushes,
+        flush_failures: this.flushFailures,
+        last_flush_duration_ms: this.lastFlushDurationMs,
+      },
       connections: {
         active: this.activeConnections,
         total: this.totalConnections,
@@ -343,6 +368,9 @@ export function renderPrometheusMetrics(metrics: ServerMetrics, uptimeSeconds: n
   const definitions: PrometheusMetricDefinition[] = [
     { name: "naija_world_api_up", help: "1 while the world API process is serving metrics.", type: "gauge", value: 1 },
     { name: "naija_world_api_uptime_seconds", help: "Seconds since the monitoring service started.", type: "gauge", value: uptimeSeconds },
+    { name: "naija_world_api_persistence_flushes_total", help: "World-state save attempts since start.", type: "counter", value: metrics.persistence.flushes },
+    { name: "naija_world_api_persistence_flush_failures_total", help: "World-state save attempts that failed.", type: "counter", value: metrics.persistence.flush_failures },
+    { name: "naija_world_api_persistence_last_flush_duration_milliseconds", help: "Duration of the most recent world-state save.", type: "gauge", value: metrics.persistence.last_flush_duration_ms },
     { name: "naija_world_api_connections_active", help: "Currently open multiplayer WebSocket connections.", type: "gauge", value: metrics.connections.active },
     { name: "naija_world_api_connections_peak", help: "Highest concurrent WebSocket connection count observed.", type: "gauge", value: metrics.connections.peak },
     { name: "naija_world_api_connections_total", help: "WebSocket connections accepted since start.", type: "counter", value: metrics.connections.total },

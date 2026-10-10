@@ -215,7 +215,7 @@ import {
   type EducationActionOptions,
 } from "../education/service.js";
 import type { EducationCatalog } from "../education/types.js";
-import { WorldStore } from "./persistence.js";
+import type { WorldStoreLike } from "./persistence.js";
 import {
   MAP_HEIGHT,
   MAP_WIDTH,
@@ -550,7 +550,7 @@ export class MultiplayerWorld {
   private flushInFlight = false;
   private closed = false;
 
-  constructor(private readonly store: WorldStore, options: WorldEngineOptions = {}) {
+  constructor(private readonly store: WorldStoreLike, options: WorldEngineOptions = {}) {
     this.now = options.now ?? Date.now;
     this.gameMinuteMs = Math.max(1, options.gameMinuteMs ?? this.lifeCatalog.calendar.real_milliseconds_per_game_minute);
     this.broadcastIntervalMs = Math.max(50, options.broadcastIntervalMs ?? 100);

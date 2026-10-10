@@ -1,3 +1,5 @@
+import { performance } from "node:perf_hooks";
+import { monitoring } from "../monitoring.js";
 import { randomUUID } from "node:crypto";
 import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { readFileSync, statSync } from "node:fs";
@@ -558,7 +560,7 @@ function isBusinessEvent(value: unknown, key: string): boolean {
     typeof value.created_at === "string";
 }
 
-function validateState(value: unknown, now: number): PersistentWorldState {
+export function validateState(value: unknown, now: number): PersistentWorldState {
   if (!isRecord(value) || (value.schemaVersion !== 1 && value.schemaVersion !== 2 && value.schemaVersion !== 3 && value.schemaVersion !== 4 && value.schemaVersion !== 5 && value.schemaVersion !== 6 && value.schemaVersion !== 7 && value.schemaVersion !== 8 && value.schemaVersion !== 9 && value.schemaVersion !== 10 && value.schemaVersion !== 11 && value.schemaVersion !== 12 && value.schemaVersion !== 13 && value.schemaVersion !== 14 && value.schemaVersion !== 15 && value.schemaVersion !== 16 && value.schemaVersion !== 17 && value.schemaVersion !== 18) ||
     value.worldId !== WORLD_ID || !isRecord(value.worldClock) || !isRecord(value.players)) {
     throw new Error("World data has an invalid schema; refusing to start with reset state.");
@@ -646,7 +648,7 @@ function validateState(value: unknown, now: number): PersistentWorldState {
   }
 
   const catalog: LifeCatalog = loadLifeCatalog();
-  const careerMaps: PersistentCareerMaps = (schemaVersion === 3 || schemaVersion === 4 || schemaVersion === 5 || schemaVersion === 6 || schemaVersion === 7 || schemaVersion === 8 || schemaVersion === 9) ? {
+  const careerMaps: PersistentCareerMaps = schemaVersion >= 3 ? {
     careerEmployers: (value.careerEmployers ?? {}) as PersistentCareerMaps["careerEmployers"],
     careerVacancies: (value.careerVacancies ?? {}) as PersistentCareerMaps["careerVacancies"],
     careerApplications: (value.careerApplications ?? {}) as PersistentCareerMaps["careerApplications"],
@@ -660,14 +662,14 @@ function validateState(value: unknown, now: number): PersistentWorldState {
     salaryPayments: (value.salaryPayments ?? {}) as PersistentCareerMaps["salaryPayments"],
     npcCareers: (value.npcCareers ?? {}) as PersistentCareerMaps["npcCareers"],
   } : emptyCareerMaps();
-  const economyMaps: PersistentEconomyMaps = (schemaVersion === 4 || schemaVersion === 5 || schemaVersion === 6 || schemaVersion === 7 || schemaVersion === 8 || schemaVersion === 9) ? {
+  const economyMaps: PersistentEconomyMaps = schemaVersion >= 4 ? {
     economyAccounts: (value.economyAccounts ?? {}) as PersistentEconomyMaps["economyAccounts"],
     economyTransactions: (value.economyTransactions ?? {}) as PersistentEconomyMaps["economyTransactions"],
     economyLoans: (value.economyLoans ?? {}) as PersistentEconomyMaps["economyLoans"],
     economyCreditScores: (value.economyCreditScores ?? {}) as PersistentEconomyMaps["economyCreditScores"],
     economyEvents: (value.economyEvents ?? {}) as PersistentEconomyMaps["economyEvents"],
   } : emptyEconomyMaps();
-  const businessMaps: PersistentBusinessMaps = (schemaVersion === 5 || schemaVersion === 6 || schemaVersion === 7 || schemaVersion === 8 || schemaVersion === 9) ? {
+  const businessMaps: PersistentBusinessMaps = schemaVersion >= 5 ? {
     businesses: (value.businesses ?? {}) as PersistentBusinessMaps["businesses"],
     businessOwnership: (value.businessOwnership ?? {}) as PersistentBusinessMaps["businessOwnership"],
     businessBranches: (value.businessBranches ?? {}) as PersistentBusinessMaps["businessBranches"],
@@ -680,7 +682,7 @@ function validateState(value: unknown, now: number): PersistentWorldState {
     businessProductionRuns: (value.businessProductionRuns ?? {}) as PersistentBusinessMaps["businessProductionRuns"],
     businessEvents: (value.businessEvents ?? {}) as PersistentBusinessMaps["businessEvents"],
   } : emptyBusinessMaps();
-  const propertyMaps: PersistentPropertyMaps = (schemaVersion === 6 || schemaVersion === 7 || schemaVersion === 8 || schemaVersion === 9) ? {
+  const propertyMaps: PersistentPropertyMaps = schemaVersion >= 6 ? {
     properties: (value.properties ?? {}) as PersistentPropertyMaps["properties"],
     propertyOwnership: (value.propertyOwnership ?? {}) as PersistentPropertyMaps["propertyOwnership"],
     propertyListings: (value.propertyListings ?? {}) as PersistentPropertyMaps["propertyListings"],
@@ -691,7 +693,7 @@ function validateState(value: unknown, now: number): PersistentWorldState {
     propertyFurnishings: (value.propertyFurnishings ?? {}) as PersistentPropertyMaps["propertyFurnishings"],
     propertyEvents: (value.propertyEvents ?? {}) as PersistentPropertyMaps["propertyEvents"],
   } : emptyPropertyMaps();
-  const governmentMaps: PersistentGovernmentMaps = (schemaVersion === 7 || schemaVersion === 8 || schemaVersion === 9) ? {
+  const governmentMaps: PersistentGovernmentMaps = schemaVersion >= 7 ? {
     governmentOrganisations: (value.governmentOrganisations ?? {}) as PersistentGovernmentMaps["governmentOrganisations"],
     governmentOffices: (value.governmentOffices ?? {}) as PersistentGovernmentMaps["governmentOffices"],
     governmentAppointments: (value.governmentAppointments ?? {}) as PersistentGovernmentMaps["governmentAppointments"],
@@ -702,7 +704,7 @@ function validateState(value: unknown, now: number): PersistentWorldState {
     governmentAnnouncements: (value.governmentAnnouncements ?? {}) as PersistentGovernmentMaps["governmentAnnouncements"],
     governmentEvents: (value.governmentEvents ?? {}) as PersistentGovernmentMaps["governmentEvents"],
   } : emptyGovernmentMaps();
-  const electionMaps: PersistentElectionMaps = (schemaVersion === 8 || schemaVersion === 9) ? {
+  const electionMaps: PersistentElectionMaps = schemaVersion >= 8 ? {
     politicalParties: (value.politicalParties ?? {}) as PersistentElectionMaps["politicalParties"],
     partyMemberships: (value.partyMemberships ?? {}) as PersistentElectionMaps["partyMemberships"],
     politicalProfiles: (value.politicalProfiles ?? {}) as PersistentElectionMaps["politicalProfiles"],
@@ -717,7 +719,7 @@ function validateState(value: unknown, now: number): PersistentWorldState {
     electionDisputes: (value.electionDisputes ?? {}) as PersistentElectionMaps["electionDisputes"],
     electionAudits: (value.electionAudits ?? {}) as PersistentElectionMaps["electionAudits"],
   } : emptyElectionMaps();
-  const justiceMaps: PersistentJusticeMaps = schemaVersion === 9 ? {
+  const justiceMaps: PersistentJusticeMaps = schemaVersion >= 9 ? {
     laws: (value.laws ?? {}) as PersistentJusticeMaps["laws"],
     lawProvisions: (value.lawProvisions ?? {}) as PersistentJusticeMaps["lawProvisions"],
     legislativeProposals: (value.legislativeProposals ?? {}) as PersistentJusticeMaps["legislativeProposals"],
@@ -931,7 +933,7 @@ function validateState(value: unknown, now: number): PersistentWorldState {
   return state;
 }
 
-function initialState(now: number): PersistentWorldState {
+export function initialState(now: number): PersistentWorldState {
   const catalog = loadLifeCatalog();
   const state: PersistentWorldState = {
     schemaVersion: 18,
@@ -980,7 +982,13 @@ function initialState(now: number): PersistentWorldState {
   return state;
 }
 
-export class WorldStore {
+/** The storage contract the multiplayer engine depends on (JSON file or PostgreSQL). */
+export interface WorldStoreLike {
+  readonly state: PersistentWorldState;
+  flush(): Promise<void>;
+}
+
+export class WorldStore implements WorldStoreLike {
   readonly filePath: string;
   readonly state: PersistentWorldState;
   private writeQueue: Promise<void> = Promise.resolve();
@@ -998,6 +1006,17 @@ export class WorldStore {
   }
 
   async flush(): Promise<void> {
+    const started = performance.now();
+    try {
+      await this.writeSnapshot();
+      monitoring.recordPersistenceFlush(true, performance.now() - started);
+    } catch (error) {
+      monitoring.recordPersistenceFlush(false, performance.now() - started);
+      throw error;
+    }
+  }
+
+  private async writeSnapshot(): Promise<void> {
     const snapshot = JSON.stringify(this.state, null, 2);
     if (Buffer.byteLength(snapshot, "utf8") > MAX_STATE_FILE_BYTES) {
       throw new Error("World data file exceeds the 16 MiB prototype limit.");

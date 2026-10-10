@@ -38,7 +38,7 @@ test("Database: loadDatabaseConfigFromEnv returns config", () => {
 
 test("Database: connection test", { skip: !hasDatabase }, async () => {
   const config = loadDatabaseConfigFromEnv();
-  const db = new DatabaseConnection(config);
+  const db = database; // same connection the repositories use
   
   try {
     await db.connect();
@@ -57,7 +57,7 @@ test("Database: connection test", { skip: !hasDatabase }, async () => {
 
 test("Database: migration initialization", { skip: !hasDatabase }, async () => {
   const config = loadDatabaseConfigFromEnv();
-  const db = new DatabaseConnection(config);
+  const db = database; // same connection the repositories use
   
   try {
     await db.connect();
@@ -74,7 +74,7 @@ test("Database: migration initialization", { skip: !hasDatabase }, async () => {
 
 test("Database: account repository create and find", { skip: !hasDatabase }, async () => {
   const config = loadDatabaseConfigFromEnv();
-  const db = new DatabaseConnection(config);
+  const db = database; // same connection the repositories use
   
   try {
     await db.connect();
@@ -113,7 +113,7 @@ test("Database: account repository create and find", { skip: !hasDatabase }, asy
 
 test("Database: character repository create and find", { skip: !hasDatabase }, async () => {
   const config = loadDatabaseConfigFromEnv();
-  const db = new DatabaseConnection(config);
+  const db = database; // same connection the repositories use
   
   try {
     await db.connect();
@@ -167,7 +167,7 @@ test("Database: character repository create and find", { skip: !hasDatabase }, a
 
 test("Database: character money update with transaction", { skip: !hasDatabase }, async () => {
   const config = loadDatabaseConfigFromEnv();
-  const db = new DatabaseConnection(config);
+  const db = database; // same connection the repositories use
   
   try {
     await db.connect();
@@ -204,16 +204,12 @@ test("Database: character money update with transaction", { skip: !hasDatabase }
       assert.ok(error.message.includes("Insufficient funds"));
     }
     
-    // Try duplicate idempotency key (should fail)
+    // Replaying the same idempotency key must not apply the amount twice
     const idemKey = `idem_duplicate_${Date.now()}`;
-    await characterRepository.updateMoney(character.character_id, 50, idemKey);
-    
-    try {
-      await characterRepository.updateMoney(character.character_id, 50, idemKey);
-      assert.fail("Should have thrown error for duplicate transaction");
-    } catch (error) {
-      assert.ok(error.message.includes("Duplicate transaction"));
-    }
+    const first = await characterRepository.updateMoney(character.character_id, 50, idemKey);
+    const replay = await characterRepository.updateMoney(character.character_id, 50, idemKey);
+    assert.equal(Number(first.money), Number(replay.money));
+    assert.equal(Number(replay.money), Number(updated2.money) + 50);
     
     // Clean up
     await characterRepository.delete(character.id);

@@ -1,5 +1,7 @@
 # Stage 27 — Database Architecture and Integration
 
+> **Stage 28 correction (added 2026-10-10):** This document previously said 15 tables and described TLS as "supported" for cloud connections. The live catalog and `schema.ts` show 14 tables. The Stage 27 connection code did not verify server certificates (`rejectUnauthorized: false`). Stage 28 enables certificate verification by default and requires `sslmode=verify-full` in examples. Live PostgreSQL validation of the Stage 27 layer was run only against a local PostgreSQL 18.4 instance, not Neon.
+
 **Date:** 2026-10-10  
 **Status:** ✅ Framework Implemented  
 **Branch:** `arena/00cdea0e-naija`  
@@ -14,7 +16,7 @@ Stage 27 establishes the database foundation for Naija: One World, transitioning
 **Key Achievements:**
 - ✅ PostgreSQL integration framework implemented
 - ✅ Database connection pooling and management
-- ✅ Comprehensive schema design (15 tables)
+- ✅ Comprehensive schema design (14 tables; corrected in Stage 28, see note below)
 - ✅ Versioned migration system
 - ✅ Repository pattern for data access
 - ✅ Transaction support for financial operations
@@ -33,14 +35,14 @@ Stage 27 establishes the database foundation for Naija: One World, transitioning
 - **Database:** PostgreSQL 15+ (via Neon)
 - **Driver:** `pg` (node-postgres) library
 - **Connection Pooling:** Built-in pg.Pool
-- **SSL:** Enabled for cloud providers
+- **SSL:** Encryption is on by default. The Stage 27 code set `rejectUnauthorized: false`, which encrypts the connection but does NOT verify the server certificate. Corrected in Stage 28: certificates are verified by default (see docs/STAGE_28_AUDIT.md).
 - **Migrations:** Custom versioned system
 
 ### Connection Configuration
 
 **Environment Variables:**
 ```bash
-DATABASE_URL=postgresql://USER:PASSWORD@HOST/DATABASE?sslmode=require
+DATABASE_URL=postgresql://USER:PASSWORD@HOST/DATABASE?sslmode=verify-full
 ```
 
 **Alternative (Individual):**
@@ -57,7 +59,7 @@ DB_MAX_CONNECTIONS=20
 **Connection Features:**
 - ✅ Connection pooling (max 20 connections)
 - ✅ Idle timeout (30 seconds)
-- ✅ SSL/TLS support
+- ✅ TLS encryption with certificate verification (Stage 28; Stage 27 did not verify certificates)
 - ✅ Health checking
 - ✅ Automatic reconnection
 
@@ -65,7 +67,7 @@ DB_MAX_CONNECTIONS=20
 
 ## Database Schema
 
-### Tables Created (15)
+### Tables Created (14)
 
 1. **accounts** - Player identities and authentication
 2. **characters** - Player characters with attributes
@@ -141,7 +143,7 @@ DB_MAX_CONNECTIONS=20
 ### Current Migrations
 
 **Version 1: Initial Schema**
-- Creates all 15 tables
+- Creates all 14 tables (13 in `schema.ts` plus `schema_migrations` in `migrations.ts`)
 - Creates all indexes
 - Sets up UUID extension
 
@@ -326,7 +328,7 @@ await database.transaction(async (client) => {
 
 ### Connection Security
 
-- ✅ SSL/TLS for cloud connections
+- ✅ TLS for cloud connections (certificate verification added in Stage 28)
 - ✅ Connection string in environment (not code)
 - ✅ No credentials in logs
 - ✅ Parameterized queries (SQL injection prevention)
@@ -586,7 +588,7 @@ CMD ["node", "dist/index.js"]
 Stage 27 successfully establishes a comprehensive database foundation for Naija: One World. The implementation:
 
 ✅ **Provides PostgreSQL integration** - Connection pooling, SSL, health checks  
-✅ **Defines complete schema** - 15 tables with proper relationships  
+✅ **Defines complete schema** - 14 tables with proper relationships  
 ✅ **Implements migration system** - Versioned, safe, repeatable  
 ✅ **Provides repository pattern** - Clean data access abstraction  
 ✅ **Ensures transaction safety** - Financial operations protected  

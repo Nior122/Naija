@@ -3,11 +3,11 @@ import { performance } from "node:perf_hooks";
 import { WebSocket, WebSocketServer } from "ws";
 import { fileURLToPath } from "node:url";
 import { MultiplayerWorld } from "./multiplayer/world-engine.js";
-import { WorldStore } from "./multiplayer/persistence.js";
+import { WorldStore, type WorldStoreLike } from "./multiplayer/persistence.js";
 import type { ServerOptions } from "./multiplayer/types.js";
 import type { DeathCauseCategory, InheritanceEventRecord, LifeEventRecord } from "./life/types.js";
 import { worldDescriptor } from "./world.js";
-import { monitoring, PROMETHEUS_CONTENT_TYPE } from "./monitoring.js";
+import { monitoring, PROMETHEUS_CONTENT_TYPE, type HealthCheck } from "./monitoring.js";
 
 const MAX_MESSAGE_BYTES = 8 * 1024;
 
@@ -26,6 +26,10 @@ export interface ApiServer extends Server {
 export interface ApiServerOptions extends ServerOptions {
   readonly allowedOrigins?: readonly string[];
   readonly websocketPath?: string;
+  /** Pre-opened world store (for example PostgreSQL). Defaults to the JSON file store at stateFile. */
+  readonly worldStore?: WorldStoreLike;
+  /** Persistence health reported under /health. Failing checks make the server unhealthy. */
+  readonly persistenceHealth?: () => Promise<HealthCheck>;
 }
 
 function sendJson(response: ServerResponse, statusCode: number, body: unknown): void {
@@ -53,7 +57,7 @@ export function createApiServer(options: ApiServerOptions = {}): ApiServer {
   const websocketPath = options.websocketPath ?? "/ws";
   const allowedOrigins = options.allowedOrigins ?? [];
   const stateFile = options.stateFile ?? fileURLToPath(new URL("../data/world-state.json", import.meta.url));
-  const store = new WorldStore(stateFile, options.now?.() ?? Date.now());
+  const store: WorldStoreLike = options.worldStore ?? new WorldStore(stateFile, options.now?.() ?? Date.now());
   const world = new MultiplayerWorld(store, options);
   const websocketServer = new WebSocketServer({
     noServer: true,
@@ -73,7 +77,13 @@ export function createApiServer(options: ApiServerOptions = {}): ApiServer {
     }
 
     if (pathname === "/health") {
-      const health = await monitoring.getHealthStatus();
+      const extra: Record<string, HealthCheck> = {};
+      if (options.persistenceHealth) {
+        extra.persistence = await options.persistenceHealth().catch(
+          (): HealthCheck => ({ status: "fail", message: "Persistence health check failed." }),
+        );
+      }
+      const health = await monitoring.getHealthStatus(extra);
       const statusCode = health.status === "unhealthy" ? 503 : 200;
       sendJson(response, statusCode, health);
       return;

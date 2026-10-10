@@ -22,23 +22,59 @@ export interface DatabaseConfig {
   rejectUnauthorized?: boolean;
   maxConnections?: number;
   idleTimeoutMs?: number;
+  connectionTimeoutMs?: number;
+  statementTimeoutMs?: number;
 }
 
 const POSTGRES_URL_PATTERN = /^postgres(ql)?:\/\//i;
 
 /**
+ * sslmode values accepted in DATABASE_URL. Anything that can fall back to plaintext
+ * or skip certificate checks is rejected, because the URL parameter would otherwise
+ * override the TLS policy configured here.
+ */
+const VERIFIED_SSLMODES = new Set(["verify-full", "verify-ca", "require"]);
+
+/**
  * Builds the pg pool configuration from DatabaseConfig without opening a connection.
  * Exported so the TLS and validation rules can be tested without a live database.
+ *
+ * TLS policy (single source of truth):
+ * - Default: TLS on, server certificate verified.
+ * - sslmode=disable in DATABASE_URL is accepted only with an explicit DB_SSL=false (local development).
+ * - sslmode=prefer/allow/no-verify and unknown values are rejected.
+ * - The sslmode parameter is removed from the connection string so it cannot override the policy.
+ * Error messages never include the connection string.
  */
 export function buildPoolConfig(config: DatabaseConfig = {}): PoolConfig {
   const poolConfig: PoolConfig = {};
+  const sslDisabled = config.ssl === false;
 
   if (config.connectionString) {
-    // Validate the scheme only; never echo the value back in an error.
     if (!POSTGRES_URL_PATTERN.test(config.connectionString)) {
       throw new Error("DATABASE_URL must be a postgres:// or postgresql:// connection URL.");
     }
-    poolConfig.connectionString = config.connectionString;
+    let url: URL;
+    try {
+      url = new URL(config.connectionString);
+    } catch {
+      throw new Error("DATABASE_URL could not be parsed as a connection URL.");
+    }
+    const sslmode = url.searchParams.get("sslmode");
+    if (sslmode !== null) {
+      const mode = sslmode.toLowerCase();
+      if (mode === "disable") {
+        if (!sslDisabled) {
+          throw new Error("DATABASE_URL sslmode=disable requires DB_SSL=false (local development only).");
+        }
+      } else if (sslDisabled) {
+        throw new Error("DB_SSL=false conflicts with the sslmode set in DATABASE_URL.");
+      } else if (!VERIFIED_SSLMODES.has(mode)) {
+        throw new Error("DATABASE_URL sslmode is not supported; use sslmode=verify-full.");
+      }
+      url.searchParams.delete("sslmode");
+    }
+    poolConfig.connectionString = url.toString();
   } else {
     poolConfig.host = config.host ?? "localhost";
     poolConfig.port = config.port ?? 5432;
@@ -47,28 +83,25 @@ export function buildPoolConfig(config: DatabaseConfig = {}): PoolConfig {
     poolConfig.password = config.password;
   }
 
-  if (config.ssl === false) {
-    poolConfig.ssl = false;
-  } else {
-    // Verify server certificates by default. Note: if the connection string itself
-    // carries an sslmode parameter, pg applies that parameter over this option.
-    poolConfig.ssl = {
-      rejectUnauthorized: config.rejectUnauthorized ?? true,
-    };
-  }
-
+  poolConfig.ssl = sslDisabled ? false : { rejectUnauthorized: config.rejectUnauthorized ?? true };
   poolConfig.max = config.maxConnections ?? 20;
   poolConfig.idleTimeoutMillis = config.idleTimeoutMs ?? 30000;
+  poolConfig.connectionTimeoutMillis = config.connectionTimeoutMs ?? 10000;
+  poolConfig.statement_timeout = config.statementTimeoutMs ?? 30000;
 
   return poolConfig;
 }
 
 export class DatabaseConnection {
   private pool: Pool | null = null;
-  private config: DatabaseConfig;
+  private config: DatabaseConfig | undefined;
   private isConnected: boolean = false;
 
-  constructor(config: DatabaseConfig = {}) {
+  /**
+   * With no argument, configuration is read from the environment when connect() runs.
+   * (Reading it at construction would make the shared singleton ignore DATABASE_URL.)
+   */
+  constructor(config?: DatabaseConfig) {
     this.config = config;
   }
 
@@ -80,7 +113,7 @@ export class DatabaseConnection {
       return;
     }
 
-    const pool = new Pool(buildPoolConfig(this.config));
+    const pool = new Pool(buildPoolConfig(this.config ?? loadDatabaseConfigFromEnv()));
     this.pool = pool;
 
     // Test connection
@@ -225,6 +258,9 @@ export function loadDatabaseConfigFromEnv(): DatabaseConfig {
 
   if (connectionString) {
     const config: DatabaseConfig = { connectionString };
+    if (process.env.DB_SSL) {
+      config.ssl = parseBooleanEnv("DB_SSL", process.env.DB_SSL);
+    }
     if (process.env.DB_SSL_REJECT_UNAUTHORIZED) {
       config.rejectUnauthorized = parseBooleanEnv(
         "DB_SSL_REJECT_UNAUTHORIZED",
@@ -253,7 +289,7 @@ export function loadDatabaseConfigFromEnv(): DatabaseConfig {
     config.password = process.env.DB_PASSWORD;
   }
   if (process.env.DB_SSL) {
-    config.ssl = process.env.DB_SSL === "true";
+    config.ssl = parseBooleanEnv("DB_SSL", process.env.DB_SSL);
   }
   if (process.env.DB_SSL_REJECT_UNAUTHORIZED) {
     config.rejectUnauthorized = parseBooleanEnv(

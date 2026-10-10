@@ -1,5 +1,5 @@
-import { database } from "./connection.js";
-import { SCHEMA_VERSION, CREATE_SCHEMA_SQL } from "./schema.js";
+import { database, type DatabaseConnection } from "./connection.js";
+import { SCHEMA_VERSION, CREATE_SCHEMA_SQL, MIGRATION_V2_UP_SQL, MIGRATION_V2_DOWN_SQL } from "./schema.js";
 
 /**
  * Database migration system for Naija: One World
@@ -14,11 +14,13 @@ export interface Migration {
 }
 
 export class MigrationManager {
+  constructor(private readonly db: DatabaseConnection = database) {}
+
   /**
    * Initialize the migrations table
    */
   async initialize(): Promise<void> {
-    await database.query(`
+    await this.db.query(`
       CREATE TABLE IF NOT EXISTS schema_migrations (
         version INTEGER PRIMARY KEY,
         name VARCHAR(255) NOT NULL,
@@ -32,7 +34,7 @@ export class MigrationManager {
    */
   async getCurrentVersion(): Promise<number> {
     try {
-      const result = await database.queryOne<{ version: number }>(
+      const result = await this.db.queryOne<{ version: number }>(
         "SELECT MAX(version) as version FROM schema_migrations"
       );
       return result?.version ?? 0;
@@ -45,7 +47,7 @@ export class MigrationManager {
    * Get list of applied migrations
    */
   async getAppliedMigrations(): Promise<Array<{ version: number; name: string; applied_at: Date }>> {
-    return database.query<{ version: number; name: string; applied_at: Date }>(
+    return this.db.query<{ version: number; name: string; applied_at: Date }>(
       "SELECT version, name, applied_at FROM schema_migrations ORDER BY version"
     );
   }
@@ -64,7 +66,7 @@ export class MigrationManager {
     console.log(`[Migration] Applying migration ${migration.version}: ${migration.name}`);
 
     try {
-      await database.transaction(async (client) => {
+      await this.db.transaction(async (client) => {
         // Apply the migration SQL
         await client.query(migration.up);
 
@@ -113,7 +115,12 @@ export class MigrationManager {
         up: CREATE_SCHEMA_SQL,
         down: "", // No down migration for initial schema
       },
-      // Future migrations can be added here
+      {
+        version: 2,
+        name: "scope_idempotency_keys_per_character",
+        up: MIGRATION_V2_UP_SQL,
+        down: MIGRATION_V2_DOWN_SQL,
+      },
     ];
   }
 

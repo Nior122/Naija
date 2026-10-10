@@ -225,3 +225,22 @@ DROP TABLE IF EXISTS inventory CASCADE;
 DROP TABLE IF EXISTS characters CASCADE;
 DROP TABLE IF EXISTS accounts CASCADE;
 `;
+
+/**
+ * Migration 2: idempotency keys are scoped per character.
+ * The initial schema made financial_transactions.idempotency_key globally unique, so two
+ * unrelated characters could collide on the same key. Existing rows are preserved; only the
+ * uniqueness rule changes. NULL keys remain unrestricted.
+ */
+export const MIGRATION_V2_UP_SQL = `
+ALTER TABLE financial_transactions DROP CONSTRAINT IF EXISTS financial_transactions_idempotency_key_key;
+CREATE UNIQUE INDEX IF NOT EXISTS financial_transactions_character_idempotency_key
+  ON financial_transactions (character_id, idempotency_key)
+  WHERE idempotency_key IS NOT NULL;
+`;
+
+export const MIGRATION_V2_DOWN_SQL = `
+DROP INDEX IF EXISTS financial_transactions_character_idempotency_key;
+-- Restoring the global constraint fails if keys are reused across characters; resolve duplicates first.
+ALTER TABLE financial_transactions ADD CONSTRAINT financial_transactions_idempotency_key_key UNIQUE (idempotency_key);
+`;
