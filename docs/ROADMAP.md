@@ -1,6 +1,6 @@
 # Master Roadmap
 
-The roadmap describes intended development, not completed features. Stage 0 is complete. Stages 1–7 remain in place; Godot runtime verification is still pending. Stages 4–16 have backend/persistence/multiplayer checks passing, while their Godot client verification remains blocked. Stage 16 is implementation-present and backend-tested; Stage 17 is next. See `DEVELOPMENT_STATUS.md` for exact results and limits.
+The roadmap describes intended development, not completed features. Stage 0 is complete. Stages 1–7 remain in place; Godot runtime verification is still pending. Stages 4–17 have backend/persistence/multiplayer checks passing, while their Godot client verification remains blocked. Stage 17 is implementation-present and backend-tested; Stage 18 is next. See `DEVELOPMENT_STATUS.md` for exact results and limits.
 
 | Phase | Name | Purpose | Status |
 |---:|---|---|---|
@@ -21,7 +21,7 @@ The roadmap describes intended development, not completed features. Stage 0 is c
 | 14 | Military | Model the armed forces and their lawful institutional roles at an appropriate level of abstraction. | **Implementation present; backend verified; Godot runtime verification pending** |
 | 15 | Crime & Consequences | Add crime definitions, incident lifecycle, detection & evidence, criminal records, notoriety, restitution, rehabilitation, and prevention without rewarding real-world harm. | **Implementation present; backend verified; Godot runtime verification pending** |
 | 16 | Religion, Culture & Community | Represent diverse faiths, traditions, languages, community groups, events, and local variation respectfully. | **Implementation present; backend verified; Godot runtime verification pending** |
-| 17 | Entertainment & Media | Support music, film, comedy, journalism, broadcasting, and creator careers. | Not started |
+| 17 | Entertainment & Media | Support music, film, comedy, journalism, broadcasting, and creator careers. | **Implementation present; backend verified; Godot runtime verification pending** |
 | 18 | Social Network | Introduce in-world publishing, profiles, feeds, privacy controls, reporting, and moderation. | Not started |
 | 19 | Transportation & Infrastructure | Expand roads, public and private transport, rail, airports, ports, utilities, and travel systems. | Not started |
 | 20 | Living NPC Society | Develop population cohorts and purposeful NPC routines, relationships, work, and reactions. | Not started |
@@ -46,7 +46,7 @@ The implementation is in place across `game/data/education/catalog.json`, the of
 
 The prior Stage 4 verification reported 26 Node tests, including eight focused education tests for enrollment/progression, attendance/grades/results, final exam outcomes/persistence, tertiary and ND/HND pathways, training/apprenticeship, scholarships/history, geography, online schoolyard co-presence, attendance replication and save/restart. The current full suite has since grown to 48 Node tests and continues to cover those regressions. Geography reproducibility and GDScript formatting pass. Static GDScript lint has structural findings. **Godot 4.7.2 is unavailable**, so Stage 4 project import, offline/client UI/save journeys and Godot multiplayer/runtime regressions remain unverified. See `DEVELOPMENT_STATUS.md` and `EDUCATION_PLAN.md` for the remaining client gate. Stage 5 implementation has been added without replacing or declaring these Godot checks successful; the Stage 4 client limitation remains open.
 
-Next roadmap line: **Stage 17 — Entertainment & Media**. Stage 16 — Religion, Culture & Community is implemented with communities, religious/traditional institutions, cultural profiles, memberships, festivals, events, projects, announcements, disputes, reputation, and geography integration; it does not remove the pending Stage 5–16 Godot client verification gate.
+Next roadmap line: **Stage 18 — Social Network**. Stage 17 — Entertainment & Media is implemented with communities, religious/traditional institutions, cultural profiles, memberships, festivals, events, projects, announcements, disputes, reputation, and geography integration; it does not remove the pending Stage 5–17 Godot client verification gate.
 
 ## Stage 5 exit gate
 

@@ -29,7 +29,7 @@ afterEach(async () => {
 function makeWorld() {
   return {
     state: {
-      schemaVersion: 13,
+      schemaVersion: 14,
       worldId: "nigeria-main",
       worldClock: { day: 1, minute_of_day: 0, millisecond_of_minute: 0, updated_at: new Date(0).toISOString(), world_date: { year: 2025, month: 1, day: 1 } },
       players: {}, people: {}, households: {}, families: {}, relationships: {}, lifeEvents: {}, marriages: {}, inheritanceEvents: {},
@@ -515,7 +515,7 @@ test("schema version 11 state migrates to version 12 with empty crime maps", asy
   const original = new WorldStore(stateFile, Date.UTC(2025, 0, 1));
   await original.flush();
   const saved = JSON.parse(await readFile(stateFile, "utf8"));
-  assert.equal(saved.schemaVersion, 13);
+  assert.equal(saved.schemaVersion, 14);
   saved.schemaVersion = 11;
   delete saved.crimeIncidents; delete saved.crimeParticipations; delete saved.crimeEvidence;
   delete saved.crimeReports; delete saved.criminalRecords; delete saved.crimeNotoriety;
@@ -524,9 +524,13 @@ test("schema version 11 state migrates to version 12 with empty crime maps", asy
   delete saved.institutionMemberships; delete saved.culturalProfiles; delete saved.communityEvents;
   delete saved.communityProjects; delete saved.communityAnnouncements; delete saved.communityReputation;
   delete saved.communityDisputes; delete saved.communityContributions; delete saved.communityAudits;
+  delete saved.entertainmentProfiles; delete saved.musicProjects; delete saved.filmProjects;
+  delete saved.contentRecords; delete saved.entertainmentEvents; delete saved.entertainmentContracts;
+  delete saved.newsReports; delete saved.controversies; delete saved.contentModeration;
+  delete saved.entertainmentCollaborations; delete saved.entertainmentAudits;
   await writeFile(stateFile, JSON.stringify(saved), "utf8");
   const migrated = new WorldStore(stateFile, Date.UTC(2025, 0, 2));
-  assert.equal(migrated.state.schemaVersion, 13);
+  assert.equal(migrated.state.schemaVersion, 14);
   assert.ok(typeof migrated.state.crimeIncidents === "object");
   assert.ok(typeof migrated.state.criminalRecords === "object");
   assert.ok(typeof migrated.state.crimeNotoriety === "object");

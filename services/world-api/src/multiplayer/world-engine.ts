@@ -182,6 +182,8 @@ import { CrimeCatalogService, CrimeService, initializeCrimeWorldState, seedCrime
 import type { CrimeCategoryId, CrimeIncidentStatusId, ParticipantRoleId } from "../crime/types.js";
 import { CultureCatalogService, CultureService, initializeCultureWorldState, seedCultureWorld, cultureErrorMessage } from "../culture/index.js";
 import type { CommunityTypeId, InstitutionCategoryId, ProjectCategoryId, ProjectStatusId, ReligiousCategoryId } from "../culture/types.js";
+import { EntertainmentCatalogService, EntertainmentService, initializeEntertainmentWorldState, seedEntertainmentWorld, entertainmentErrorMessage } from "../entertainment/index.js";
+import type { ProductionStatusId, ContentStatusId, EventTypeId } from "../entertainment/types.js";
 import { loadLifeCatalog, dateForWorldDay, isValidDate, worldClockSnapshot } from "../life/calendar.js";
 import {
   advanceWorldLife,
@@ -538,6 +540,7 @@ export class MultiplayerWorld {
   private readonly militaryCatalog = new MilitaryCatalogService();
   private readonly crimeCatalog = new CrimeCatalogService();
   private readonly cultureCatalog = new CultureCatalogService();
+  private readonly entertainmentCatalog = new EntertainmentCatalogService();
   private readonly lifeCatalog = loadLifeCatalog();
   private lastTickAt: number;
   private lastBroadcastAt = 0;
@@ -831,6 +834,7 @@ export class MultiplayerWorld {
       case "military.action": await this.militaryAction(context, player, message, requestId); return;
       case "crime.action": await this.crimeAction(context, player, message, requestId); return;
       case "culture.action": await this.cultureAction(context, player, message, requestId); return;
+      case "entertainment.action": await this.entertainmentAction(context, player, message, requestId); return;
       case "chat.send": this.handleChat(context, player, message, requestId); return;
       case "player.interact": this.handlePlayerInteraction(context, player, message, requestId); return;
       case "relationship.progress": await this.progressRelationship(context, player, message, requestId); return;
@@ -944,6 +948,8 @@ export class MultiplayerWorld {
     seedCrimeWorld();
     initializeCultureWorldState(this.store.state);
     seedCultureWorld();
+    initializeEntertainmentWorldState(this.store.state);
+    seedEntertainmentWorld();
     this.playerByTokenHash.set(tokenHash, playerId);
     this.playerByCreationKeyHash.set(creationKeyHash, playerId);
     // The upcoming snapshot includes all current changes; keep later concurrent dirtiness intact.
@@ -3905,6 +3911,268 @@ export class MultiplayerWorld {
     await this.flushDirty();
   }
 
+  private async entertainmentAction(
+    context: ConnectionContext,
+    player: PersistentPlayer,
+    message: Record<string, unknown>,
+    requestId?: string,
+  ): Promise<void> {
+    const data = message;
+    const action = typeof data.action === "string" ? data.action : "";
+    if (!action || action.length > 48) {
+      this.send(context, appendOptionalRequestId({
+        type: "entertainment.error", action: "", code: "entertainment_action_invalid",
+        message: "Choose a supported entertainment action.",
+      }, requestId));
+      return;
+    }
+
+    const characterId = player.character.character_id;
+    const worldDate = this.store.state.worldClock.world_date;
+    const service = new EntertainmentService(this.store.state, this.entertainmentCatalog);
+    let messageText = "";
+    const responseData: Record<string, unknown> = {};
+
+    try {
+      switch (action) {
+        case "list_professions": {
+          const category = typeof data.category === "string" ? data.category : undefined;
+          const professions = category ? this.entertainmentCatalog.getProfessionsByCategory(category) : this.entertainmentCatalog.get().professions;
+          responseData.professions = professions.map((p) => ({ id: p.id, category: p.category, label: p.label }));
+          messageText = `Found ${professions.length} profession(s).`;
+          break;
+        }
+        case "list_profession_categories": {
+          const categories = this.entertainmentCatalog.get().profession_categories;
+          responseData.categories = categories;
+          messageText = `Found ${categories.length} profession categories.`;
+          break;
+        }
+        case "list_skills": {
+          const skills = this.entertainmentCatalog.get().skills;
+          responseData.skills = skills;
+          messageText = `Found ${skills.length} skills.`;
+          break;
+        }
+        case "list_genres": {
+          const genres = this.entertainmentCatalog.get().genres;
+          responseData.genres = genres;
+          messageText = `Found ${genres.length} genres.`;
+          break;
+        }
+        case "list_content_types": {
+          const contentTypes = this.entertainmentCatalog.get().content_types;
+          responseData.content_types = contentTypes;
+          messageText = `Found ${contentTypes.length} content types.`;
+          break;
+        }
+        case "list_event_types": {
+          const eventTypes = this.entertainmentCatalog.get().event_types;
+          responseData.event_types = eventTypes;
+          messageText = `Found ${eventTypes.length} event types.`;
+          break;
+        }
+        case "create_profile": {
+          const stageName = typeof data.stage_name === "string" ? data.stage_name : "";
+          if (!stageName) throw new Error("entertainment_stage_name_invalid");
+          const professions = Array.isArray(data.professions) ? data.professions as string[] : [];
+          const profile = service.createProfile({
+            character_id: characterId, stage_name: stageName,
+            biography: typeof data.biography === "string" ? data.biography : "",
+            professions, character_age: player.character.age,
+          }, worldDate);
+          responseData.profile = profile;
+          messageText = `Profile "${stageName}" created.`;
+          break;
+        }
+        case "view_profile": {
+          const targetId = typeof data.character_id === "string" ? data.character_id : characterId;
+          const snapshot = service.getProfileSnapshot(targetId);
+          if (!snapshot) { messageText = "No entertainment profile found."; break; }
+          responseData.profile = snapshot;
+          messageText = `${snapshot.stage_name}: ${snapshot.career_stage}, fame ${(snapshot.fame_score).toFixed(0)}`;
+          break;
+        }
+        case "create_music_project": {
+          const profile = service.getProfile(characterId);
+          if (!profile) throw new Error("entertainment_profile_not_found");
+          const title = typeof data.title === "string" ? data.title : "";
+          const genre = typeof data.genre === "string" ? data.genre : "";
+          const releaseType = typeof data.release_type === "string" ? data.release_type : "single";
+          if (!title || !genre) throw new Error("entertainment_title_invalid");
+          const project = service.createMusicProject({
+            artist_character_id: characterId, artist_profile_id: profile.profile_id,
+            title, description: typeof data.description === "string" ? data.description : "",
+            genre, release_type: releaseType,
+            budget: typeof data.budget === "number" ? data.budget : 0,
+          }, worldDate);
+          responseData.project = project;
+          messageText = `Music project "${title}" created.`;
+          break;
+        }
+        case "transition_music_project": {
+          const projectId = typeof data.project_id === "string" ? data.project_id : "";
+          const newStatus = typeof data.new_status === "string" ? data.new_status as ProductionStatusId : "" as ProductionStatusId;
+          if (!projectId || !newStatus) throw new Error("entertainment_project_not_found");
+          const project = service.transitionMusicProject(projectId, newStatus, worldDate);
+          responseData.project = project;
+          messageText = `Music project status: ${project.status}`;
+          break;
+        }
+        case "create_film_project": {
+          const title = typeof data.title === "string" ? data.title : "";
+          const genre = typeof data.genre === "string" ? data.genre : "";
+          const contentType = typeof data.content_type === "string" ? data.content_type : "short_film";
+          if (!title || !genre) throw new Error("entertainment_title_invalid");
+          const project = service.createFilmProject({
+            producer_character_id: characterId,
+            title, description: typeof data.description === "string" ? data.description : "",
+            genre, content_type: contentType,
+            budget: typeof data.budget === "number" ? data.budget : 0,
+            business_id: typeof data.business_id === "string" ? data.business_id : null,
+          }, worldDate);
+          responseData.project = project;
+          messageText = `Film project "${title}" created.`;
+          break;
+        }
+        case "transition_film_project": {
+          const projectId = typeof data.project_id === "string" ? data.project_id : "";
+          const newStatus = typeof data.new_status === "string" ? data.new_status as ProductionStatusId : "" as ProductionStatusId;
+          if (!projectId || !newStatus) throw new Error("entertainment_project_not_found");
+          const project = service.transitionFilmProject(projectId, newStatus, worldDate);
+          responseData.project = project;
+          messageText = `Film project status: ${project.status}`;
+          break;
+        }
+        case "create_content": {
+          const profile = service.getProfile(characterId);
+          if (!profile) throw new Error("entertainment_profile_not_found");
+          const title = typeof data.title === "string" ? data.title : "";
+          const contentType = typeof data.content_type === "string" ? data.content_type : "";
+          if (!title || !contentType) throw new Error("entertainment_title_invalid");
+          const content = service.createContent({
+            creator_character_id: characterId, creator_profile_id: profile.profile_id,
+            title, description: typeof data.description === "string" ? data.description : "",
+            content_type: contentType,
+            genre: typeof data.genre === "string" ? data.genre : null,
+          }, worldDate);
+          responseData.content = content;
+          messageText = `Content "${title}" drafted.`;
+          break;
+        }
+        case "publish_content": {
+          const contentId = typeof data.content_id === "string" ? data.content_id : "";
+          if (!contentId) throw new Error("entertainment_content_not_found");
+          const content = service.publishContent(contentId, worldDate);
+          responseData.content = content;
+          messageText = `Content published. Views: ${content.views}, Revenue: ₦${content.revenue}`;
+          break;
+        }
+        case "create_event": {
+          const profile = service.getProfile(characterId);
+          const name = typeof data.name === "string" ? data.name : "";
+          const eventType = typeof data.event_type === "string" ? data.event_type as EventTypeId : "concert" as EventTypeId;
+          if (!name) throw new Error("entertainment_title_invalid");
+          const event = service.createEvent({
+            organizer_character_id: characterId,
+            organizer_profile_id: profile?.profile_id ?? null,
+            name, description: typeof data.description === "string" ? data.description : "",
+            event_type: eventType,
+            venue_name: typeof data.venue_name === "string" ? data.venue_name : null,
+            state_id: typeof data.state_id === "string" ? data.state_id : null,
+            start_world_date: worldDate,
+            capacity: typeof data.capacity === "number" ? data.capacity : 100,
+            ticket_price: typeof data.ticket_price === "number" ? data.ticket_price : 0,
+          }, worldDate);
+          responseData.event = event;
+          messageText = `Event "${name}" scheduled.`;
+          break;
+        }
+        case "purchase_ticket": {
+          const eventId = typeof data.event_id === "string" ? data.event_id : "";
+          if (!eventId) throw new Error("entertainment_event_not_found");
+          service.purchaseTicket(eventId, characterId, worldDate);
+          messageText = "Ticket purchased.";
+          break;
+        }
+        case "list_events": {
+          const events = service.listEvents();
+          responseData.events = events.map((e) => ({ event_id: e.event_id, name: e.name, event_type: e.event_type, status: e.status, tickets_sold: e.tickets_sold, capacity: e.capacity, ticket_price: e.ticket_price }));
+          messageText = `Found ${events.length} events.`;
+          break;
+        }
+        case "create_contract": {
+          const title = typeof data.title === "string" ? data.title : "";
+          const contractType = typeof data.contract_type === "string" ? data.contract_type : "";
+          const acceptingId = typeof data.accepting_character_id === "string" ? data.accepting_character_id : "";
+          if (!title || !contractType || !acceptingId) throw new Error("entertainment_contract_title_invalid");
+          const contract = service.createContract({
+            title, contract_type: contractType,
+            initiating_character_id: characterId, accepting_character_id: acceptingId,
+            project_id: typeof data.project_id === "string" ? data.project_id : null,
+            terms: typeof data.terms === "string" ? data.terms : "",
+            compensation: typeof data.compensation === "number" ? data.compensation : 0,
+          }, worldDate);
+          responseData.contract = contract;
+          messageText = `Contract "${title}" proposed.`;
+          break;
+        }
+        case "accept_contract": {
+          const contractId = typeof data.contract_id === "string" ? data.contract_id : "";
+          if (!contractId) throw new Error("entertainment_contract_not_found");
+          const contract = service.acceptContract(contractId, characterId, worldDate);
+          responseData.contract = contract;
+          messageText = "Contract accepted.";
+          break;
+        }
+        case "create_news_report": {
+          const headline = typeof data.headline === "string" ? data.headline : "";
+          const topic = typeof data.topic === "string" ? data.topic : "";
+          if (!headline || !topic) throw new Error("entertainment_title_invalid");
+          const report = service.createNewsReport({
+            author_character_id: characterId, headline,
+            summary: typeof data.summary === "string" ? data.summary : "",
+            topic,
+            organization_id: typeof data.organization_id === "string" ? data.organization_id : null,
+          }, worldDate);
+          responseData.report = report;
+          messageText = `News report "${headline}" drafted.`;
+          break;
+        }
+        case "publish_news_report": {
+          const reportId = typeof data.report_id === "string" ? data.report_id : "";
+          if (!reportId) throw new Error("entertainment_report_not_found");
+          const report = service.publishNewsReport(reportId, typeof data.editorial_review === "string" ? data.editorial_review : null, worldDate);
+          responseData.report = report;
+          messageText = `News report published. Views: ${report.views}`;
+          break;
+        }
+        case "list_news_reports": {
+          const reports = Object.values(service.getMaps().newsReports);
+          responseData.reports = reports.map((r) => ({ report_id: r.report_id, headline: r.headline, topic: r.topic, status: r.status, views: r.views, published_at: r.published_at }));
+          messageText = `Found ${reports.length} report(s).`;
+          break;
+        }
+        default:
+          throw new Error("entertainment_action_unknown");
+      }
+    } catch (error) {
+      const code = this.errorCode(error);
+      this.send(context, appendOptionalRequestId({
+        type: "entertainment.error", action, code, message: entertainmentErrorMessage(code),
+      }, requestId));
+      return;
+    }
+
+    this.markRequestProcessed(player, requestId);
+    if (!["list_professions", "list_profession_categories", "list_skills", "list_genres", "list_content_types", "list_event_types", "view_profile", "list_events", "list_news_reports"].includes(action)) this.touchPlayer(player);
+    this.send(context, appendOptionalRequestId({
+      type: "entertainment.result", action, ok: true, message: messageText, data: responseData,
+    }, requestId));
+    this.sendCharacterSnapshot(context);
+    await this.flushDirty();
+  }
+
   private programSeatCount(programId: string): number {
     if (!programId) return 0;
     const occupied = new Set<string>();
@@ -4192,6 +4460,7 @@ export class MultiplayerWorld {
     try { const militaryService = new MilitaryService(this.store.state, this.militaryCatalog); const mp = militaryService.getMilitaryProfile(player.character.character_id); if (mp.is_service_member) snapshot.military_profile = mp; } catch { /* ignore */ }
     try { const crimeService = new CrimeService(this.store.state, this.crimeCatalog); const cp = crimeService.getCriminalProfile(player.character.character_id); if (cp.has_criminal_record || cp.notoriety_score > 0) snapshot.criminal_profile = cp; } catch { /* ignore */ }
     try { const cultureService = new CultureService(this.store.state, this.cultureCatalog); const cup = cultureService.getCulturalProfileSnapshot(player.character.character_id); if (cup.languages_spoken.length > 0 || cup.community_memberships_count > 0 || cup.institution_memberships_count > 0) snapshot.cultural_profile = cup; } catch { /* ignore */ }
+    try { const entertainmentService = new EntertainmentService(this.store.state, this.entertainmentCatalog); const ep = entertainmentService.getProfileSnapshot(player.character.character_id); if (ep) snapshot.entertainment_profile = ep; } catch { /* ignore */ }
     return snapshot;
   }
 

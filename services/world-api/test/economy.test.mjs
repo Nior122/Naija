@@ -419,7 +419,7 @@ test("schema version 8 state migrates to version 10 with empty justice and polic
   const { peer, ready } = await createOnlinePeer(serverPort);
   await peer.close();
   const saved = JSON.parse(await readFile(stateFile, "utf8"));
-  assert.equal(saved.schemaVersion, 13);
+  assert.equal(saved.schemaVersion, 14);
   // Simulate a v8 state by removing police fields
   saved.schemaVersion = 8;
   delete saved.laws; delete saved.lawProvisions; delete saved.legislativeProposals;
@@ -444,9 +444,13 @@ test("schema version 8 state migrates to version 10 with empty justice and polic
   delete saved.institutionMemberships; delete saved.culturalProfiles; delete saved.communityEvents;
   delete saved.communityProjects; delete saved.communityAnnouncements; delete saved.communityReputation;
   delete saved.communityDisputes; delete saved.communityContributions; delete saved.communityAudits;
+  delete saved.entertainmentProfiles; delete saved.musicProjects; delete saved.filmProjects;
+  delete saved.contentRecords; delete saved.entertainmentEvents; delete saved.entertainmentContracts;
+  delete saved.newsReports; delete saved.controversies; delete saved.contentModeration;
+  delete saved.entertainmentCollaborations; delete saved.entertainmentAudits;
   await writeFile(stateFile, JSON.stringify(saved), "utf8");
   const migrated = new WorldStore(stateFile, Date.UTC(2025, 0, 2));
-  assert.equal(migrated.state.schemaVersion, 13);
+  assert.equal(migrated.state.schemaVersion, 14);
   assert.ok(typeof migrated.state.laws === "object");
   assert.ok(typeof migrated.state.courts === "object");
   assert.ok(typeof migrated.state.cases === "object");

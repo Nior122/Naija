@@ -4,7 +4,7 @@
 
 ## Current stage and verification gate
 
-**Stage 16 — Religion, Culture & Community: backend implementation and Node tests pass; culture integrates with Stage 3 (geography), Stage 5 (life), Stage 6 (careers), Stage 7 (economy), Stage 10 (government), and Stage 12 (justice); Godot client/runtime verification is blocked.** Stages 0–15 remain preserved on the same `nigeria-main` world. The server still owns one shared online timeline. The earlier Stage 5 Godot limitation is still open; Stages 6–16 do not resolve it.
+**Stage 17 — Entertainment & Media: backend implementation and Node tests pass; entertainment integrates with Stage 6 (careers), Stage 5 (life), Stage 6 (careers), Stage 7 (economy), Stage 10 (government), and Stage 12 (justice); Godot client/runtime verification is blocked.** Stages 0–16 remain preserved on the same `nigeria-main` world. The server still owns one shared online timeline. The earlier Stage 5 Godot limitation is still open; Stages 6–17 do not resolve it.
 
 Godot 4.7.2 is not installed (`godot: command not found`). Project import, engine type-checking, scenes, rendered careers UI, clicks through work/application flows, offline client journeys, and Godot multiplayer/reconnect/save runtime behavior have not been run. Do not infer client success from Node tests or gdtoolkit.
 
@@ -441,6 +441,42 @@ Schema version advanced to 13 with 12 new persistent maps. `services/world-api/s
 | Schema-v12 to v13 migration with culture maps | Persistence test | **Passed (Node)** |
 | WebSocket culture actions | WebSocket test | **Passed (Node)** |
 | Godot project import, engine typing, client culture UI | Godot unavailable | **Blocked / not run** |
+
+## Stage 17 implementation
+
+- `game/data/entertainment/catalog.json` configures 6 profession categories, 30 professions, 20 skills, 16 content types, 20 genres, 3 release types, 10 event types, 8 contract types, 6 career stages, 10 news topics, production/content status transitions, and anti-exploit rules.
+- Entertainment profiles with stage names, biographies, professions, fame scores, and career stages.
+- Music projects with full production lifecycle (idea → development → pre-production → production → post-production → ready → released), collaborators, quality scores, and simulated revenue.
+- Film projects with cast/crew management, production workflow, and simulated audience response.
+- Content creation with drafts, publication, and simulated views/revenue.
+- Entertainment events with ticketing, capacity enforcement, and performer fame boosts.
+- Contracts for recording, management, sponsorship, collaboration, and performance.
+- News reports with editorial review, publication, corrections, and retractions.
+- Fame system with decay and career stage progression.
+- Content moderation with reporting, review, and removal workflows.
+- Integration: careers (professions), economy (revenue), businesses (production companies), culture (events/venues).
+
+Schema version advanced to 14 with 11 new persistent maps. `services/world-api/src/entertainment/` contains typed catalogue, service, and exports. `services/world-api/src/multiplayer/world-engine.ts` integrates `entertainment.action` commands with 23 actions and entertainment profiles in character snapshots.
+
+## Stage 17 acceptance coverage
+
+| Area | Evidence | Result |
+|---|---|---|
+| Catalogue structure, professions, skills, genres | `services/world-api/test/entertainment.test.mjs` | **Passed (Node)** |
+| Profile creation with age enforcement | Entertainment service tests | **Passed (Node)** |
+| Stage name uniqueness | Entertainment service tests | **Passed (Node)** |
+| Music project lifecycle | Entertainment service tests | **Passed (Node)** |
+| Film project cast/crew | Entertainment service tests | **Passed (Node)** |
+| Content creation and publication | Entertainment service tests | **Passed (Node)** |
+| Events and ticketing | Entertainment service tests | **Passed (Node)** |
+| Contracts and acceptance | Entertainment service tests | **Passed (Node)** |
+| News reports and corrections | Entertainment service tests | **Passed (Node)** |
+| Content moderation | Entertainment service tests | **Passed (Node)** |
+| Fame decay | Entertainment service tests | **Passed (Node)** |
+| Error messages | Entertainment service tests | **Passed (Node)** |
+| Schema-v13 to v14 migration with entertainment maps | Persistence test | **Passed (Node)** |
+| WebSocket entertainment actions | WebSocket test | **Passed (Node)** |
+| Godot project import, engine typing, client entertainment UI | Godot unavailable | **Blocked / not run** |
 
 ## Stage 11 acceptance coverage
 

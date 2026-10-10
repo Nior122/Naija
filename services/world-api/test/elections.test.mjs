@@ -51,7 +51,7 @@ afterEach(async () => {
 function makeWorld() {
   return {
     state: {
-      schemaVersion: 13,
+      schemaVersion: 14,
       worldId: "nigeria-main",
       worldClock: { day: 1, minute_of_day: 0, millisecond_of_minute: 0, updated_at: new Date(0).toISOString(), world_date: { year: 2025, month: 1, day: 1 } },
       players: {},
@@ -525,7 +525,7 @@ test("schema version 8 state migrates to version 10 with empty justice and polic
     await delay(500);
     await peer.close();
     const saved = JSON.parse(await readFile(stateFile, "utf8"));
-    assert.equal(saved.schemaVersion, 13);
+    assert.equal(saved.schemaVersion, 14);
     saved.schemaVersion = 8;
   delete saved.laws; delete saved.lawProvisions; delete saved.legislativeProposals;
   delete saved.courts; delete saved.legalProfessionals; delete saved.legalRepresentations;
@@ -549,9 +549,13 @@ test("schema version 8 state migrates to version 10 with empty justice and polic
   delete saved.institutionMemberships; delete saved.culturalProfiles; delete saved.communityEvents;
   delete saved.communityProjects; delete saved.communityAnnouncements; delete saved.communityReputation;
   delete saved.communityDisputes; delete saved.communityContributions; delete saved.communityAudits;
+  delete saved.entertainmentProfiles; delete saved.musicProjects; delete saved.filmProjects;
+  delete saved.contentRecords; delete saved.entertainmentEvents; delete saved.entertainmentContracts;
+  delete saved.newsReports; delete saved.controversies; delete saved.contentModeration;
+  delete saved.entertainmentCollaborations; delete saved.entertainmentAudits;
     await writeFile(stateFile, JSON.stringify(saved), "utf8");
     const migrated = new WorldStore(stateFile, Date.UTC(2025, 0, 2));
-    assert.equal(migrated.state.schemaVersion, 13);
+    assert.equal(migrated.state.schemaVersion, 14);
     assert.ok(typeof migrated.state.laws === "object");
     assert.ok(typeof migrated.state.courts === "object");
     assert.ok(typeof migrated.state.cases === "object");
