@@ -1,6 +1,7 @@
 import { createApiServer } from "./app.js";
 import { readApiConfig } from "./config.js";
 import { openWorldPersistence } from "./persistence/open.js";
+import { monitoring } from "./monitoring.js";
 
 async function main(): Promise<void> {
   // Startup policy: configuration is validated first. Any failure stops the process before it listens.
@@ -13,6 +14,7 @@ async function main(): Promise<void> {
     return;
   }
   const { port, dataFile, websocketPath, allowedOrigins, gameMinuteMs, environment, metricsAccess } = config;
+  monitoring.configureWorldStateWarnings(config.worldStateWarnPercent);
 
   // A configured PostgreSQL backend that cannot be opened stops the process here. There is no file fallback.
   let persistence;

@@ -53,7 +53,8 @@ import {
   type Point2D,
 } from "./types.js";
 
-const MAX_STATE_FILE_BYTES = 16 * 1024 * 1024;
+/** The size limit for one saved world. A save over it is refused and the previous file is kept. */
+export const WORLD_STATE_LIMIT_BYTES = 16 * 1024 * 1024;
 const CHARACTER_TYPES = new Set(["girl", "boy", "androgynous"]);
 const LIFE_STATUSES = new Set(["alive", "retired", "deceased"]);
 const RELATIONSHIP_TYPES = new Set([
@@ -989,22 +990,49 @@ export function initialState(now: number): PersistentWorldState {
   return state;
 }
 
+/** Raised when a snapshot would exceed the size limit. The previous saved world is left unchanged. */
+export class WorldStateCapacityError extends Error {
+  constructor() {
+    super("world_capacity_reached");
+    this.name = "WorldStateCapacityError";
+  }
+}
+
 /** The storage contract the multiplayer engine depends on (JSON file or PostgreSQL). */
 export interface WorldStoreLike {
+  /** The live in-memory world. Only the engine changes it. */
   readonly state: PersistentWorldState;
+  /** Save the live world. */
   flush(): Promise<void>;
+  /**
+   * Save the given snapshot as the authoritative world, without changing the live world. The engine
+   * uses this to commit a creation before merging it into the live world. The snapshot must not be
+   * modified after the call.
+   */
+  saveState(candidate: PersistentWorldState): Promise<void>;
+}
+
+export interface WorldStoreOptions {
+  /**
+   * Size limit override for tests and the capacity probe only. It must be a positive integer.
+   * Production code uses the default, WORLD_STATE_LIMIT_BYTES.
+   */
+  readonly maxBytes?: number;
 }
 
 export class WorldStore implements WorldStoreLike {
   readonly filePath: string;
   readonly state: PersistentWorldState;
+  private readonly maxBytes: number;
   private writeQueue: Promise<void> = Promise.resolve();
 
-  constructor(filePath: string, now: number = Date.now()) {
+  constructor(filePath: string, now: number = Date.now(), options: WorldStoreOptions = {}) {
     this.filePath = resolve(filePath);
+    this.maxBytes = options.maxBytes ?? WORLD_STATE_LIMIT_BYTES;
+    if (!Number.isSafeInteger(this.maxBytes) || this.maxBytes < 1) throw new Error("maxBytes must be a positive integer.");
     try {
       const size = statSync(this.filePath).size;
-      if (size > MAX_STATE_FILE_BYTES) throw new Error("World data file exceeds the 16 MiB prototype limit.");
+      if (size > this.maxBytes) throw new Error("World data file exceeds the 16 MiB prototype limit.");
       this.state = validateState(JSON.parse(readFileSync(this.filePath, "utf8")) as unknown, now);
     } catch (error) {
       if (isRecord(error) && error.code === "ENOENT") this.state = initialState(now);
@@ -1013,9 +1041,13 @@ export class WorldStore implements WorldStoreLike {
   }
 
   async flush(): Promise<void> {
+    await this.saveState(this.state);
+  }
+
+  async saveState(candidate: PersistentWorldState): Promise<void> {
     const started = performance.now();
     try {
-      await this.writeSnapshot();
+      await this.writeSnapshot(candidate);
       monitoring.recordPersistenceFlush(true, performance.now() - started);
     } catch (error) {
       monitoring.recordPersistenceFlush(false, performance.now() - started);
@@ -1023,17 +1055,20 @@ export class WorldStore implements WorldStoreLike {
     }
   }
 
-  private async writeSnapshot(): Promise<void> {
-    const snapshot = JSON.stringify(this.state, null, 2);
-    if (Buffer.byteLength(snapshot, "utf8") > MAX_STATE_FILE_BYTES) {
-      throw new Error("World data file exceeds the 16 MiB prototype limit.");
-    }
+  /**
+   * The snapshot is serialized when its turn in the queue comes, so it reflects every earlier save.
+   * A rename is atomic on the same filesystem, so a failed write leaves the previous file in place.
+   */
+  private async writeSnapshot(state: PersistentWorldState): Promise<void> {
     const write = async (): Promise<void> => {
+      const snapshot = JSON.stringify(state, null, 2);
+      if (Buffer.byteLength(snapshot, "utf8") > this.maxBytes) throw new WorldStateCapacityError();
       await mkdir(dirname(this.filePath), { recursive: true });
       const temporaryPath = `${this.filePath}.${process.pid}.${randomUUID()}.tmp`;
       try {
         await writeFile(temporaryPath, snapshot, { encoding: "utf8", mode: 0o600 });
         await rename(temporaryPath, this.filePath);
+        monitoring.recordWorldStateSaved(Buffer.byteLength(snapshot, "utf8"), Object.keys(state.players).length, this.maxBytes);
       } finally {
         await rm(temporaryPath, { force: true });
       }

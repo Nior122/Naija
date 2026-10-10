@@ -21,6 +21,23 @@ export interface ApiConfig {
   readonly gameMinuteMs?: number;
   readonly environment: RuntimeEnvironment;
   readonly metricsAccess: MetricsAccess;
+  /** Usage percentages of the world-state size limit that log a warning (strictly ascending). */
+  readonly worldStateWarnPercent: readonly number[];
+}
+
+/**
+ * WORLD_STATE_WARN_PERCENT: comma-separated integers from 1 to 99, strictly ascending. Default "75,90".
+ * Invalid values stop startup; the value is not echoed back.
+ */
+export function parseWorldStateWarnPercent(env: NodeJS.ProcessEnv): readonly number[] {
+  const raw = env.WORLD_STATE_WARN_PERCENT;
+  if (raw === undefined || raw.trim() === "") return [75, 90];
+  const parts = raw.split(",").map((part) => part.trim());
+  const values = parts.map((part) => (/^\d{1,2}$/.test(part) ? Number(part) : Number.NaN));
+  const valid = values.every((value) => Number.isInteger(value) && value >= 1 && value <= 99) &&
+    values.every((value, index) => index === 0 || value > (values[index - 1] ?? 0));
+  if (!valid) throw new Error("WORLD_STATE_WARN_PERCENT must be strictly ascending integers from 1 to 99, for example 75,90.");
+  return values;
 }
 
 export function readApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
@@ -70,5 +87,6 @@ export function readApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     ...(gameMinuteMs === undefined ? {} : { gameMinuteMs }),
     environment,
     metricsAccess,
+    worldStateWarnPercent: parseWorldStateWarnPercent(env),
   };
 }

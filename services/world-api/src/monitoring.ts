@@ -52,6 +52,14 @@ export interface ServerMetrics {
     players_online: number;
     tick_rate: number;
     last_tick_duration_ms: number;
+    /** Size of the most recent successful world-state save, in bytes (0 before the first save). */
+    state_bytes_last_saved: number;
+    /** The fixed size limit for one saved world, in bytes. */
+    state_limit_bytes: number;
+    /** state_bytes_last_saved / state_limit_bytes. */
+    state_usage_ratio: number;
+    /** Player records in the most recent successful save. */
+    persisted_players: number;
   };
 }
 
@@ -66,6 +74,11 @@ export class MonitoringService {
   private requestStartTime: number = 0;
   private lastTickDuration: number = 0;
   private playersOnline: number = 0;
+  private stateBytesLastSaved = 0;
+  private stateLimitBytes = 0;
+  private persistedPlayers = 0;
+  private warnPercentages: readonly number[] = [75, 90];
+  private highestWarnedPercent = 0;
   private tickRate: number = 0;
   private flushes: number = 0;
   private flushFailures: number = 0;
@@ -97,6 +110,37 @@ export class MonitoringService {
     this.flushes++;
     if (!succeeded) this.flushFailures++;
     this.lastFlushDurationMs = Math.round(durationMs * 100) / 100;
+  }
+
+  /**
+   * Record a successful world-state save: its size against the limit, and the player count. Logs a
+   * warning when usage first crosses a configured percentage (once per level, no record contents).
+   */
+  recordWorldStateSaved(bytes: number, players: number, limitBytes: number): void {
+    this.stateBytesLastSaved = bytes;
+    this.stateLimitBytes = limitBytes;
+    this.persistedPlayers = players;
+    const percent = limitBytes > 0 ? (bytes / limitBytes) * 100 : 0;
+    const crossed = this.warnPercentages.filter((level) => percent >= level && level > this.highestWarnedPercent);
+    if (crossed.length > 0) {
+      const level = Math.max(...crossed);
+      this.highestWarnedPercent = level;
+      console.warn(
+        `world state is at ${percent.toFixed(1)}% of its size limit (warning threshold ${level}%); players persisted: ${players}`,
+      );
+    }
+  }
+
+  /**
+   * Set the usage percentages that trigger a warning log. Values must be integers from 1 to 99,
+   * strictly ascending. The defaults are 75 and 90.
+   */
+  configureWorldStateWarnings(percentages: readonly number[]): void {
+    const valid = percentages.every((value) => Number.isInteger(value) && value >= 1 && value <= 99) &&
+      percentages.every((value, index) => index === 0 || value > (percentages[index - 1] ?? 0));
+    if (!valid) throw new Error("World state warning percentages must be strictly ascending integers from 1 to 99.");
+    this.warnPercentages = [...percentages];
+    this.highestWarnedPercent = 0;
   }
 
   /**
@@ -230,6 +274,10 @@ export class MonitoringService {
         players_online: this.playersOnline,
         tick_rate: this.tickRate,
         last_tick_duration_ms: this.lastTickDuration,
+        state_bytes_last_saved: this.stateBytesLastSaved,
+        state_limit_bytes: this.stateLimitBytes,
+        state_usage_ratio: this.stateLimitBytes > 0 ? Math.round((this.stateBytesLastSaved / this.stateLimitBytes) * 10000) / 10000 : 0,
+        persisted_players: this.persistedPlayers,
       },
     };
   }
@@ -382,6 +430,10 @@ export function renderPrometheusMetrics(metrics: ServerMetrics, uptimeSeconds: n
     { name: "naija_world_api_event_loop_delay_p99_milliseconds", help: "p99 event-loop delay over the last sample window.", type: "gauge", value: metrics.performance.event_loop_delay_ms },
     { name: "naija_world_api_cpu_percent", help: "CPU use since the last sample, as a percent of one core.", type: "gauge", value: metrics.performance.cpu_percent },
     { name: "naija_world_api_players_online", help: "Players currently online in the multiplayer world.", type: "gauge", value: metrics.world.players_online },
+    { name: "naija_world_api_world_state_bytes", help: "Size of the most recent successful world-state save, in bytes.", type: "gauge", value: metrics.world.state_bytes_last_saved },
+    { name: "naija_world_api_world_state_limit_bytes", help: "Size limit for one saved world, in bytes.", type: "gauge", value: metrics.world.state_limit_bytes },
+    { name: "naija_world_api_world_state_usage_ratio", help: "Most recent saved world size divided by the size limit.", type: "gauge", value: metrics.world.state_usage_ratio },
+    { name: "naija_world_api_persisted_players", help: "Player records in the most recent successful save.", type: "gauge", value: metrics.world.persisted_players },
     { name: "naija_world_api_tick_rate", help: "Configured world simulation tick rate.", type: "gauge", value: metrics.world.tick_rate },
     { name: "naija_world_api_last_tick_duration_milliseconds", help: "Duration of the most recent world tick.", type: "gauge", value: metrics.world.last_tick_duration_ms },
   ];

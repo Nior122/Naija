@@ -215,7 +215,8 @@ import {
   type EducationActionOptions,
 } from "../education/service.js";
 import type { EducationCatalog } from "../education/types.js";
-import type { WorldStoreLike } from "./persistence.js";
+import { WorldStateCapacityError, type WorldStoreLike } from "./persistence.js";
+import { diffState, mergeStateChanges } from "./state-merge.js";
 import {
   MAP_HEIGHT,
   MAP_WIDTH,
@@ -228,6 +229,7 @@ import {
   type CharacterRecord,
   type InventoryItem,
   type PersistentPlayer,
+  type PersistentWorldState,
   type Point2D,
   type PublicPresence,
 } from "./types.js";
@@ -380,6 +382,11 @@ export interface WorldEngineOptions {
   readonly maxConnections?: number;
   readonly connectionAttemptsPerMinute?: number;
   readonly now?: () => number;
+  /**
+   * Test seam only. Called at named points inside identity creation; a throw simulates a failure at that point.
+   * Absent in production, so it has no effect.
+   */
+  readonly creationFaultHook?: (point: string) => void;
 }
 
 function safeClone<T>(value: T): T {
@@ -520,6 +527,10 @@ export class MultiplayerWorld {
   private readonly online = new Map<string, ConnectionContext>();
   private readonly playerByTokenHash = new Map<string, string>();
   private readonly playerByCreationKeyHash = new Map<string, string>();
+  /** Creation keys with a create request in flight (R1). In-memory only; a restart clears it. */
+  private readonly creationKeyReservations = new Set<string>();
+  /** Serializes world changes and saves: a save never sees a creation that has not been committed. */
+  private persistenceQueue: Promise<void> = Promise.resolve();
   private readonly pendingQuizzes = new Map<string, PendingQuiz>();
   private readonly connectionWindows = new Map<string, WindowCounter>();
   private readonly now: () => number;
@@ -527,6 +538,7 @@ export class MultiplayerWorld {
   private readonly broadcastIntervalMs: number;
   private readonly maxConnections: number;
   private readonly connectionAttemptsPerMinute: number;
+  private readonly creationFaultHook: ((point: string) => void) | undefined;
   private readonly geographyRegion: GeographicRegion;
   private readonly educationCatalog: EducationCatalog;
   private readonly careerCatalog: CareerCatalog = loadCareerCatalog();
@@ -556,6 +568,7 @@ export class MultiplayerWorld {
     this.broadcastIntervalMs = Math.max(50, options.broadcastIntervalMs ?? 100);
     this.maxConnections = Math.max(1, options.maxConnections ?? 64);
     this.connectionAttemptsPerMinute = Math.max(1, options.connectionAttemptsPerMinute ?? 30);
+    this.creationFaultHook = options.creationFaultHook;
     this.geographyRegion = loadAkureSouthRegion();
     this.educationCatalog = loadEducationCatalog();
     this.lastTickAt = this.now();
@@ -719,7 +732,13 @@ export class MultiplayerWorld {
     for (const context of this.contexts) {
       if (context.socket.readyState === WebSocket.OPEN) context.socket.close(1001, "server shutting down");
     }
-    await this.store.flush();
+    await this.serialize(() => this.store.flush());
+  }
+
+  private serialize<T>(operation: () => Promise<T>): Promise<T> {
+    const run = this.persistenceQueue.then(operation, operation);
+    this.persistenceQueue = run.then(() => undefined, () => undefined);
+    return run;
   }
 
   private allowConnection(address: string, now: number): boolean {
@@ -843,6 +862,15 @@ export class MultiplayerWorld {
     }
   }
 
+  /**
+   * Identity creation (R1, R2).
+   *
+   * On arrival, the request is validated and its creation key is reserved synchronously, so a second
+   * request with the same key is refused at once instead of racing it. The world is then changed only
+   * inside the serialized persistence queue. A new identity is built on a private copy of the world and
+   * saved as a candidate; only a successful save is merged into the live world, so a failed or refused
+   * save leaves nothing behind. The reservation is released when the request settles, whatever the outcome.
+   */
   private async createIdentity(context: ConnectionContext, message: Record<string, unknown>, requestId?: string): Promise<void> {
     if (context.playerId !== null) {
       this.sendError(context, "already_authenticated", "This connection already has an identity.", requestId);
@@ -859,99 +887,174 @@ export class MultiplayerWorld {
       return;
     }
     const creationKeyHash = createHash("sha256").update(creationKey).digest("hex");
+    if (this.creationKeyReservations.has(creationKeyHash)) {
+      this.sendError(context, "identity_creation_in_progress", "An identity for this key is already being processed. Try again shortly.", requestId);
+      return;
+    }
+    this.creationKeyReservations.add(creationKeyHash);
+    try {
+      await this.serialize(() => this.commitIdentity(context, creationKeyHash, profile, requestId));
+    } finally {
+      this.creationKeyReservations.delete(creationKeyHash);
+    }
+  }
+
+  /** Runs inside the persistence queue: nothing else changes or saves the world meanwhile. */
+  private async commitIdentity(
+    context: ConnectionContext,
+    creationKeyHash: string,
+    profile: Record<string, unknown>,
+    requestId?: string,
+  ): Promise<void> {
+    if (context.socket.readyState !== WebSocket.OPEN) return;
     const existingPlayerId = this.playerByCreationKeyHash.get(creationKeyHash);
     const existingPlayer = existingPlayerId ? this.store.state.players[existingPlayerId] : undefined;
     if (existingPlayerId && existingPlayer) {
-      const active = this.online.get(existingPlayerId);
-      if (active && active.socket.readyState === WebSocket.OPEN) {
-        this.sendError(context, "player_already_connected", "This identity is already connected.", requestId);
-        context.socket.close(4409, "identity already connected");
-        return;
-      }
-      const oldTokenHash = existingPlayer.tokenHash;
-      const sessionToken = randomBytes(32).toString("base64url");
-      const tokenHash = createHash("sha256").update(sessionToken).digest("hex");
-      const timestamp = new Date(this.now()).toISOString();
-      existingPlayer.tokenHash = tokenHash;
-      existingPlayer.lastSeen = timestamp;
-      existingPlayer.character.updated_at = timestamp;
-      this.playerByTokenHash.delete(oldTokenHash);
-      this.playerByTokenHash.set(tokenHash, existingPlayerId);
-      // The upcoming snapshot includes all current changes; keep later concurrent dirtiness intact.
-      this.dirty = false;
-      try {
-        await this.store.flush();
-        this.lastPersistAt = this.now();
-      } catch {
-        this.dirty = true;
-        existingPlayer.tokenHash = oldTokenHash;
-        this.playerByTokenHash.delete(tokenHash);
-        this.playerByTokenHash.set(oldTokenHash, existingPlayerId);
-        this.sendError(context, "persistence_failed", "The identity could not be recovered.", requestId);
-        console.error("multiplayer identity recovery persistence failed");
-        return;
-      }
-      context.identityCreated = true;
-      this.send(context, appendOptionalRequestId({ type: "identity.created", playerId: existingPlayerId, sessionToken }, requestId));
+      await this.recoverIdentity(context, existingPlayerId, existingPlayer, requestId);
       return;
     }
-    this.playerByCreationKeyHash.delete(creationKeyHash);
     if (Object.keys(this.store.state.players).length >= MAX_PERSISTED_PLAYERS) {
       this.sendError(context, "world_capacity_reached", "The prototype player record limit has been reached.", requestId);
       return;
     }
-    let playerId: string;
+
+    const playerId = `player-${randomUUID()}`;
+    const sessionToken = randomBytes(32).toString("base64url");
+    const tokenHash = createHash("sha256").update(sessionToken).digest("hex");
+    const timestamp = new Date(this.now()).toISOString();
+    const base = this.store.state;
+    const draft = structuredClone(base) as PersistentWorldState;
+
     let character: CharacterRecord;
     try {
-      playerId = `player-${randomUUID()}`;
       character = createCharacter(
         profile,
         playerId,
         this.now(),
         this.geographyRegion,
         this.educationCatalog,
-        this.store.state.worldClock.world_date,
+        draft.worldClock.world_date,
       );
     } catch (error) {
       this.sendError(context, this.errorCode(error), "The character profile was not accepted.", requestId);
       return;
     }
-    const sessionToken = randomBytes(32).toString("base64url");
-    const tokenHash = createHash("sha256").update(sessionToken).digest("hex");
-    const timestamp = new Date(this.now()).toISOString();
     const player: PersistentPlayer = {
       playerId, tokenHash, creationKeyHash, recentRequestIds: [],
       createdAt: timestamp, lastSeen: timestamp, character,
     };
-    this.store.state.players[playerId] = player;
+    draft.players[playerId] = player;
+    this.creationFaultHook?.("player-inserted");
     try {
-      createStarterFamily(this.store.state, playerId, character, this.now());
+      createStarterFamily(draft, playerId, character, this.now());
     } catch (error) {
-      delete this.store.state.players[playerId];
       this.sendError(context, this.errorCode(error), "The character family could not be created.", requestId);
       return;
     }
-    initializeEconomyWorldState(this.store.state, this.now());
-    initializeBusinessWorldState(this.store.state);
-    initializePropertyWorldState(this.store.state);
-    seedProperties(this.store.state, this.store.state.worldClock.world_date, this.now(), this.propertyCatalog);
-    initializeGovernmentWorldState(this.store.state);
-    seedGovernmentWorld(this.store.state, this.store.state.worldClock.world_date, this.now(), this.governmentCatalog);
-    initializeElectionWorldState(this.store.state);
-    initializeJusticeWorldState(this.store.state);
-    seedJusticeWorld(this.store.state, this.store.state.worldClock.world_date, this.now(), this.justiceCatalog);
-    initializePoliceWorldState(this.store.state);
-    seedPoliceWorld(this.store.state, this.store.state.worldClock.world_date);
-    initializeMilitaryWorldState(this.store.state);
-    seedMilitaryWorld(this.store.state, this.store.state.worldClock.world_date);
-    initializeCrimeWorldState(this.store.state);
-    seedCrimeWorld();
-    initializeCultureWorldState(this.store.state);
-    seedCultureWorld();
-    initializeEntertainmentWorldState(this.store.state);
-    seedEntertainmentWorld();
+    this.creationFaultHook?.("starter-family");
+    try {
+      this.seedNewIdentityWorlds(draft);
+    } catch {
+      console.error("multiplayer identity build failed");
+      this.sendError(context, "internal_error", "The identity could not be created.", requestId);
+      return;
+    }
+
+    const changes = diffState(base, draft);
+    try {
+      this.creationFaultHook?.("before-save");
+      await this.store.saveState(draft);
+    } catch (error) {
+      if (error instanceof WorldStateCapacityError) {
+        this.sendError(context, "world_capacity_reached", "The world data limit has been reached; no new identities can be saved.", requestId);
+      } else {
+        console.error("multiplayer identity persistence failed");
+        this.sendError(context, "persistence_failed", "The new identity could not be saved.", requestId);
+      }
+      return;
+    }
+
+    // Committed. Merge without awaiting, and only if no live value that the creation relies on has changed.
+    const conflicts = mergeStateChanges(this.store.state, changes);
+    if (conflicts.length > 0) {
+      // The saved world now holds the identity, but the live world cannot take it. Save the live world
+      // so the two agree again (this removes the identity from the saved world), then report the conflict.
+      console.error("multiplayer identity merge conflict", conflicts.length);
+      this.dirty = true;
+      try {
+        await this.store.flush();
+        this.lastPersistAt = this.now();
+        this.dirty = false;
+      } catch {
+        console.error("multiplayer identity compensating save failed");
+      }
+      this.sendError(context, "identity_creation_conflict", "The world changed while the identity was being created. Try again.", requestId);
+      return;
+    }
     this.playerByTokenHash.set(tokenHash, playerId);
     this.playerByCreationKeyHash.set(creationKeyHash, playerId);
+    this.lastPersistAt = this.now();
+    context.identityCreated = true;
+    this.send(context, appendOptionalRequestId({ type: "identity.created", playerId, sessionToken }, requestId));
+  }
+
+  /** The world records a new identity needs, written into the draft. Order matches the original path. */
+  private seedNewIdentityWorlds(draft: PersistentWorldState): void {
+    initializeEconomyWorldState(draft, this.now());
+    this.creationFaultHook?.("economy");
+    initializeBusinessWorldState(draft);
+    initializePropertyWorldState(draft);
+    seedProperties(draft, draft.worldClock.world_date, this.now(), this.propertyCatalog);
+    this.creationFaultHook?.("property");
+    initializeGovernmentWorldState(draft);
+    seedGovernmentWorld(draft, draft.worldClock.world_date, this.now(), this.governmentCatalog);
+    this.creationFaultHook?.("government");
+    initializeElectionWorldState(draft);
+    initializeJusticeWorldState(draft);
+    seedJusticeWorld(draft, draft.worldClock.world_date, this.now(), this.justiceCatalog);
+    this.creationFaultHook?.("justice");
+    initializePoliceWorldState(draft);
+    seedPoliceWorld(draft, draft.worldClock.world_date);
+    initializeMilitaryWorldState(draft);
+    seedMilitaryWorld(draft, draft.worldClock.world_date);
+    this.creationFaultHook?.("military");
+    initializeCrimeWorldState(draft);
+    seedCrimeWorld();
+    initializeCultureWorldState(draft);
+    seedCultureWorld();
+    this.creationFaultHook?.("culture");
+    initializeEntertainmentWorldState(draft);
+    seedEntertainmentWorld();
+    this.creationFaultHook?.("entertainment");
+  }
+
+  /**
+   * Key-based recovery of an existing identity. Runs inside the persistence queue. It rotates the token,
+   * saves, and on failure undoes only the values it set, and only where nothing else has changed them.
+   */
+  private async recoverIdentity(
+    context: ConnectionContext,
+    playerId: string,
+    player: PersistentPlayer,
+    requestId?: string,
+  ): Promise<void> {
+    const active = this.online.get(playerId);
+    if (active && active.socket.readyState === WebSocket.OPEN) {
+      this.sendError(context, "player_already_connected", "This identity is already connected.", requestId);
+      context.socket.close(4409, "identity already connected");
+      return;
+    }
+    const oldTokenHash = player.tokenHash;
+    const oldLastSeen = player.lastSeen;
+    const oldUpdatedAt = player.character.updated_at;
+    const sessionToken = randomBytes(32).toString("base64url");
+    const tokenHash = createHash("sha256").update(sessionToken).digest("hex");
+    const timestamp = new Date(this.now()).toISOString();
+    player.tokenHash = tokenHash;
+    player.lastSeen = timestamp;
+    player.character.updated_at = timestamp;
+    this.playerByTokenHash.delete(oldTokenHash);
+    this.playerByTokenHash.set(tokenHash, playerId);
     // The upcoming snapshot includes all current changes; keep later concurrent dirtiness intact.
     this.dirty = false;
     try {
@@ -959,11 +1062,13 @@ export class MultiplayerWorld {
       this.lastPersistAt = this.now();
     } catch {
       this.dirty = true;
-      delete this.store.state.players[playerId];
-      this.playerByTokenHash.delete(tokenHash);
-      this.playerByCreationKeyHash.delete(creationKeyHash);
-      this.sendError(context, "persistence_failed", "The new identity could not be saved.", requestId);
-      console.error("multiplayer identity persistence failed");
+      if (player.tokenHash === tokenHash) player.tokenHash = oldTokenHash;
+      if (player.lastSeen === timestamp) player.lastSeen = oldLastSeen;
+      if (player.character.updated_at === timestamp) player.character.updated_at = oldUpdatedAt;
+      if (this.playerByTokenHash.get(tokenHash) === playerId) this.playerByTokenHash.delete(tokenHash);
+      this.playerByTokenHash.set(oldTokenHash, playerId);
+      this.sendError(context, "persistence_failed", "The identity could not be recovered.", requestId);
+      console.error("multiplayer identity recovery persistence failed");
       return;
     }
     context.identityCreated = true;
@@ -4618,13 +4723,21 @@ export class MultiplayerWorld {
     this.dirty = false;
     let writeFailed = false;
     try {
-      await this.store.flush();
+      await this.serialize(() => this.store.flush());
       this.lastPersistAt = this.now();
-    } catch {
+    } catch (error) {
       writeFailed = true;
       this.dirty = true;
-      console.error("multiplayer persistence failed");
-      for (const context of this.online.values()) this.sendError(context, "persistence_failed", "Server state could not be saved.");
+      // A refused save keeps the previous valid file. Nothing is removed to make room.
+      if (error instanceof WorldStateCapacityError) {
+        console.error("multiplayer world state is over its size limit; the save was refused and the previous file kept");
+        for (const context of this.online.values()) {
+          this.sendError(context, "world_capacity_reached", "The world has reached its size limit. Recent changes are not saved yet.");
+        }
+      } else {
+        console.error("multiplayer persistence failed");
+        for (const context of this.online.values()) this.sendError(context, "persistence_failed", "Server state could not be saved.");
+      }
     } finally {
       this.flushInFlight = false;
       if (this.dirty && !writeFailed && !this.closed) void this.flushDirty();

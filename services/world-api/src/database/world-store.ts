@@ -1,5 +1,5 @@
 import { database, DatabaseConnection } from "./connection.js";
-import { initialState, validateState, type WorldStoreLike } from "../multiplayer/persistence.js";
+import { initialState, validateState, WorldStateCapacityError, type WorldStoreLike } from "../multiplayer/persistence.js";
 import { WORLD_ID, type PersistentWorldState } from "../multiplayer/types.js";
 import type { HealthCheck } from "../monitoring.js";
 import { monitoring } from "../monitoring.js";
@@ -98,10 +98,14 @@ export class PostgresWorldStore implements WorldStoreLike {
   }
 
   async flush(): Promise<void> {
+    await this.saveState(this.state);
+  }
+
+  async saveState(candidate: PersistentWorldState): Promise<void> {
     const started = performance.now();
     const write = async (): Promise<void> => {
       try {
-        await this.writeSnapshot();
+        await this.writeSnapshot(candidate);
         monitoring.recordPersistenceFlush(true, performance.now() - started);
       } catch (error) {
         monitoring.recordPersistenceFlush(false, performance.now() - started);
@@ -114,13 +118,14 @@ export class PostgresWorldStore implements WorldStoreLike {
     await nextWrite;
   }
 
-  private async writeSnapshot(): Promise<void> {
+  private async writeSnapshot(state: PersistentWorldState): Promise<void> {
     if (this.fenced) {
       throw new WorldStateConflictError();
     }
-    const snapshot = JSON.stringify(this.state);
+    // Serialized when the write runs, so it reflects every earlier save in this instance.
+    const snapshot = JSON.stringify(state);
     if (Buffer.byteLength(snapshot, "utf8") > MAX_SNAPSHOT_BYTES) {
-      throw new Error("World state exceeds the snapshot size limit.");
+      throw new WorldStateCapacityError();
     }
     const rows = await this.db.query<{ version: string | number }>(
       `UPDATE world_state
@@ -134,6 +139,7 @@ export class PostgresWorldStore implements WorldStoreLike {
       throw new WorldStateConflictError();
     }
     this.version = Number(rows[0]!.version);
+    monitoring.recordWorldStateSaved(Buffer.byteLength(snapshot, "utf8"), Object.keys(state.players).length, MAX_SNAPSHOT_BYTES);
   }
 
   /** Health of this store: fenced stores and unreachable databases report failure. */
