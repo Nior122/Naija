@@ -584,7 +584,7 @@ test("schema version 9 state migrates to version 11 with empty police and milita
   const original = new WorldStore(stateFile, Date.UTC(2025, 0, 1));
   await original.flush();
   const saved = JSON.parse(await readFile(stateFile, "utf8"));
-  assert.equal(saved.schemaVersion, 15);
+  assert.equal(saved.schemaVersion, 16);
   saved.schemaVersion = 9;
   delete saved.policeUnits; delete saved.policeOfficers; delete saved.recruitmentApplications;
   delete saved.policeIncidents; delete saved.dispatches; delete saved.investigations;
@@ -613,7 +613,7 @@ test("schema version 9 state migrates to version 11 with empty police and milita
   delete saved.socialAdCampaigns; delete saved.socialTrendingTopics; delete saved.socialAudits;
   await writeFile(stateFile, JSON.stringify(saved), "utf8");
   const migrated = new WorldStore(stateFile, Date.UTC(2025, 0, 2));
-  assert.equal(migrated.state.schemaVersion, 15);
+  assert.equal(migrated.state.schemaVersion, 16);
   assert.ok(typeof migrated.state.policeUnits === "object");
   assert.ok(typeof migrated.state.policeOfficers === "object");
   assert.ok(typeof migrated.state.policeIncidents === "object");

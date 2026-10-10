@@ -457,14 +457,14 @@ test("entertainmentErrorMessage returns readable messages", () => {
 
 // ─── Persistence migration ────────────────────────────────────────
 
-test("schema version 14 state migrates to version 15 with empty entertainment and social maps", async () => {
+test("schema version 15 state migrates to version 16 with empty entertainment and social maps", async () => {
   const directory = await mkdtemp(join(tmpdir(), "naija-entertainment-migration-"));
   activeDirectories.add(directory);
   const stateFile = join(directory, "world-state.json");
   const original = new WorldStore(stateFile, Date.UTC(2025, 0, 1));
   await original.flush();
   const saved = JSON.parse(await readFile(stateFile, "utf8"));
-  assert.equal(saved.schemaVersion, 15);
+  assert.equal(saved.schemaVersion, 16);
   saved.schemaVersion = 14;
   delete saved.entertainmentProfiles; delete saved.musicProjects; delete saved.filmProjects;
   delete saved.contentRecords; delete saved.entertainmentEvents; delete saved.entertainmentContracts;
@@ -477,7 +477,7 @@ test("schema version 14 state migrates to version 15 with empty entertainment an
   delete saved.socialAdCampaigns; delete saved.socialTrendingTopics; delete saved.socialAudits;
   await writeFile(stateFile, JSON.stringify(saved), "utf8");
   const migrated = new WorldStore(stateFile, Date.UTC(2025, 0, 2));
-  assert.equal(migrated.state.schemaVersion, 15);
+  assert.equal(migrated.state.schemaVersion, 16);
   assert.ok(typeof migrated.state.entertainmentProfiles === "object");
   assert.ok(typeof migrated.state.musicProjects === "object");
   assert.ok(typeof migrated.state.newsReports === "object");
