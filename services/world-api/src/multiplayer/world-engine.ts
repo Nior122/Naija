@@ -178,6 +178,8 @@ import { PoliceCatalogService, PoliceService, initializePoliceWorldState, seedPo
 import type { IncidentCategoryId, DispatchPriorityId, MisconductCategoryId } from "../police/types.js";
 import { MilitaryCatalogService, MilitaryService, initializeMilitaryWorldState, seedMilitaryWorld, militaryErrorMessage } from "../military/index.js";
 import type { ServiceBranchId, AssignmentTypeId, EquipmentCategoryId, NationalSecurityEventCategoryId } from "../military/types.js";
+import { CrimeCatalogService, CrimeService, initializeCrimeWorldState, seedCrimeWorld, crimeErrorMessage } from "../crime/index.js";
+import type { CrimeCategoryId, CrimeIncidentStatusId, ParticipantRoleId } from "../crime/types.js";
 import { loadLifeCatalog, dateForWorldDay, isValidDate, worldClockSnapshot } from "../life/calendar.js";
 import {
   advanceWorldLife,
@@ -532,6 +534,7 @@ export class MultiplayerWorld {
   private readonly justiceCatalog: JusticeCatalog = loadJusticeCatalog();
   private readonly policeCatalog = new PoliceCatalogService();
   private readonly militaryCatalog = new MilitaryCatalogService();
+  private readonly crimeCatalog = new CrimeCatalogService();
   private readonly lifeCatalog = loadLifeCatalog();
   private lastTickAt: number;
   private lastBroadcastAt = 0;
@@ -823,6 +826,7 @@ export class MultiplayerWorld {
       case "justice.action": await this.justiceAction(context, player, message, requestId); return;
       case "police.action": await this.policeAction(context, player, message, requestId); return;
       case "military.action": await this.militaryAction(context, player, message, requestId); return;
+      case "crime.action": await this.crimeAction(context, player, message, requestId); return;
       case "chat.send": this.handleChat(context, player, message, requestId); return;
       case "player.interact": this.handlePlayerInteraction(context, player, message, requestId); return;
       case "relationship.progress": await this.progressRelationship(context, player, message, requestId); return;
@@ -932,6 +936,8 @@ export class MultiplayerWorld {
     seedPoliceWorld(this.store.state, this.store.state.worldClock.world_date);
     initializeMilitaryWorldState(this.store.state);
     seedMilitaryWorld(this.store.state, this.store.state.worldClock.world_date);
+    initializeCrimeWorldState(this.store.state);
+    seedCrimeWorld();
     this.playerByTokenHash.set(tokenHash, playerId);
     this.playerByCreationKeyHash.set(creationKeyHash, playerId);
     // The upcoming snapshot includes all current changes; keep later concurrent dirtiness intact.
@@ -3404,6 +3410,202 @@ export class MultiplayerWorld {
     await this.flushDirty();
   }
 
+  private async crimeAction(
+    context: ConnectionContext,
+    player: PersistentPlayer,
+    message: Record<string, unknown>,
+    requestId?: string,
+  ): Promise<void> {
+    const data = message;
+    const action = typeof data.action === "string" ? data.action : "";
+    if (!action || action.length > 48) {
+      this.send(context, appendOptionalRequestId({
+        type: "crime.error", action: "", code: "crime_action_invalid",
+        message: "Choose a supported crime action.",
+      }, requestId));
+      return;
+    }
+
+    const characterId = player.character.character_id;
+    const worldDate = this.store.state.worldClock.world_date;
+    const crimeService = new CrimeService(this.store.state, this.crimeCatalog);
+    let messageText = "";
+    const responseData: Record<string, unknown> = {};
+
+    try {
+      switch (action) {
+        case "list_crime_definitions": {
+          const category = typeof data.category === "string" ? data.category as CrimeCategoryId : undefined;
+          const defs = category ? this.crimeCatalog.getDefinitionsByCategory(category) : this.crimeCatalog.get().crime_definitions;
+          responseData.definitions = defs.map((d) => ({ id: d.id, category: d.category, label: d.label, severity: d.severity, cooldown_hours: d.cooldown_hours }));
+          messageText = `Found ${defs.length} crime definition(s).`;
+          break;
+        }
+        case "list_categories": {
+          const categories = this.crimeCatalog.get().crime_categories;
+          responseData.categories = categories;
+          messageText = `Found ${categories.length} crime categor(y/ies).`;
+          break;
+        }
+        case "commit_crime": {
+          const crimeId = typeof data.crime_definition_id === "string" ? data.crime_definition_id : "";
+          if (!crimeId) throw new Error("crime_definition_not_found");
+          const perpetratorAge = player.character.age;
+          const result = crimeService.resolveCrimeAction({
+            crime_definition_id: crimeId,
+            perpetrator_character_id: characterId,
+            victim_character_id: typeof data.victim_character_id === "string" ? data.victim_character_id : null,
+            victim_property_id: typeof data.victim_property_id === "string" ? data.victim_property_id : null,
+            victim_business_id: typeof data.victim_business_id === "string" ? data.victim_business_id : null,
+            location_id: typeof data.location_id === "string" ? data.location_id : null,
+            state_id: typeof data.state_id === "string" ? data.state_id : null,
+            perpetrator_age: perpetratorAge,
+          }, worldDate);
+          responseData.incident = result.incident;
+          responseData.detected = result.detected;
+          responseData.value_gained = result.value_gained;
+          responseData.outcome = result.outcome;
+          messageText = result.detected ? "Crime detected! An incident has been recorded." : "Crime completed.";
+          break;
+        }
+        case "report_crime": {
+          const incidentId = typeof data.incident_id === "string" ? data.incident_id : "";
+          const description = typeof data.description === "string" ? data.description : "Reported a crime.";
+          if (!incidentId) throw new Error("crime_incident_not_found");
+          const report = crimeService.reportCrime(incidentId, characterId, description, worldDate);
+          responseData.report = report;
+          messageText = "Crime reported successfully.";
+          break;
+        }
+        case "view_incident": {
+          const incidentId = typeof data.incident_id === "string" ? data.incident_id : "";
+          if (!incidentId) throw new Error("crime_incident_not_found");
+          const inc = crimeService.getIncident(incidentId);
+          if (!inc) throw new Error("crime_incident_not_found");
+          responseData.incident = inc;
+          messageText = `Incident: ${inc.summary} (${inc.status})`;
+          break;
+        }
+        case "list_incidents": {
+          const perpId = typeof data.perpetrator_id === "string" ? data.perpetrator_id : undefined;
+          const victimId = typeof data.victim_id === "string" ? data.victim_id : undefined;
+          const status = typeof data.status === "string" ? data.status as CrimeIncidentStatusId : undefined;
+          const incidents = crimeService.listIncidents(perpId, victimId, status);
+          responseData.incidents = incidents.map((i) => ({ incident_id: i.incident_id, category: i.category, severity: i.severity, status: i.status, summary: i.summary, detected: i.detected, created_at: i.created_at }));
+          messageText = `Found ${incidents.length} incident(s).`;
+          break;
+        }
+        case "transition_incident": {
+          const incidentId = typeof data.incident_id === "string" ? data.incident_id : "";
+          const newStatus = typeof data.new_status === "string" ? data.new_status as CrimeIncidentStatusId : "" as CrimeIncidentStatusId;
+          const reason = typeof data.reason === "string" ? data.reason : null;
+          if (!incidentId || !newStatus) throw new Error("crime_incident_not_found");
+          const inc = crimeService.transitionIncident(incidentId, newStatus, reason, worldDate);
+          responseData.incident = inc;
+          messageText = `Incident status: ${inc.status}`;
+          break;
+        }
+        case "add_evidence": {
+          const incidentId = typeof data.incident_id === "string" ? data.incident_id : "";
+          const evidenceType = typeof data.evidence_type === "string" ? data.evidence_type : "";
+          const sourceDesc = typeof data.source_description === "string" ? data.source_description : "";
+          if (!incidentId || !evidenceType || !sourceDesc) throw new Error("crime_incident_not_found");
+          const ev = crimeService.addEvidence(incidentId, evidenceType, sourceDesc, typeof data.source_reference === "string" ? data.source_reference : null, characterId, worldDate);
+          responseData.evidence = ev;
+          messageText = "Evidence added.";
+          break;
+        }
+        case "link_to_police": {
+          const incidentId = typeof data.incident_id === "string" ? data.incident_id : "";
+          const policeId = typeof data.police_incident_id === "string" ? data.police_incident_id : "";
+          if (!incidentId || !policeId) throw new Error("crime_incident_not_found");
+          crimeService.linkToPoliceIncident(incidentId, policeId);
+          messageText = "Linked to police incident.";
+          break;
+        }
+        case "link_to_justice": {
+          const incidentId = typeof data.incident_id === "string" ? data.incident_id : "";
+          const caseId = typeof data.case_id === "string" ? data.case_id : "";
+          if (!incidentId || !caseId) throw new Error("crime_incident_not_found");
+          crimeService.linkToJusticeCase(incidentId, caseId);
+          messageText = "Linked to justice case.";
+          break;
+        }
+        case "criminal_profile": {
+          const profile = crimeService.getCriminalProfile(characterId);
+          responseData.profile = profile;
+          messageText = profile.has_criminal_record ? `Criminal record: ${profile.convictions_count} conviction(s), notoriety ${(profile.notoriety_score * 100).toFixed(0)}%` : "No criminal record.";
+          break;
+        }
+        case "create_criminal_record": {
+          const incidentId = typeof data.incident_id === "string" ? data.incident_id : "";
+          const targetId = typeof data.character_id === "string" ? data.character_id : characterId;
+          const category = typeof data.category === "string" ? data.category as CrimeCategoryId : "" as CrimeCategoryId;
+          const severity = typeof data.severity === "string" ? data.severity as import("../crime/types.js").CrimeSeverityId : "minor" as import("../crime/types.js").CrimeSeverityId;
+          const conviction = typeof data.conviction === "boolean" ? data.conviction : false;
+          if (!incidentId || !category) throw new Error("crime_definition_not_found");
+          const record = crimeService.createCriminalRecord({
+            character_id: targetId, incident_id: incidentId, category, severity, conviction,
+            outcome: conviction ? "convicted" : null,
+            fine_amount: typeof data.fine_amount === "number" ? data.fine_amount : 0,
+          }, worldDate);
+          responseData.record = record;
+          messageText = `Criminal record ${conviction ? "conviction" : "created"}.`;
+          break;
+        }
+        case "list_criminal_records": {
+          const targetId = typeof data.character_id === "string" ? data.character_id : characterId;
+          const records = crimeService.getCriminalRecords(targetId);
+          responseData.records = records.map((r) => ({ record_id: r.record_id, category: r.category, severity: r.severity, conviction: r.conviction, created_at: r.created_at }));
+          messageText = `Found ${records.length} record(s).`;
+          break;
+        }
+        case "create_restitution": {
+          const incidentId = typeof data.incident_id === "string" ? data.incident_id : "";
+          const creditorId = typeof data.creditor_character_id === "string" ? data.creditor_character_id : "";
+          const debtorId = typeof data.debtor_character_id === "string" ? data.debtor_character_id : characterId;
+          const amount = typeof data.amount === "number" ? data.amount : 0;
+          if (!incidentId || !creditorId || amount <= 0) throw new Error("crime_incident_not_found");
+          const rest = crimeService.createRestitution(incidentId, creditorId, debtorId, amount, worldDate);
+          responseData.restitution = rest;
+          messageText = `Restitution of ${amount} created.`;
+          break;
+        }
+        case "start_rehabilitation": {
+          const activityType = typeof data.activity_type === "string" ? data.activity_type : "community_service";
+          const durationDays = typeof data.duration_days === "number" ? data.duration_days : 30;
+          const rehab = crimeService.startRehabilitation({ character_id: characterId, activity_type: activityType, duration_days: durationDays }, worldDate);
+          responseData.rehabilitation = rehab;
+          messageText = `Rehabilitation started: ${activityType} for ${durationDays} days.`;
+          break;
+        }
+        case "notoriety": {
+          const targetId = typeof data.character_id === "string" ? data.character_id : characterId;
+          const notoriety = crimeService.getNotoriety(targetId);
+          responseData.notoriety = notoriety;
+          messageText = notoriety ? `Notoriety: ${(notoriety.notoriety_score * 100).toFixed(0)}%` : "No notoriety record.";
+          break;
+        }
+        default:
+          throw new Error("crime_action_unknown");
+      }
+    } catch (error) {
+      const code = this.errorCode(error);
+      this.send(context, appendOptionalRequestId({
+        type: "crime.error", action, code, message: crimeErrorMessage(code),
+      }, requestId));
+      return;
+    }
+
+    this.markRequestProcessed(player, requestId);
+    if (!["list_crime_definitions", "list_categories", "view_incident", "list_incidents", "criminal_profile", "list_criminal_records", "notoriety"].includes(action)) this.touchPlayer(player);
+    this.send(context, appendOptionalRequestId({
+      type: "crime.result", action, ok: true, message: messageText, data: responseData,
+    }, requestId));
+    this.sendCharacterSnapshot(context);
+    await this.flushDirty();
+  }
+
   private programSeatCount(programId: string): number {
     if (!programId) return 0;
     const occupied = new Set<string>();
@@ -3689,6 +3891,7 @@ export class MultiplayerWorld {
     try { const lp = getLegalProfile(this.store.state, player.character.character_id); if (lp) snapshot.legal_profile = lp; } catch { /* ignore */ }
     try { const policeService = new PoliceService(this.store.state, this.policeCatalog); const pp = policeService.getPoliceProfile(player.character.character_id); if (pp.is_officer) snapshot.police_profile = pp; } catch { /* ignore */ }
     try { const militaryService = new MilitaryService(this.store.state, this.militaryCatalog); const mp = militaryService.getMilitaryProfile(player.character.character_id); if (mp.is_service_member) snapshot.military_profile = mp; } catch { /* ignore */ }
+    try { const crimeService = new CrimeService(this.store.state, this.crimeCatalog); const cp = crimeService.getCriminalProfile(player.character.character_id); if (cp.has_criminal_record || cp.notoriety_score > 0) snapshot.criminal_profile = cp; } catch { /* ignore */ }
     return snapshot;
   }
 

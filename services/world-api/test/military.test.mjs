@@ -442,26 +442,30 @@ test("militaryErrorMessage returns readable messages", () => {
 
 // ─── Persistence migration ────────────────────────────────────────
 
-test("schema version 10 state migrates to version 11 with empty military maps", async () => {
+test("schema version 10 state migrates to version 12 with empty military and crime maps", async () => {
   const directory = await mkdtemp(join(tmpdir(), "naija-military-migration-"));
   activeDirectories.add(directory);
   const stateFile = join(directory, "world-state.json");
   const original = new WorldStore(stateFile, Date.UTC(2025, 0, 1));
   await original.flush();
   const saved = JSON.parse(await readFile(stateFile, "utf8"));
-  assert.equal(saved.schemaVersion, 11);
+  assert.equal(saved.schemaVersion, 12);
   saved.schemaVersion = 10;
   delete saved.militaryOrganizations; delete saved.militaryBases; delete saved.militaryUnits;
   delete saved.militaryRecruitments; delete saved.militaryServiceRecords; delete saved.militaryTrainingRecords;
   delete saved.militaryRankHistory; delete saved.militaryCommandAppointments; delete saved.militaryAssignments;
   delete saved.militaryLeaveRecords; delete saved.militaryAssets; delete saved.nationalSecurityEvents;
   delete saved.militaryDisciplinaryRecords; delete saved.militaryAudits;
+  delete saved.crimeIncidents; delete saved.crimeParticipations; delete saved.crimeEvidence;
+  delete saved.crimeReports; delete saved.criminalRecords; delete saved.crimeNotoriety;
+  delete saved.crimeRestitution; delete saved.crimeRehabilitation; delete saved.crimeAudits;
   await writeFile(stateFile, JSON.stringify(saved), "utf8");
   const migrated = new WorldStore(stateFile, Date.UTC(2025, 0, 2));
-  assert.equal(migrated.state.schemaVersion, 11);
+  assert.equal(migrated.state.schemaVersion, 12);
   assert.ok(typeof migrated.state.militaryOrganizations === "object");
   assert.ok(typeof migrated.state.militaryServiceRecords === "object");
   assert.ok(typeof migrated.state.nationalSecurityEvents === "object");
+  assert.ok(typeof migrated.state.crimeIncidents === "object");
 });
 
 // ─── WebSocket integration ────────────────────────────────────────

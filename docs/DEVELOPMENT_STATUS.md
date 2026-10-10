@@ -4,7 +4,7 @@
 
 ## Current stage and verification gate
 
-**Stage 14 — Military System: backend implementation and Node tests pass; military integrates with Stage 6 (careers), Stage 7 (economy), Stage 10 (government for civilian oversight), Stage 12 (justice for legal referrals), and Stage 13 (police for inter-agency coordination); Godot client/runtime verification is blocked.** Stages 0–13 remain preserved on the same `nigeria-main` world. The server still owns one shared online timeline. The earlier Stage 5 Godot limitation is still open; Stages 6–14 do not resolve it.
+**Stage 15 — Crime & Consequences: backend implementation and Node tests pass; crime integrates with Stage 6 (careers), Stage 7 (economy), Stage 10 (government), Stage 12 (justice), and Stage 13 (police); Godot client/runtime verification is blocked.** Stages 0–14 remain preserved on the same `nigeria-main` world. The server still owns one shared online timeline. The earlier Stage 5 Godot limitation is still open; Stages 6–15 do not resolve it.
 
 Godot 4.7.2 is not installed (`godot: command not found`). Project import, engine type-checking, scenes, rendered careers UI, clicks through work/application flows, offline client journeys, and Godot multiplayer/reconnect/save runtime behavior have not been run. Do not infer client success from Node tests or gdtoolkit.
 
@@ -365,6 +365,41 @@ See [`docs/MILITARY_SYSTEM_PLAN.md`](MILITARY_SYSTEM_PLAN.md) for full details.
 | WebSocket error handling | WebSocket test | **Passed (Node)** |
 | Schema-v10 to v11 migration with military maps | Persistence test | **Passed (Node)** |
 | Godot project import, engine typing, client military UI | Godot unavailable | **Blocked / not run** |
+
+## Stage 15 implementation
+
+- `game/data/crime/catalog.json` configures 14 crime categories, 4 severity levels, 12 crime definitions, 7 incident statuses, valid transitions, anti-exploit rules, and consequence rules.
+- Crime definitions reference police incident categories and justice case categories for integration without duplication.
+- Crime action resolution is server-authoritative with seeded detection rolls, evidence generation, and notoriety tracking.
+- Incident lifecycle: created → reported → under_review → investigation_open → referred_to_court → resolved → closed.
+- Criminal records are distinct from allegations; convictions require justice system outcomes.
+- Financial consequences via restitution records integrate with economy system transactions.
+- Rehabilitation programs allow reputation recovery over time.
+- Anti-exploit: age checks (15+), victim targeting cooldown (48h), daily limits, offline protection, new-player protection.
+- Integration: links to police incidents/investigations, justice cases, economy ledger.
+
+Schema version advanced to 12 with 9 new persistent maps. `services/world-api/src/crime/` contains typed catalogue, service, and exports. `services/world-api/src/multiplayer/world-engine.ts` integrates `crime.action` commands with 17 actions and criminal profiles in character snapshots.
+
+## Stage 15 acceptance coverage
+
+| Area | Evidence | Result |
+|---|---|---|
+| Catalogue structure, categories, severities, definitions | `services/world-api/test/crime.test.mjs` | **Passed (Node)** |
+| Crime action resolution with detection | Crime service tests | **Passed (Node)** |
+| Age enforcement | Crime service tests | **Passed (Node)** |
+| Victim cooldown enforcement | Crime service tests | **Passed (Node)** |
+| Incident lifecycle transitions | Crime service tests | **Passed (Node)** |
+| Evidence management | Crime service tests | **Passed (Node)** |
+| Police/Justice integration links | Crime service tests | **Passed (Node)** |
+| Criminal records with expiry | Crime service tests | **Passed (Node)** |
+| Restitution creation and payment | Crime service tests | **Passed (Node)** |
+| Rehabilitation start and completion | Crime service tests | **Passed (Node)** |
+| Notoriety tracking and decay | Crime service tests | **Passed (Node)** |
+| Criminal profile queries | Crime service tests | **Passed (Node)** |
+| Error messages | Crime service tests | **Passed (Node)** |
+| Schema-v11 to v12 migration with crime maps | Persistence test | **Passed (Node)** |
+| WebSocket crime actions | WebSocket test | **Passed (Node)** |
+| Godot project import, engine typing, client crime UI | Godot unavailable | **Blocked / not run** |
 
 ## Stage 11 acceptance coverage
 

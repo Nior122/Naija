@@ -520,7 +520,7 @@ test("online creation exposes persistent DOB/family/history, shared calendar and
       assert.equal(a.ready.world.clock.world_date.year, 2025);
       assert.equal(typeof a.ready.world.clock.second, "number");
       const saved = JSON.parse(await readFile(stateFile, "utf8"));
-      assert.equal(saved.schemaVersion, 11);
+      assert.equal(saved.schemaVersion, 12);
       assert.equal(
         Object.keys(saved.people).length,
         a.ready.character.life_profile.family_members.length +

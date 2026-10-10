@@ -1,6 +1,6 @@
 # Master Roadmap
 
-The roadmap describes intended development, not completed features. Stage 0 is complete. Stages 1–7 remain in place; Godot runtime verification is still pending. Stages 4–14 have backend/persistence/multiplayer checks passing, while their Godot client verification remains blocked. Stage 14 is implementation-present and backend-tested; Stage 15 is next. See `DEVELOPMENT_STATUS.md` for exact results and limits.
+The roadmap describes intended development, not completed features. Stage 0 is complete. Stages 1–7 remain in place; Godot runtime verification is still pending. Stages 4–15 have backend/persistence/multiplayer checks passing, while their Godot client verification remains blocked. Stage 15 is implementation-present and backend-tested; Stage 16 is next. See `DEVELOPMENT_STATUS.md` for exact results and limits.
 
 | Phase | Name | Purpose | Status |
 |---:|---|---|---|
@@ -17,9 +17,9 @@ The roadmap describes intended development, not completed features. Stage 0 is c
 | 10 | Government | Model local, state, and federal institutions, agencies, budgets, public services, and office holders. | **Implementation present; backend verified; Godot runtime verification pending** |
 | 11 | Elections & Politics | Add parties, candidates, campaigns, voting, election integrity, offices, and terms of government. | **Implementation present; backend verified; Godot runtime verification pending** |
 | 12 | Laws, Courts & Justice | Establish versioned laws, legal procedure, courts, cases, judges, lawyers, judgments, and appeals. | **Implementation present; backend verified; Godot runtime verification pending** |
-| 13 | Police & Security | Add accountable policing, reports, investigations, evidence, and safeguards around sensitive systems. | Not started |
-| 14 | Military | Model the armed forces and their lawful institutional roles at an appropriate level of abstraction. | Not started |
-| 15 | Crime & Consequences | Add risk, reports, investigations, adjudication, penalties, rehabilitation, and prevention without rewarding real-world harm. | Not started |
+| 13 | Police & Security | Add accountable policing, reports, investigations, evidence, and safeguards around sensitive systems. | **Implementation present; backend verified; Godot runtime verification pending** |
+| 14 | Military | Model the armed forces and their lawful institutional roles at an appropriate level of abstraction. | **Implementation present; backend verified; Godot runtime verification pending** |
+| 15 | Crime & Consequences | Add crime definitions, incident lifecycle, detection & evidence, criminal records, notoriety, restitution, rehabilitation, and prevention without rewarding real-world harm. | **Implementation present; backend verified; Godot runtime verification pending** |
 | 16 | Religion, Culture & Community | Represent diverse faiths, traditions, languages, community groups, events, and local variation respectfully. | Not started |
 | 17 | Entertainment & Media | Support music, film, comedy, journalism, broadcasting, and creator careers. | Not started |
 | 18 | Social Network | Introduce in-world publishing, profiles, feeds, privacy controls, reporting, and moderation. | Not started |
@@ -46,7 +46,7 @@ The implementation is in place across `game/data/education/catalog.json`, the of
 
 The prior Stage 4 verification reported 26 Node tests, including eight focused education tests for enrollment/progression, attendance/grades/results, final exam outcomes/persistence, tertiary and ND/HND pathways, training/apprenticeship, scholarships/history, geography, online schoolyard co-presence, attendance replication and save/restart. The current full suite has since grown to 48 Node tests and continues to cover those regressions. Geography reproducibility and GDScript formatting pass. Static GDScript lint has structural findings. **Godot 4.7.2 is unavailable**, so Stage 4 project import, offline/client UI/save journeys and Godot multiplayer/runtime regressions remain unverified. See `DEVELOPMENT_STATUS.md` and `EDUCATION_PLAN.md` for the remaining client gate. Stage 5 implementation has been added without replacing or declaring these Godot checks successful; the Stage 4 client limitation remains open.
 
-Next roadmap line: **Stage 15 — Crime and Consequences**. Stage 14 — Military System is implemented with organizations, bases, units, recruitment, training, ranks, promotions, assignments, assets, national-security events, discipline, and audit trails; it does not remove the pending Stage 5–14 Godot client verification gate.
+Next roadmap line: **Stage 16 — Religion, Culture & Community**. Stage 15 — Crime & Consequences is implemented with crime definitions, incident lifecycle, detection & evidence, criminal records, notoriety, restitution, rehabilitation, and integration with police, justice, and economy systems; it does not remove the pending Stage 5–15 Godot client verification gate.
 
 ## Stage 5 exit gate
 
