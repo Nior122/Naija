@@ -411,14 +411,15 @@ What is unknown: whether they were planned in a different session or clone. The 
 
 ### 11.5 Still NOT TESTED or BLOCKED
 
-- CA-signed TLS certificate verification: NOT TESTED.
+- Verification against a publicly trusted (CA-signed) certificate, such as Neon's: BLOCKED. Local verification against a private test CA is tested (section 11.9).
 - Unmigrated-database refusal: NOT TESTED.
-- Real multi-process fencing (the existing fencing test runs two instances in one process): NOT TESTED.
-- Process-kill recovery: NOT TESTED.
+- Multi-process fencing across separate OS processes: TESTED on local PostgreSQL (section 11.9). Not tested on Neon or any other host.
+- Process-kill recovery: TESTED on local PostgreSQL, including one observed case where a killed writer's save committed later (section 11.9).
 - Down-migration of schema v2: NOT TESTED.
-- Engine account and character wiring (the engine does not read or write `accounts`/`characters`): NOT IMPLEMENTED.
-- Neon connection: BLOCKED.
+- Engine account and character wiring (the engine does not read or write `accounts`/`characters`): NOT IMPLEMENTED. See `docs/STAGE_28_ACCOUNT_CHARACTER_DESIGN.md`.
+- Neon connection: BLOCKED. The sandbox has no route to Neon and no Neon credentials were used.
 - Deployment-platform testing: BLOCKED.
+- Backup and restore: TESTED on disposable local databases only (section 11.9). No Neon or provider backup was tested.
 - 3D multiplayer: NOT TESTED.
 - Load and capacity: NOT TESTED.
 
@@ -427,11 +428,11 @@ Local PostgreSQL results are not evidence for Neon or production.
 ### 11.6 Open items found in this pass
 
 - **Justice court-category mismatch: fixed in this pass, with decisions still needing approval (section 11.7).**
-- **`world-store.ts` cites a missing file.** Its header refers to `docs/STAGE_28_MULTI_INSTANCE_READINESS.md`, which does not exist. This audit is the Stage 28 record. Not fixed in this pass.
+- **`world-store.ts` cited a missing file.** Fixed: the header now points to section 11.9 and `docs/STAGE_28_OPERATIONS_REVIEW.md`. The missing `STAGE_28_MULTI_INSTANCE_READINESS.md` is not recreated.
 - **Every map has at least one mutation row** (section 11.1). Mutation rows do not prove the absence of other faults.
 - **Validator enumerations can drift** from the domain type unions.
-- **Metrics endpoints are unauthenticated** (existing limitation).
-- **Stage 27 password hashing is unverified** (existing limitation).
+- **Metrics endpoints are unauthenticated** (existing limitation, still open; section 11.9).
+- **Password hashing:** resolved as "no password storage exists". Nothing in `src/` hashes passwords and there is no login. Any future login needs a memory-hard KDF (section 11.9).
 - **Build output:** `services/world-api/dist/` is rebuilt for tests and is not committed.
 
 ### 11.7 Justice court-category decision (Task 1, revised after review)
@@ -468,6 +469,8 @@ Local PostgreSQL results are not evidence for Neon or production.
 
 ### 11.8 Verification for the Task 1 and Task 2 pass
 
+_Superseded for current counts by section 11.9. The figures below are the record for that earlier pass._
+
 Measured on branch `arena/00cdea0e-naija` after the changes in this pass (base commit `6072661`). Results are from the sandbox only. They are not evidence for Neon or production.
 
 - `npm test` (default, no database variables): **694 tests, 675 pass, 0 fail, 19 skipped.** The 19 skips are the PostgreSQL tests, which need `DATABASE_URL` and `NAIJA_ALLOW_DB_TESTS=true`.
@@ -480,4 +483,45 @@ Measured on branch `arena/00cdea0e-naija` after the changes in this pass (base c
 - Backup checksums: `SHA256SUMS-live.txt` passes. `SHA256SUMS-tmp.txt` passes for all 283 copies when run from `tmp-test-dirs/`, which is the directory the file assumes.
 
 These checks do not show that the historical player data is intact. The corpus is a set of test copies, and it covers 11 of the 48 maps.
+
+### 11.9 Operations review, multi-process, TLS, credentials, metrics, backup (current pass)
+
+Full detail: `docs/STAGE_28_OPERATIONS_REVIEW.md`. Account and character design: `docs/STAGE_28_ACCOUNT_CHARACTER_DESIGN.md`. Justice design: `docs/JUSTICE_COURT_ELIGIBILITY_DESIGN.md`.
+
+Evidence level for every result below is local (disposable PostgreSQL 18.4, trust auth, loopback) or pure code. None of it is evidence about Neon or production.
+
+| Area | Status | Evidence |
+|---|---|---|
+| Health and isolation | Tests now follow the health contract. No production health semantics changed. | `test/integration.test.mjs`, `test/isolation.test.mjs`, `test/postgres-persistence.test.mjs` |
+| Multi-process persistence | 6 of 6 PASS, separate OS processes, SIGKILL | `test/multiprocess-persistence.test.mjs`. Mutation (version check removed) fails 2 tests. |
+| Killed writer with a save waiting on a lock | Observed: the blocked save **committed** after the lock was released. The killed process never learned the outcome. | Same file; recorded by `t.diagnostic`. Not assumed. |
+| Account and character integration | NOT IMPLEMENTED. Design only. The engine does not use these tables. | `docs/STAGE_28_ACCOUNT_CHARACTER_DESIGN.md`. The engine has 41 character fields; the table has 21 columns; 23 fields have no column. |
+| TLS, local private CA | PASS, 12 of 12 with the TLS server. Verification enforced (unverified connection refused). | `test/tls-verification.test.mjs`. Mutation (verification off) fails 4 tests. |
+| TLS, Neon | BLOCKED. No route from the sandbox and no credentials used. | Not tested. |
+| Credential redaction | PASS for configuration errors (message and stack). | `test/tls-verification.test.mjs` |
+| Password hashing | No password storage exists in `src/`. Nothing to verify. A future login needs a memory-hard KDF. | Code review, `docs/STAGE_28_OPERATIONS_REVIEW.md` section 3. |
+| Creation keys | Concern: client-supplied bearer credential, server does not check entropy, client code not in this repo. | Same section. |
+| Metrics endpoints | Concern: unauthenticated on the game port. Contents are numeric only. Not changed. | Same section 4. |
+| Backup and restore | PASS on disposable databases, 10 of 10 (5 pure, 5 live). Overwrite and checksum mutations caught. No CLI. | `src/database/backup.ts`, `test/backup-restore.test.mjs` |
+| Justice location and category decisions | PASS. Missing location is unverified, not eligible. Malformed location rejected. `debt_recovery` maps to `civil`. | `test/justice-filing.test.mjs`, `docs/JUSTICE_COURT_ELIGIBILITY_DESIGN.md` |
+| Real-player data-loss conclusion | UNKNOWN. | Unchanged. |
+
+Verification at this pass (after the final edits):
+
+- `npm test` at `services/world-api`, default environment, no database variables: **733 tests, 698 pass, 0 fail, 35 skipped.** The 35 skips are every test gated on `DATABASE_URL` and `NAIJA_ALLOW_DB_TESTS` (the older live PostgreSQL, money, schema, restart and multi-instance tests, plus the multi-process and backup tests) or on `TLS_TEST_DATABASE_URL` (the TLS server tests). Each prints its skip reason.
+- Same command with `DATABASE_URL=postgres://tester@127.0.0.1:55433/naija_stage28_test`, `NAIJA_ALLOW_DB_TESTS=true`, `DB_SSL=false`, `TLS_TEST_DATABASE_URL` (same server, `ssl=on`), and `TLS_TEST_CA_FILE` (private test CA): **733 of 733 pass, 0 fail, 0 skipped.**
+- `tsc --noEmit`: exit 0.
+- ESLint: **51 errors, 0 warnings.** The same 51 as HEAD. No file changed in this stage appears in the lint output. The 51 errors are in files this stage did not change, including `connection.ts` (pre-existing `any` usages, file unchanged since `968482a`).
+- Database-name guard: the live suites refuse any database name that does not contain `test`. `test/backup-restore.test.mjs` and `test/tls-verification.test.mjs` apply the same guard.
+- No database password is in source, commits, or this document. The test cluster uses `trust` authentication on loopback, and that is recorded here.
+
+Open items after this pass:
+
+- Neon and any publicly trusted TLS path: BLOCKED.
+- `DB_SSL=false` is accepted for non-loopback hosts. Proposed fix: refuse it unless the host is loopback. Needs approval.
+- Metrics endpoints unauthenticated. Proposed: ingress restriction or a configured bearer token. Needs approval.
+- Creation-key policy (entropy and rotation) is undefined in this repository.
+- The engine's whole-snapshot save design can still lose an acknowledged save if the process dies before the reply, as shown in the multi-process test. Any change to that design needs its own review.
+- Backup has no operator tool and no Neon or provider test. Backup files contain the full world state and are sensitive.
+- Real-player data-loss conclusion: UNKNOWN.
 

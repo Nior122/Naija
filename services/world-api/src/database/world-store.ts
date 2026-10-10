@@ -19,12 +19,15 @@ import { performance } from "node:perf_hooks";
  * restarted and reloads the current state. This prevents a stale instance from silently
  * overwriting another instance's authoritative state.
  *
- * Limitations (see docs/STAGE_28_MULTI_INSTANCE_READINESS.md):
+ * Limitations (see docs/STAGE_28_AUDIT.md section 11.9 and docs/STAGE_28_OPERATIONS_REVIEW.md):
  * - Whole-world snapshots: each save rewrites the full state. Acceptable for the current size
  *   limit (16 MiB), not for large worlds.
  * - A save whose response is lost after the server committed it is reported as a failure. The
  *   next save then fences this instance, which requires a restart. This is fail-closed, not
  *   silently lossy.
+ * - A process killed while its UPDATE waits on a row lock can still have that UPDATE commit once
+ *   the lock is released (observed in test/multiprocess-persistence.test.mjs). A restart loads
+ *   whatever is committed; the killed process never learns the outcome.
  */
 
 export const MAX_SNAPSHOT_BYTES = 16 * 1024 * 1024;
