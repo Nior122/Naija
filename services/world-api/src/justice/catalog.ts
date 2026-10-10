@@ -43,6 +43,16 @@ function validateCatalog(catalog: JusticeCatalog): void {
   if (typeof catalog.rules !== "object" || catalog.rules === null) throw new Error("justice_catalog_no_rules");
   if (!Array.isArray(catalog.seed_laws)) throw new Error("justice_catalog_no_seed_laws");
   if (!Array.isArray(catalog.seed_courts)) throw new Error("justice_catalog_no_seed_courts");
+  // Court permitted_categories and case-category law_category values must be law categories.
+  const lawIds = new Set<string>(catalog.law_categories.map((c) => c.id));
+  for (const category of catalog.case_categories) {
+    if (!lawIds.has(category.law_category)) throw new Error("justice_catalog_case_law_category_unknown");
+  }
+  for (const court of catalog.seed_courts) {
+    for (const permitted of court.permitted_categories) {
+      if (!lawIds.has(permitted)) throw new Error("justice_catalog_court_category_unknown");
+    }
+  }
 }
 
 export function getLawCategory(catalog: JusticeCatalog, categoryId: string) {

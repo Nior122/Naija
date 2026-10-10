@@ -32,7 +32,11 @@ export type LegalProfessionalRoleId = "lawyer" | "prosecutor" | "defense_counsel
 
 export interface LawCategoryDefinition { readonly id: LawCategoryId; readonly label: string; }
 export interface CourtLevelDefinition { readonly id: CourtLevelId; readonly label: string; readonly level: number; readonly description: string; }
-export interface CaseCategoryDefinition { readonly id: CaseCategoryId; readonly label: string; readonly type: CaseType; }
+/**
+ * A case category. `law_category` is the legal subject matter (a LawCategoryId). A court handles a
+ * case when its permitted_categories lists that law category or the case `type` (civil/criminal).
+ */
+export interface CaseCategoryDefinition { readonly id: CaseCategoryId; readonly label: string; readonly type: CaseType; readonly law_category: LawCategoryId; }
 export interface LegalProfessionalRoleDefinition { readonly id: LegalProfessionalRoleId; readonly label: string; }
 export interface LawStatusDefinition { readonly id: LawStatusId; readonly label: string; }
 export interface CaseStatusDefinition { readonly id: CaseStatusId; readonly label: string; }

@@ -152,6 +152,19 @@ const PROPERTY_MUTATIONS = [
   ["maintenance cost negative", (m) => { m.propertyMaintenance["maint-1"].cost_ngn = -5; }, "propertyMaintenance", "maint-1", "cost_ngn"],
   ["furnishing quantity fractional", (m) => { m.propertyFurnishings["furn-1"].quantity = 1.5; }, "propertyFurnishings", "furn-1", "quantity"],
   ["event details contain an object", (m) => { m.propertyEvents["pevt-1"].details = { nested: { a: 1 } }; }, "propertyEvents", "pevt-1", "details"],
+  ["listing type unknown", (m) => { m.propertyListings["prop-list-1"].listing_type = "auction"; }, "propertyListings", "prop-list-1", "listing_type"],
+  ["listing rent price negative", (m) => { m.propertyListings["prop-list-1"].rent_price_ngn = -1; }, "propertyListings", "prop-list-1", "rent_price_ngn"],
+  ["listing owner identifier invalid", (m) => { m.propertyListings["prop-list-1"].owner_id = "bad owner"; }, "propertyListings", "prop-list-1", "owner_id"],
+  ["listing missing availability", (m) => { delete m.propertyListings["prop-list-1"].available; }, "propertyListings", "prop-list-1", "available"],
+  ["agreement tenant identifier missing", (m) => { delete m.rentalAgreements["agr-1"].tenant_id; }, "rentalAgreements", "agr-1", "tenant_id"],
+  ["agreement status unknown", (m) => { m.rentalAgreements["agr-1"].status = "pending_review"; }, "rentalAgreements", "agr-1", "status"],
+  ["agreement listing missing", (m) => { m.rentalAgreements["agr-1"].listing_id = "prop-list-missing"; }, "rentalAgreements", "agr-1", "listing_id"],
+  ["payment amount negative", (m) => { m.rentalPayments["pay-1"].amount_ngn = -1; }, "rentalPayments", "pay-1", "amount_ngn"],
+  ["payment agreement missing", (m) => { m.rentalPayments["pay-1"].agreement_id = "agr-missing"; }, "rentalPayments", "pay-1", "agreement_id"],
+  ["payment date wrong type", (m) => { m.rentalPayments["pay-1"].payment_date = 12345; }, "rentalPayments", "pay-1", "payment_date"],
+  ["sale buyer identifier missing", (m) => { delete m.propertySales["sale-1"].buyer_id; }, "propertySales", "sale-1", "buyer_id"],
+  ["sale amount wrong type", (m) => { m.propertySales["sale-1"].amount_ngn = "1000000"; }, "propertySales", "sale-1", "amount_ngn"],
+  ["sale property missing", (m) => { m.propertySales["sale-1"].property_id = "prop:missing"; }, "propertySales", "sale-1", "property_id"],
 ];
 
 // ─── Government ──────────────────────────────────────────────────────────────
@@ -260,6 +273,19 @@ const GOVERNMENT_MUTATIONS = [
     "governmentAnnouncements", "ann-1", "scope_level"],
   ["event details contain nested object", (m) => { m.governmentEvents["gevt-1"].details = { a: { b: 1 } }; },
     "governmentEvents", "gevt-1", "details"],
+  ["appointment character identifier invalid", (m) => { m.governmentAppointments["appt-1"].character_id = "bad char"; }, "governmentAppointments", "appt-1", "character_id"],
+  ["appointment status unknown", (m) => { m.governmentAppointments["appt-1"].status = "suspended"; }, "governmentAppointments", "appt-1", "status"],
+  ["appointment start date missing", (m) => { delete m.governmentAppointments["appt-1"].start_date; }, "governmentAppointments", "appt-1", "start_date"],
+  ["budget fiscal year out of range", (m) => { m.governmentBudgets["bud:federal:2025"].fiscal_year = 10000; }, "governmentBudgets", "bud:federal:2025", "fiscal_year"],
+  ["budget status unknown", (m) => { m.governmentBudgets["bud:federal:2025"].status = "pending"; }, "governmentBudgets", "bud:federal:2025", "status"],
+  ["budget organisation missing", (m) => { m.governmentBudgets["bud:federal:2025"].organisation_id = "gov:missing"; }, "governmentBudgets", "bud:federal:2025", "organisation_id"],
+  ["expenditure amount negative", (m) => { m.governmentExpenditure["exp-1"].amount_ngn = -5; }, "governmentExpenditure", "exp-1", "amount_ngn"],
+  ["expenditure organisation missing", (m) => { m.governmentExpenditure["exp-1"].organisation_id = "gov:missing"; }, "governmentExpenditure", "exp-1", "organisation_id"],
+  ["announcement title empty", (m) => { m.governmentAnnouncements["ann-1"].title = ""; }, "governmentAnnouncements", "ann-1", "title"],
+  ["announcement organisation missing", (m) => { m.governmentAnnouncements["ann-1"].organisation_id = "gov:missing"; }, "governmentAnnouncements", "ann-1", "organisation_id"],
+  ["event type empty", (m) => { m.governmentEvents["gevt-1"].type = ""; }, "governmentEvents", "gevt-1", "type"],
+  ["event world date invalid", (m) => { m.governmentEvents["gevt-1"].world_date = { year: 2025, month: 13, day: 1 }; }, "governmentEvents", "gevt-1", "world_date"],
+  ["event organisation missing", (m) => { m.governmentEvents["gevt-1"].organisation_id = "gov:missing"; }, "governmentEvents", "gevt-1", "organisation_id"],
 ];
 
 // ─── Elections ───────────────────────────────────────────────────────────────
@@ -398,6 +424,12 @@ const ELECTION_MUTATIONS = [
   ["participation says voted without a time", (m) => { m.voterParticipation["part-1"].voted_at = null; }, "voterParticipation", "part-1", "voted_at"],
   ["dispute status unknown", (m) => { m.electionDisputes["disp-1"].status = "ignored"; }, "electionDisputes", "disp-1", "status"],
   ["audit election missing", (m) => { m.electionAudits["audit-1"].election_id = "election-missing"; }, "electionAudits", "audit-1", "election_id"],
+  ["profile character identifier invalid", (m) => { m.politicalProfiles["prof-1"].character_id = "bad char"; }, "politicalProfiles", "prof-1", "character_id"],
+  ["profile party missing", (m) => { m.politicalProfiles["prof-1"].party_id = "party-missing"; }, "politicalProfiles", "prof-1", "party_id"],
+  ["profile reputation not a number", (m) => { m.politicalProfiles["prof-1"].reputation_score = "high"; }, "politicalProfiles", "prof-1", "reputation_score"],
+  ["debate type empty", (m) => { m.debates["debate-1"].debate_type = ""; }, "debates", "debate-1", "debate_type"],
+  ["debate status unknown", (m) => { m.debates["debate-1"].status = "postponed"; }, "debates", "debate-1", "status"],
+  ["debate election missing", (m) => { m.debates["debate-1"].election_id = "election-missing"; }, "debates", "debate-1", "election_id"],
 ];
 
 // ─── Justice ─────────────────────────────────────────────────────────────────
@@ -581,6 +613,41 @@ const JUSTICE_MUTATIONS = [
   ["representation professional missing", (m) => { m.legalRepresentations["rep-1"].professional_id = "prof-missing"; },
     "legalRepresentations", "rep-1", "professional_id"],
   ["settlement status unknown", (m) => { m.settlements["set-1"].status = "agreed"; }, "settlements", "set-1", "status"],
+  ["law title missing", (m) => { delete m.laws["law:test-1"].title; }, "laws", "law:test-1", "title"],
+  ["law category unknown", (m) => { m.laws["law:test-1"].category = "tax"; }, "laws", "law:test-1", "category"],
+  ["law version zero", (m) => { m.laws["law:test-1"].version = 0; }, "laws", "law:test-1", "version"],
+  ["law is its own parent", (m) => { m.laws["law:test-1"].parent_law_id = "law:test-1"; }, "laws", "law:test-1", "parent_law_id"],
+  ["law related law missing", (m) => { m.laws["law:test-1"].related_law_ids = ["law:missing"]; }, "laws", "law:test-1", "related_law_ids"],
+  ["law status unknown", (m) => { m.laws["law:test-1"].status = "active"; }, "laws", "law:test-1", "status"],
+  ["proposal revision identifier invalid", (m) => { m.legislativeProposals["legpro-1"].revision_history = [{ date: TS, summary: "Created.", by_character_id: "bad id" }]; }, "legislativeProposals", "legpro-1", "revision_history"],
+  ["proposal status unknown", (m) => { m.legislativeProposals["legpro-1"].status = "passed"; }, "legislativeProposals", "legpro-1", "status"],
+  ["proposal proposed law missing", (m) => { m.legislativeProposals["legpro-1"].proposed_law_id = "law:missing"; }, "legislativeProposals", "legpro-1", "proposed_law_id"],
+  ["proposal provision without title", (m) => { m.legislativeProposals["legpro-1"].provisions = [{ section: "1", description: "Text." }]; }, "legislativeProposals", "legpro-1", "provisions"],
+  ["proposal jurisdiction empty", (m) => { m.legislativeProposals["legpro-1"].jurisdiction = ""; }, "legislativeProposals", "legpro-1", "jurisdiction"],
+  ["professional role unknown", (m) => { m.legalProfessionals["prof-judge-1"].role = "clerk"; }, "legalProfessionals", "prof-judge-1", "role"],
+  ["professional court missing", (m) => { m.legalProfessionals["prof-judge-1"].court_id = "court:missing"; }, "legalProfessionals", "prof-judge-1", "court_id"],
+  ["professional character identifier invalid", (m) => { m.legalProfessionals["prof-judge-1"].character_id = "bad char"; }, "legalProfessionals", "prof-judge-1", "character_id"],
+  ["professional qualifications not text", (m) => { m.legalProfessionals["prof-judge-1"].qualifications = [1]; }, "legalProfessionals", "prof-judge-1", "qualifications"],
+  ["professional appointment date missing", (m) => { delete m.legalProfessionals["prof-judge-1"].appointed_at; }, "legalProfessionals", "prof-judge-1", "appointed_at"],
+  ["participant case missing", (m) => { m.caseParticipants["cp-1"].case_id = "case-missing"; }, "caseParticipants", "cp-1", "case_id"],
+  ["participant role unknown", (m) => { m.caseParticipants["cp-1"].role = "plaintiff"; }, "caseParticipants", "cp-1", "role"],
+  ["participant status unknown", (m) => { m.caseParticipants["cp-1"].status = "pending"; }, "caseParticipants", "cp-1", "status"],
+  ["participant character identifier invalid", (m) => { m.caseParticipants["cp-1"].character_id = "bad char"; }, "caseParticipants", "cp-1", "character_id"],
+  ["witness case missing", (m) => { m.witnesses["wit-1"].case_id = "case-missing"; }, "witnesses", "wit-1", "case_id"],
+  ["witness credibility unknown", (m) => { m.witnesses["wit-1"].credibility_status = "trusted"; }, "witnesses", "wit-1", "credibility_status"],
+  ["witness testimony missing", (m) => { delete m.witnesses["wit-1"].testimony; }, "witnesses", "wit-1", "testimony"],
+  ["witness submitter identifier invalid", (m) => { m.witnesses["wit-1"].submitted_by_character_id = "bad id"; }, "witnesses", "wit-1", "submitted_by_character_id"],
+  ["hearing case missing", (m) => { m.hearings["hear-1"].case_id = "case-missing"; }, "hearings", "hear-1", "case_id"],
+  ["hearing court missing", (m) => { m.hearings["hear-1"].court_id = "court:missing"; }, "hearings", "hear-1", "court_id"],
+  ["hearing type unknown", (m) => { m.hearings["hear-1"].hearing_type = "mention"; }, "hearings", "hear-1", "hearing_type"],
+  ["hearing attendance identifier invalid", (m) => { m.hearings["hear-1"].attendance_character_ids = ["bad id"]; }, "hearings", "hear-1", "attendance_character_ids"],
+  ["hearing evidence reference not text", (m) => { m.hearings["hear-1"].evidence_references = [1]; }, "hearings", "hear-1", "evidence_references"],
+  ["representation lawyer identifier invalid", (m) => { m.legalRepresentations["rep-1"].lawyer_character_id = "bad id"; }, "legalRepresentations", "rep-1", "lawyer_character_id"],
+  ["representation role unknown", (m) => { m.legalRepresentations["rep-1"].role = "judge"; }, "legalRepresentations", "rep-1", "role"],
+  ["court level unknown", (m) => { m.courts["court:magistrate-1"].level = "galactic"; }, "courts", "court:magistrate-1", "level"],
+  ["court status unknown", (m) => { m.courts["court:magistrate-1"].status = "closed"; }, "courts", "court:magistrate-1", "status"],
+  ["provision law missing", (m) => { m.lawProvisions["law:test-1:s1"].law_id = "law:missing"; }, "lawProvisions", "law:test-1:s1", "law_id"],
+  ["provision section missing", (m) => { delete m.lawProvisions["law:test-1:s1"].section; }, "lawProvisions", "law:test-1:s1", "section"],
 ];
 
 const DOMAINS = [
@@ -604,12 +671,24 @@ for (const domain of DOMAINS) {
     test(`Record validation (${domain.name}): rejects ${label}`, () => {
       const maps = domain.fixture();
       mutate(maps);
+      const snapshot = JSON.stringify(maps);
       const result = domain.validate(maps);
+      assert.equal(JSON.stringify(maps), snapshot, "validation must not delete, regenerate, or rewrite the rejected record");
+      assert.equal(result.normalizedFields, 0, "a required-field or invariant rejection must not normalize anything");
       const hit = result.issues.find((issue) => issue.map === map && issue.recordId === recordId && issue.field === field);
       assert.ok(hit, `expected an issue at ${map}[${recordId}].${field}; got ${JSON.stringify(result.issues.slice(0, 5))}`);
       assert.equal(hit.category, domain.name);
     });
   }
+
+  test(`Record validation (${domain.name}): every map has a valid record, and it is accepted`, () => {
+    const maps = domain.fixture();
+    const result = domain.validate(maps);
+    for (const name of Object.keys(maps)) {
+      assert.ok(Object.keys(maps[name]).length > 0, `${name} has no valid fixture record`);
+      assert.equal(result.issues.filter((issue) => issue.map === name).length, 0, `${name} valid record was rejected`);
+    }
+  });
 
   test(`Record validation (${domain.name}): absent nullable fields are normalized to null and counted`, () => {
     const maps = domain.fixture();
@@ -685,4 +764,25 @@ test("Record validation: validateState rejects an invalid property record in a s
   assert.ok(seedId, "a saved world must contain seeded properties");
   saved.properties[seedId].bedrooms = -3;
   assert.throws(() => validateState(saved, now), /invalid property record: properties\[.*\] field "bedrooms" must be a whole number of at least 0/);
+});
+
+test("Record validation: every map declared in the four persistent-map interfaces has at least one mutation test", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { dirname, join } = await import("node:path");
+  const { fileURLToPath } = await import("node:url");
+  const src = join(dirname(fileURLToPath(import.meta.url)), "..", "src");
+  const ownSource = readFileSync(fileURLToPath(import.meta.url), "utf8");
+  const table = ownSource.slice(ownSource.indexOf("const PROPERTY_MUTATIONS"), ownSource.indexOf("const DOMAINS"));
+  const tested = new Set([...table.matchAll(/"([A-Za-z]+)",\s*"[^"]*",\s*"[^"]*"\s*\]/g)].map((m) => m[1]));
+  const declared = [];
+  for (const [file, iface] of [["properties/types.ts", "PersistentPropertyMaps"], ["government/types.ts", "PersistentGovernmentMaps"], ["elections/types.ts", "PersistentElectionMaps"], ["justice/types.ts", "PersistentJusticeMaps"]]) {
+    const text = readFileSync(join(src, file), "utf8");
+    const start = text.indexOf(`interface ${iface}`);
+    assert.ok(start >= 0, `${iface} not found in ${file}`);
+    const block = text.slice(start, text.indexOf("}", start));
+    declared.push(...[...block.matchAll(/^\s+(\w+)\s*:/gm)].map((m) => m[1]));
+  }
+  assert.equal(declared.length, 48, "expected 48 declared maps");
+  const untested = declared.filter((name) => !tested.has(name));
+  assert.deepEqual(untested, [], `maps without a mutation test: ${untested.join(", ")}`);
 });

@@ -640,6 +640,17 @@ export function getProfessionalForCharacter(state: PersistentWorldState, charact
 
 // ─── Cases ────────────────────────────────────────────────────────
 
+/**
+ * A court handles a case category when its permitted_categories lists the category's law category
+ * (its legal subject matter) or the category's case type (civil or criminal). Nothing else is accepted.
+ */
+export function courtHandlesCaseCategory(
+  court: { readonly permitted_categories: readonly string[] },
+  caseCategory: { readonly law_category: string; readonly type: string },
+): boolean {
+  return court.permitted_categories.includes(caseCategory.law_category) || court.permitted_categories.includes(caseCategory.type);
+}
+
 export function fileCase(
   state: PersistentWorldState,
   category: CaseCategoryId,
@@ -657,16 +668,19 @@ export function fileCase(
   const court = state.courts[courtId];
   if (!court) throw new Error("justice_court_not_found");
   if (court.status !== "active") throw new Error("justice_court_not_active");
-  if (!court.permitted_categories.includes(category)) {
-    // Also allow if the court permits the broad case type (civil/criminal)
-    const caseCategory = catalog.case_categories.find((cc) => cc.id === category);
-    if (!caseCategory || !court.permitted_categories.includes(caseCategory.type)) {
-      throw new Error("justice_court_category_not_permitted");
-    }
-  }
+  const caseCategory = catalog.case_categories.find((cc) => cc.id === category);
+  if (!caseCategory) throw new Error("justice_case_category_invalid");
+  if (!courtHandlesCaseCategory(court, caseCategory)) throw new Error("justice_court_category_not_permitted");
 
   const filingPlayer = characterForId(state, filingPartyCharacterId);
   if (!filingPlayer) throw new Error("justice_character_not_found");
+  // Jurisdiction: a court tied to a state (state or local level) hears filings from people located in
+  // that state. A filer with no recorded geographic location cannot be placed, so this check does not
+  // apply to them. That gap is recorded in docs/STAGE_28_AUDIT.md and needs a product decision.
+  const filerLocation = filingPlayer.character.geographic_location ?? null;
+  if (court.applicable_jurisdiction_id && filerLocation !== null && filerLocation.state_id !== court.applicable_jurisdiction_id) {
+    throw new Error("justice_court_jurisdiction_mismatch");
+  }
   if (filingPlayer.character.life_status === "deceased") throw new Error("justice_character_deceased");
   if (filingPlayer.character.age < catalog.rules.minimum_filing_age) throw new Error("justice_age_ineligible");
 
@@ -679,9 +693,6 @@ export function fileCase(
 
   const queueSize = Object.values(state.cases).filter((c) => c.court_id === courtId && c.status !== "closed" && c.status !== "dismissed").length;
   if (queueSize >= catalog.rules.max_cases_per_court_queue) throw new Error("justice_court_queue_full");
-
-  const caseCategory = catalog.case_categories.find((cc) => cc.id === category);
-  if (!caseCategory) throw new Error("justice_case_category_invalid");
 
   const timestamp = new Date(now).toISOString();
   const caseRec: CaseRecord = {
@@ -1257,6 +1268,7 @@ export function justiceErrorMessage(code: string): string {
     justice_court_not_found: "Court not found.",
     justice_court_not_active: "Court is not active.",
     justice_court_category_not_permitted: "This court does not handle this case category.",
+    justice_court_jurisdiction_mismatch: "This court does not have jurisdiction over the filing party's location.",
     justice_court_queue_full: "Court case queue is full.",
     justice_case_category_invalid: "Invalid case category.",
     justice_case_summary_too_long: "Case summary is too long.",

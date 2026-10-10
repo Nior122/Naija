@@ -29,17 +29,17 @@
     { "id": "tribunal", "label": "Specialized Tribunal", "level": 2, "description": "Specialized tribunal for specific matters." }
   ],
   "case_categories": [
-    { "id": "civil_general", "label": "General Civil Claim", "type": "civil" },
-    { "id": "contract_dispute", "label": "Contractual Dispute", "type": "civil" },
-    { "id": "debt_recovery", "label": "Debt Recovery", "type": "civil" },
-    { "id": "property_dispute", "label": "Property Dispute", "type": "civil" },
-    { "id": "tenancy_dispute", "label": "Tenancy Dispute", "type": "civil" },
-    { "id": "employment_claim", "label": "Employment Claim", "type": "civil" },
-    { "id": "compensation_claim", "label": "Compensation Claim", "type": "civil" },
-    { "id": "criminal_misdemeanor", "label": "Criminal Misdemeanor", "type": "criminal" },
-    { "id": "criminal_felony", "label": "Criminal Felony", "type": "criminal" },
-    { "id": "regulatory_penalty", "label": "Regulatory Penalty", "type": "civil" },
-    { "id": "commercial_dispute", "label": "Commercial Dispute", "type": "civil" }
+    { "id": "civil_general", "label": "General Civil Claim", "type": "civil", "law_category": "civil" },
+    { "id": "contract_dispute", "label": "Contractual Dispute", "type": "civil", "law_category": "commercial" },
+    { "id": "debt_recovery", "label": "Debt Recovery", "type": "civil", "law_category": "financial" },
+    { "id": "property_dispute", "label": "Property Dispute", "type": "civil", "law_category": "property" },
+    { "id": "tenancy_dispute", "label": "Tenancy Dispute", "type": "civil", "law_category": "property" },
+    { "id": "employment_claim", "label": "Employment Claim", "type": "civil", "law_category": "employment" },
+    { "id": "compensation_claim", "label": "Compensation Claim", "type": "civil", "law_category": "civil" },
+    { "id": "criminal_misdemeanor", "label": "Criminal Misdemeanor", "type": "criminal", "law_category": "criminal" },
+    { "id": "criminal_felony", "label": "Criminal Felony", "type": "criminal", "law_category": "criminal" },
+    { "id": "regulatory_penalty", "label": "Regulatory Penalty", "type": "civil", "law_category": "administration" },
+    { "id": "commercial_dispute", "label": "Commercial Dispute", "type": "civil", "law_category": "commercial" }
   ],
   "legal_professional_roles": [
     { "id": "lawyer", "label": "Lawyer / Legal Practitioner" },
@@ -244,6 +244,6 @@
     { "id": "court:nic", "name": "National Industrial Court", "level": "national_industrial", "jurisdiction": "federal", "status": "active", "permitted_categories": ["employment"] },
     { "id": "court:magistrate-fct", "name": "FCT Magistrate Court", "level": "magistrate", "jurisdiction": "local", "applicable_jurisdiction_id": "ng:state:fc", "status": "active", "permitted_categories": ["criminal", "civil", "property", "traffic"] },
     { "id": "court:state-high-fct", "name": "FCT High Court", "level": "state_high", "jurisdiction": "state", "applicable_jurisdiction_id": "ng:state:fc", "status": "active", "permitted_categories": ["criminal", "civil", "commercial", "property", "employment"] },
-    { "id": "court:customary-fct", "name": "FCT Customary Court", "level": "customary", "jurisdiction": "local", "applicable_jurisdiction_id": "ng:state:fc", "status": "active", "permitted_categories": ["civil", "property", "tenancy_dispute"] }
+    { "id": "court:customary-fct", "name": "FCT Customary Court", "level": "customary", "jurisdiction": "local", "applicable_jurisdiction_id": "ng:state:fc", "status": "active", "permitted_categories": ["civil", "property"] }
   ]
 }
