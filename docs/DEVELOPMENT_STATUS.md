@@ -182,7 +182,7 @@ The Godot client path has not been engine-tested in this workspace. See [`docs/E
 ### Legal framework and courts
 
 - `game/data/justice/catalog.json` configures 14 law categories, 8 court levels, 11 case categories, 7 legal professional roles, 11 law statuses, 16 case statuses, 8 judgment outcomes, 6 sentence types, 5 appeal outcomes, and 5 seed laws with provisions.
-- 7 seed courts (Supreme Court, Court of Appeal, Federal High Court, National Industrial Court, FCT Magistrate Court, FCT High Court, FCT Customary Court) with jurisdiction-based case assignment.
+- 10 seed courts (Supreme Court, Court of Appeal, Federal High Court, National Industrial Court, FCT Magistrate Court, FCT High Court, FCT Customary Court, and Ondo State Magistrate, High, and Customary Courts) with jurisdiction-based case assignment.
 - Laws are versioned, with amendment tracking and status lifecycle management.
 - Legislative proposals flow through draft → submitted → approved/rejected, with approved proposals creating new laws automatically.
 

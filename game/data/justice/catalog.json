@@ -244,6 +244,9 @@
     { "id": "court:nic", "name": "National Industrial Court", "level": "national_industrial", "jurisdiction": "federal", "status": "active", "permitted_categories": ["employment"] },
     { "id": "court:magistrate-fct", "name": "FCT Magistrate Court", "level": "magistrate", "jurisdiction": "local", "applicable_jurisdiction_id": "ng:state:fc", "status": "active", "permitted_categories": ["criminal", "civil", "property", "traffic"] },
     { "id": "court:state-high-fct", "name": "FCT High Court", "level": "state_high", "jurisdiction": "state", "applicable_jurisdiction_id": "ng:state:fc", "status": "active", "permitted_categories": ["criminal", "civil", "commercial", "property", "employment"] },
-    { "id": "court:customary-fct", "name": "FCT Customary Court", "level": "customary", "jurisdiction": "local", "applicable_jurisdiction_id": "ng:state:fc", "status": "active", "permitted_categories": ["civil", "property"] }
+    { "id": "court:customary-fct", "name": "FCT Customary Court", "level": "customary", "jurisdiction": "local", "applicable_jurisdiction_id": "ng:state:fc", "status": "active", "permitted_categories": ["civil", "property"] },
+    { "id": "court:magistrate-ondo", "name": "Ondo State Magistrate Court", "level": "magistrate", "jurisdiction": "local", "applicable_jurisdiction_id": "ng:state:on", "status": "active", "permitted_categories": ["criminal", "civil", "property", "traffic"] },
+    { "id": "court:state-high-ondo", "name": "Ondo State High Court", "level": "state_high", "jurisdiction": "state", "applicable_jurisdiction_id": "ng:state:on", "status": "active", "permitted_categories": ["criminal", "civil", "commercial", "property", "employment"] },
+    { "id": "court:customary-ondo", "name": "Ondo State Customary Court", "level": "customary", "jurisdiction": "local", "applicable_jurisdiction_id": "ng:state:on", "status": "active", "permitted_categories": ["civil", "property"] }
   ]
 }

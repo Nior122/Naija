@@ -294,21 +294,21 @@ test("Law category mapping: each case category maps to the reviewed law category
 });
 
 test("Acceptance matrix: the seeded courts that accept each case category are pinned (any change is a deliberate review)", () => {
-  // Captured after the debt_recovery change from financial to civil. That change left every row unchanged:
-  // debt_recovery is accepted at the same six courts it was accepted at under the former financial mapping.
+  // Captured after the debt_recovery change from financial to civil. Each Ondo state court (added for the Ondo
+  // region) has the same permitted categories as its FCT counterpart, so it accepts exactly the same case categories.
   // A change here changes which filings are accepted, so it needs the same review as the mapping table above.
   const PINNED = {
-    civil_general: ["court:appeal-federal", "court:customary-fct", "court:federal-high", "court:magistrate-fct", "court:state-high-fct", "court:supreme"],
-    contract_dispute: ["court:appeal-federal", "court:customary-fct", "court:federal-high", "court:magistrate-fct", "court:state-high-fct", "court:supreme"],
-    debt_recovery: ["court:appeal-federal", "court:customary-fct", "court:federal-high", "court:magistrate-fct", "court:state-high-fct", "court:supreme"],
-    property_dispute: ["court:appeal-federal", "court:customary-fct", "court:federal-high", "court:magistrate-fct", "court:state-high-fct", "court:supreme"],
-    tenancy_dispute: ["court:appeal-federal", "court:customary-fct", "court:federal-high", "court:magistrate-fct", "court:state-high-fct", "court:supreme"],
-    employment_claim: ["court:appeal-federal", "court:customary-fct", "court:federal-high", "court:magistrate-fct", "court:nic", "court:state-high-fct", "court:supreme"],
-    compensation_claim: ["court:appeal-federal", "court:customary-fct", "court:federal-high", "court:magistrate-fct", "court:state-high-fct", "court:supreme"],
-    criminal_misdemeanor: ["court:appeal-federal", "court:federal-high", "court:magistrate-fct", "court:state-high-fct", "court:supreme"],
-    criminal_felony: ["court:appeal-federal", "court:federal-high", "court:magistrate-fct", "court:state-high-fct", "court:supreme"],
-    regulatory_penalty: ["court:appeal-federal", "court:customary-fct", "court:federal-high", "court:magistrate-fct", "court:state-high-fct", "court:supreme"],
-    commercial_dispute: ["court:appeal-federal", "court:customary-fct", "court:federal-high", "court:magistrate-fct", "court:state-high-fct", "court:supreme"],
+    civil_general: ["court:appeal-federal", "court:customary-fct", "court:customary-ondo", "court:federal-high", "court:magistrate-fct", "court:magistrate-ondo", "court:state-high-fct", "court:state-high-ondo", "court:supreme"],
+    contract_dispute: ["court:appeal-federal", "court:customary-fct", "court:customary-ondo", "court:federal-high", "court:magistrate-fct", "court:magistrate-ondo", "court:state-high-fct", "court:state-high-ondo", "court:supreme"],
+    debt_recovery: ["court:appeal-federal", "court:customary-fct", "court:customary-ondo", "court:federal-high", "court:magistrate-fct", "court:magistrate-ondo", "court:state-high-fct", "court:state-high-ondo", "court:supreme"],
+    property_dispute: ["court:appeal-federal", "court:customary-fct", "court:customary-ondo", "court:federal-high", "court:magistrate-fct", "court:magistrate-ondo", "court:state-high-fct", "court:state-high-ondo", "court:supreme"],
+    tenancy_dispute: ["court:appeal-federal", "court:customary-fct", "court:customary-ondo", "court:federal-high", "court:magistrate-fct", "court:magistrate-ondo", "court:state-high-fct", "court:state-high-ondo", "court:supreme"],
+    employment_claim: ["court:appeal-federal", "court:customary-fct", "court:customary-ondo", "court:federal-high", "court:magistrate-fct", "court:magistrate-ondo", "court:nic", "court:state-high-fct", "court:state-high-ondo", "court:supreme"],
+    compensation_claim: ["court:appeal-federal", "court:customary-fct", "court:customary-ondo", "court:federal-high", "court:magistrate-fct", "court:magistrate-ondo", "court:state-high-fct", "court:state-high-ondo", "court:supreme"],
+    criminal_misdemeanor: ["court:appeal-federal", "court:federal-high", "court:magistrate-fct", "court:magistrate-ondo", "court:state-high-fct", "court:state-high-ondo", "court:supreme"],
+    criminal_felony: ["court:appeal-federal", "court:federal-high", "court:magistrate-fct", "court:magistrate-ondo", "court:state-high-fct", "court:state-high-ondo", "court:supreme"],
+    regulatory_penalty: ["court:appeal-federal", "court:customary-fct", "court:customary-ondo", "court:federal-high", "court:magistrate-fct", "court:magistrate-ondo", "court:state-high-fct", "court:state-high-ondo", "court:supreme"],
+    commercial_dispute: ["court:appeal-federal", "court:customary-fct", "court:customary-ondo", "court:federal-high", "court:magistrate-fct", "court:magistrate-ondo", "court:state-high-fct", "court:state-high-ondo", "court:supreme"],
   };
   const catalog = loadJusticeCatalog();
   const actual = Object.fromEntries(
@@ -321,6 +321,77 @@ test("Acceptance matrix: the seeded courts that accept each case category are pi
     ]),
   );
   assert.deepEqual(actual, PINNED);
+});
+
+// ─── Ondo state courts (the engine's only region is in Ondo; see docs/JUSTICE_COURT_ELIGIBILITY_DESIGN.md, F1) ───
+
+test("Ondo courts: a filer located in Ondo is accepted at the Ondo state high court, and the audit records it as verified", () => {
+  const { world, catalog } = seededWorld();
+  const ondoFiler = addPlayer(world, "Ondo Worker", 30, "ng:state:on");
+  const caseRec = file(world, catalog, "civil_general", "court:state-high-ondo", ondoFiler);
+  assert.equal(caseRec.court_id, "court:state-high-ondo");
+  assert.equal(caseRec.applicable_state_id, "ng:state:on");
+  assert.equal(jurisdictionCheckFor(world, caseRec), "verified");
+});
+
+test("Ondo courts: an Ondo filer is accepted at the Ondo magistrate court and the Ondo customary court", () => {
+  const { world, catalog } = seededWorld();
+  const ondoFiler = addPlayer(world, "Ondo Tenant", 26, "ng:state:on");
+  const magistrate = file(world, catalog, "civil_general", "court:magistrate-ondo", ondoFiler);
+  const customary = file(world, catalog, "tenancy_dispute", "court:customary-ondo", ondoFiler);
+  assert.equal(jurisdictionCheckFor(world, magistrate), "verified");
+  assert.equal(jurisdictionCheckFor(world, customary), "verified");
+});
+
+test("Ondo courts: an FCT filer is rejected at the Ondo state court (each state court serves its own state)", () => {
+  const { world, catalog } = seededWorld();
+  const fctFiler = addPlayer(world, "Abuja Worker", 30, "ng:state:fc");
+  assert.throws(() => file(world, catalog, "civil_general", "court:state-high-ondo", fctFiler), /justice_court_jurisdiction_mismatch/);
+});
+
+test("Ondo courts: an Ondo filer is still rejected at the FCT state court (the FCT rule is unchanged)", () => {
+  const { world, catalog } = seededWorld();
+  const ondoFiler = addPlayer(world, "Ondo Worker", 30, "ng:state:on");
+  assert.throws(() => file(world, catalog, "civil_general", "court:state-high-fct", ondoFiler), /justice_court_jurisdiction_mismatch/);
+});
+
+test("Ondo courts: an unlocated filer is accepted at an Ondo court and recorded as unverified, not verified", () => {
+  const { world, catalog } = seededWorld();
+  const unplaced = addPlayer(world, "Unplaced", 30, null);
+  const caseRec = file(world, catalog, "civil_general", "court:state-high-ondo", unplaced);
+  assert.equal(jurisdictionCheckFor(world, caseRec), "unverified_no_location");
+});
+
+test("Ondo courts: each Ondo court has the same permitted categories as its FCT counterpart (a mirror, pending legal review)", () => {
+  const catalog = loadJusticeCatalog();
+  const byId = new Map(catalog.seed_courts.map((court) => [court.id, court]));
+  for (const level of ["magistrate", "state-high", "customary"]) {
+    const fct = byId.get(`court:${level}-fct`);
+    const ondo = byId.get(`court:${level}-ondo`);
+    assert.ok(fct && ondo, `${level} has both FCT and Ondo courts`);
+    assert.deepEqual([...ondo.permitted_categories].sort(), [...fct.permitted_categories].sort(), `${level} categories`);
+    assert.equal(ondo.level, fct.level);
+    assert.equal(ondo.applicable_jurisdiction_id, "ng:state:on");
+  }
+});
+
+test("Stored worlds: seeding adds the Ondo courts to a saved world, and leaves every court already stored unchanged", () => {
+  const world = makeWorld();
+  initializeJusticeWorldState(world.state);
+  const catalog = loadJusticeCatalog();
+  seedJusticeWorld(world.state, world.date, world.now, catalog);
+  // Simulate a world saved before the Ondo courts existed, with the stored customary list from the corpus.
+  for (const id of ["court:magistrate-ondo", "court:state-high-ondo", "court:customary-ondo"]) delete world.state.courts[id];
+  world.state.courts["court:customary-fct"].permitted_categories = ["civil", "property", "tenancy_dispute"];
+  const storedBefore = JSON.parse(JSON.stringify(world.state.courts));
+  seedJusticeWorld(world.state, world.date, world.now, catalog);
+  for (const id of ["court:magistrate-ondo", "court:state-high-ondo", "court:customary-ondo"]) {
+    assert.ok(world.state.courts[id], `${id} is added`);
+  }
+  for (const [id, court] of Object.entries(storedBefore)) {
+    assert.deepEqual(world.state.courts[id], court, `${id} is not rewritten`);
+  }
+  assert.deepEqual(world.state.courts["court:customary-fct"].permitted_categories, ["civil", "property", "tenancy_dispute"]);
 });
 
 // ─── Compatibility with stored worlds ─────────────────────────────

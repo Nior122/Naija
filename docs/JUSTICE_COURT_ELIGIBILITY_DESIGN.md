@@ -1,14 +1,14 @@
 # Justice Court Eligibility: Current Behaviour, Known Limitations, and Proposed Design
 
-**Status:** PROPOSAL. Nothing in sections 4–8 is implemented. Section 1 describes the current behaviour. No stored court list, character, or case has been changed to match this design.
+**Status:** PARTLY IMPLEMENTED. The Ondo state courts from F1 option (a) are implemented, as a catalog change with tests (section 0, F1). The stricter matching rule in section 4 and the other proposals in sections 5–6 are still PROPOSALS. No stored court list, character, or case has been changed.
 
-**Verified:** 2026-10-10 against the justice code and catalog at `d49db3f`. Every claim below was re-checked against the code, the seeded catalog, or the saved-world corpus. Corrections from the earlier draft are marked **(corrected)**. New findings are marked **(new)**.
+**Verified:** 2026-10-10 against the justice code and catalog at `d49db3f`, and again after the Ondo courts were added (see the commit that adds them). Every claim below was re-checked against the code, the seeded catalog, or the saved-world corpus. Corrections from the earlier draft are marked **(corrected)**. New findings are marked **(new)**.
 
 **Scope:** which court may hear which filing, and how a filer's jurisdiction is established. This covers Stage 28 Decisions 1 and 2. The law category meanings and the legal basis notes are in `docs/LAWS_COURTS_AND_JUSTICE_PLAN.md` (section "Law category meanings and court jurisdiction (Stage 28 review)", about lines 100–142, including "Law categories" and "Constitutional notes"). Those notes are secondary sources and need review by a lawyer.
 
 ## 0. Summary of this review
 
-- **(new) F1. Located characters are rejected at every FCT state court.** The engine can store a location only in the single loaded region, `ng:region:ondo:akure-south-core`, whose `state_id` is `ng:state:on` (Ondo). Every seeded state court (`magistrate-fct`, `state-high-fct`, `customary-fct`) has `applicable_jurisdiction_id: ng:state:fc` (FCT). A character located by the engine is therefore rejected at all three, with `justice_court_jurisdiction_mismatch`. It is accepted at `federal-high`. An unlocated character is accepted at the state courts as `unverified_no_location`. This was reproduced with the engine's own `geographicLocationForMapPosition` and `fileCase` (a temporary script, since deleted). No file was changed. This is a correctness problem, and fixing it needs a product decision (section 8, item 1). It is not a legal ruling.
+- **(new) F1. Located characters are rejected at every FCT state court. Resolved in part: Ondo state courts added (option a).** On 2026-10-10 the user chose to add Ondo state courts. Three courts were added to `game/data/justice/catalog.json`: `court:magistrate-ondo`, `court:state-high-ondo`, and `court:customary-ondo`. Each has `applicable_jurisdiction_id: ng:state:on` and mirrors the permitted categories and level of its FCT counterpart. The mirror is an assumption that the legal model still needs to confirm. The FCT courts are unchanged, so an FCT filer is still rejected at the Ondo courts, and an Ondo filer is still rejected at the FCT courts. An Ondo-located character can now file at the Ondo state courts with `verified`. The unlocated path is unchanged. Original finding: The engine can store a location only in the single loaded region, `ng:region:ondo:akure-south-core`, whose `state_id` is `ng:state:on` (Ondo). Every seeded state court (`magistrate-fct`, `state-high-fct`, `customary-fct`) has `applicable_jurisdiction_id: ng:state:fc` (FCT). A character located by the engine is therefore rejected at all three, with `justice_court_jurisdiction_mismatch`. It is accepted at `federal-high`. An unlocated character is accepted at the state courts as `unverified_no_location`. This was reproduced with the engine's own `geographicLocationForMapPosition` and `fileCase` (a temporary script, since deleted). No file was changed. This is a correctness problem, and fixing it needs a product decision (section 8, item 1). It is not a legal ruling.
 - **(new) F2. Catalog edits do not reach saved worlds.** `seedJusticeWorld` adds a seeded court only when its ID is absent (`if (state.courts[seed.id]) continue;`). A saved world keeps its stored `permitted_categories`, and filing reads only the stored list. Changing `game/data/justice/catalog.json` alone changes nothing for an existing world. Any court change needs an explicit, reviewed migration.
 - **(corrected) F3. Listing gaps (section 2, L4).** Four law categories are listed by a seeded court but mapped by no case category: `constitutional` (supreme, appeal-federal, federal-high), `election` (federal-high), `financial` (federal-high), and `traffic` (magistrate-fct). `administration` is mapped by `regulatory_penalty` but listed by no court. `environmental`, `education`, `safety`, and `other` are neither listed nor mapped. The earlier draft missed the first group.
 - **(corrected) F4. Location source (section 2, L3).** The earlier draft said the location is set only at character creation. The engine also changes it while a character moves on the map in town, and clears it when the character leaves town (`world-engine.ts`, about lines 694–695, 1079, 1102, 1125, 1140–1144). Creation takes a client-supplied profile location, which is validated against the single region. The `state_id` is always `ng:state:on` (F1).
@@ -87,7 +87,15 @@ The table lists every (court, case category) pair whose result would change unde
 | stored customary | regulatory_penalty (civil / administration) | accept | reject |
 | stored customary | commercial_dispute (civil / commercial) | accept | reject |
 
-**Total: 19 pairs** (15 seed, 4 stored). Every change is a civil case that is accepted today only through the broad `civil` type. The stricter rule would also stop the federal high court accepting property and employment disputes, which that court's list does not name.
+**Total: 28 pairs** (24 seed, 4 stored). The first 19 were in the original review. The 9 Ondo pairs come from the Ondo courts added for F1, which mirror the FCT courts. Every change is a civil case that is accepted today only through the broad `civil` type. The stricter rule would also stop the federal high court accepting property and employment disputes, which that court's list does not name. Adding the Ondo courts changes no existing filing, because no saved case exists.
+
+Ondo pairs added (civil cases, accepted only through the broad type):
+
+| Court | Case category (type / law category) |
+|---|---|
+| magistrate-ondo | contract_dispute, employment_claim, regulatory_penalty, commercial_dispute |
+| state-high-ondo | regulatory_penalty |
+| customary-ondo | contract_dispute, employment_claim, regulatory_penalty, commercial_dispute |
 
 **Decision needed before any stricter rule ships:** whether these 19 outcomes are intended. For example, a commercial dispute at the customary court is probably not intended, but a federal high court property dispute is a judgement for the legal model.
 
@@ -109,18 +117,21 @@ The table lists every (court, case category) pair whose result would change unde
 
 **Federal courts.** Unchanged. They have no `applicable_jurisdiction_id`, and they accept filers from any state.
 
-**Resolving F1 (options, not a recommendation).** (a) Seed state courts for the region's state (`ng:state:on`), as new court IDs. (b) Change the seeded `applicable_jurisdiction_id` values, which needs the migration in section 6 because stored courts keep their old value (F2). (c) Keep the FCT courts and accept that located characters cannot use them, documented as a known limit. Each option changes filing outcomes, so each needs a product decision and tests before any change.
+**Resolving F1.** Option (a) was chosen and is implemented: the Ondo state courts are new court IDs, so they reach saved worlds through seeding (section 6). Options (b) and (c) were not chosen. (b) would change seeded `applicable_jurisdiction_id` values, which needs the migration in section 6 because stored courts keep their old value. (c) would keep the FCT courts only and document the limit. Each option changes filing outcomes, so each needs a product decision and tests before any change.
 
 ## 6. Migration and backward compatibility
 
 - **No backfill.** Saved characters have no location (283 of 283). Do not infer a location from name, profile, or any other field.
 - **No rewrite of stored court lists.** The stored customary entry `tenancy_dispute` is kept. It is inert under the new fields and still matches through `property`.
+- **(new) How new seeded courts reach saved worlds.** Seeding runs when a character or family is created (`world-engine.ts`, the creation path, about line 941), not when a saved world is loaded. It adds only court IDs that are missing. So the three Ondo courts are added to a saved world the next time a character is created in it. Stored courts are not changed. A world with no new character creation keeps its current courts until one happens. The test "Stored worlds: seeding adds the Ondo courts..." pins this.
 - **(new) Catalog edits need an explicit migration.** Because seeding skips existing courts (F2), a change to `seed_courts` (new fields, new `applicable_jurisdiction_id`, new `permitted_categories`) does not reach a saved world. Any such change needs a versioned migration that is reviewed like any other data migration, and that states which stored courts it changes.
 - **Versioned catalog.** The new fields are optional. A world saved without them loads unchanged. A migration that adds `case_types` to stored courts is a separate change, reviewed like any other data migration.
 - **Cases.** There are no cases in saved worlds. A future case record would need the `jurisdiction_check` value in its audit entry to remain readable.
 - **Rollback.** Removing the optional fields restores the current behaviour. A migration that changes a stored court needs its own reversal plan before it is applied.
 
 ## 7. Testable specification and regression coverage
+
+**Ondo courts (added after `d49db3f`).** Tests in `test/justice-filing.test.mjs`: an Ondo filer is accepted at the Ondo state high, magistrate, and customary courts, with `verified`; an FCT filer is rejected at the Ondo state court; an Ondo filer is still rejected at the FCT state court; an unlocated filer is accepted at an Ondo court as `unverified_no_location`; each Ondo court mirrors its FCT counterpart; a saved world gains the Ondo courts on seeding without any stored court being rewritten. The pinned acceptance matrix was updated deliberately, and every Ondo row matches its FCT row.
 
 **Existing coverage (test/justice-filing.test.mjs, and test/justice.test.mjs).** These tests pass at `d49db3f`:
 
@@ -139,7 +150,7 @@ The table lists every (court, case category) pair whose result would change unde
 3. A court with neither field behaves exactly as `permitted_categories` does today.
 4. The 19 pairs in section 4 change only when the stricter rule is enabled, and each change is listed.
 5. A state court accepts a verified filer in its state, rejects a verified filer in another state, and records an unverified filer as `unverified_no_location` (phase 0).
-6. An engine-located filer (`ng:state:on`) is rejected at the FCT state courts with `justice_court_jurisdiction_mismatch` (F1). This test is a characterisation of the current behaviour. It must change only when the F1 decision is implemented.
+6. An engine-located filer (`ng:state:on`) is rejected at the FCT state courts with `justice_court_jurisdiction_mismatch` (F1). This is now covered by "Ondo courts: an Ondo filer is still rejected at the FCT state court". The Ondo courts accept the same filer (covered).
 7. `justice_filer_location_invalid` has a user-facing message (F5).
 8. Saved worlds (the 284-file corpus) load unchanged under the new fields, with no normalization and no lost records.
 9. A catalog change does not change a stored court unless a migration is applied (F2).
@@ -147,7 +158,7 @@ The table lists every (court, case category) pair whose result would change unde
 
 ## 8. Open decisions
 
-1. **(new, blocking for location-based state filing)** Which state the state courts serve. Options are in section 5 (F1). Until this is decided, located characters cannot file at FCT state courts.
+1. **(resolved in part, F1)** Option (a) chosen: Ondo state courts added. Still open: the legal model must confirm that the Ondo courts should hear the same categories as the FCT courts (the mirror assumption). Located characters still cannot file at the FCT state courts. That is correct for FCT residents, but it needs confirming against the legal model.
 2. Whether the 19 outcomes in section 4 are intended.
 3. Whether broad `civil` and `criminal` matching should stay for legacy courts only, or be removed.
 4. The phase 2 location policy (section 5).

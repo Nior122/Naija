@@ -10,7 +10,7 @@ Stage 12 adds a configurable laws, courts, and justice system to the shared Nige
 
 - **Legal framework:** Configurable law database with 14 law categories, versioned laws, law provisions, status lifecycle (draft → proposed → under_review → approved → enacted → in_force → suspended → amended → repealed), and amendment tracking.
 - **Seed laws:** 5 seed laws including the Constitution of Nigeria (1999), Criminal Code Act, Land Use Act, Tenancy Law of Lagos State, and Companies and Allied Matters Act 2020, with provisions.
-- **Court hierarchy:** 8 court levels (customary, magistrate, state high, federal high, national industrial, court of appeal, supreme, tribunal) with 7 seed courts. Jurisdiction-based case assignment.
+- **Court hierarchy:** 8 court levels (customary, magistrate, state high, federal high, national industrial, court of appeal, supreme, tribunal) with 10 seed courts: the seven original courts and three Ondo state courts (`court:magistrate-ondo`, `court:state-high-ondo`, `court:customary-ondo`) added for the Ondo region. Jurisdiction-based case assignment.
 - **Legislative proposals:** Proposal creation by eligible characters (18+), submission workflow, approval/rejection by authorized characters, and automatic law creation on approval.
 - **Legal professional appointments:** Judges, magistrates, lawyers, prosecutors, and other roles with age eligibility (35+ for judges, 25+ for lawyers). Court assignment for judges.
 - **Case management:** Civil and criminal case types, 11 case categories, 16 case statuses with validated transitions, case filing with court jurisdiction validation.
@@ -110,12 +110,12 @@ A court accepts a case when its `permitted_categories` lists the case's `law_cat
 | Law category | Label | Meaning in the game | Seeded courts that list it | Case categories that use it |
 |---|---|---|---|---|
 | `constitutional` | Constitutional and Foundational | Constitutional questions. | supreme, appeal-federal, federal-high | none |
-| `criminal` | Criminal Law | Criminal offences; cases of type `criminal`. | supreme, appeal-federal, federal-high, magistrate-fct, state-high-fct | criminal_misdemeanor, criminal_felony |
-| `civil` | Civil Law | General civil claims. | supreme, appeal-federal, federal-high, magistrate-fct, state-high-fct, customary-fct | civil_general, debt_recovery, compensation_claim |
-| `commercial` | Business and Commercial | Business disputes between traders and companies. | supreme, appeal-federal, federal-high, state-high-fct | contract_dispute, commercial_dispute |
-| `property` | Property and Tenancy | Land, buildings, and tenancies. | supreme, appeal-federal, magistrate-fct, state-high-fct, customary-fct | property_dispute, tenancy_dispute |
-| `employment` | Employment and Labour | Employment and labour claims. | supreme, appeal-federal, state-high-fct, nic | employment_claim |
-| `traffic` | Traffic and Transportation | Road traffic offences and transport claims. | magistrate-fct | none |
+| `criminal` | Criminal Law | Criminal offences; cases of type `criminal`. | supreme, appeal-federal, federal-high, magistrate-fct, state-high-fct, magistrate-ondo, state-high-ondo | criminal_misdemeanor, criminal_felony |
+| `civil` | Civil Law | General civil claims. | supreme, appeal-federal, federal-high, magistrate-fct, state-high-fct, customary-fct, magistrate-ondo, state-high-ondo, customary-ondo | civil_general, debt_recovery, compensation_claim |
+| `commercial` | Business and Commercial | Business disputes between traders and companies. | supreme, appeal-federal, federal-high, state-high-fct, state-high-ondo | contract_dispute, commercial_dispute |
+| `property` | Property and Tenancy | Land, buildings, and tenancies. | supreme, appeal-federal, magistrate-fct, state-high-fct, customary-fct, magistrate-ondo, state-high-ondo, customary-ondo | property_dispute, tenancy_dispute |
+| `employment` | Employment and Labour | Employment and labour claims. | supreme, appeal-federal, nic, state-high-fct, state-high-ondo | employment_claim |
+| `traffic` | Traffic and Transportation | Road traffic offences and transport claims. | magistrate-fct, magistrate-ondo | none |
 | `environmental` | Environmental | Environmental matters. | none | none |
 | `administration` | Public Administration | Administrative and regulatory penalties, and challenges to administrative action. | none | regulatory_penalty |
 | `election` | Election-related | Election-related matters. | federal-high | none |
