@@ -8,6 +8,7 @@ import type { PropertyProfileSnapshot, PersistentPropertyMaps, RentalAgreementSn
 import type { PersistentGovernmentMaps } from "../government/types.js";
 import type { PersistentElectionMaps } from "../elections/types.js";
 import type { PersistentJusticeMaps } from "../justice/types.js";
+import type { PersistentPoliceMaps, PoliceProfileSnapshot } from "../police/types.js";
 import type {
   FamilyPersonRecord,
   FamilyRecord,
@@ -84,6 +85,8 @@ export interface CharacterRecord extends CharacterLifeFields {
   political_profile?: import("../elections/types.js").PoliticalProfileSnapshot;
   /** The character's legal profile, if any. */
   legal_profile?: import("../justice/types.js").LegalProfileSnapshot;
+  /** The character's police profile, if any. */
+  police_profile?: PoliceProfileSnapshot;
 }
 
 export interface PersistentPlayer {
@@ -96,8 +99,8 @@ export interface PersistentPlayer {
   character: CharacterRecord;
 }
 
-export interface PersistentWorldState extends PersistentCareerMaps, PersistentEconomyMaps, PersistentBusinessMaps, PersistentPropertyMaps, PersistentGovernmentMaps, PersistentElectionMaps, PersistentJusticeMaps {
-  schemaVersion: 9;
+export interface PersistentWorldState extends PersistentCareerMaps, PersistentEconomyMaps, PersistentBusinessMaps, PersistentPropertyMaps, PersistentGovernmentMaps, PersistentElectionMaps, PersistentJusticeMaps, PersistentPoliceMaps {
+  schemaVersion: 10;
   worldId: typeof WORLD_ID;
   worldClock: WorldClockState;
   players: Record<string, PersistentPlayer>;

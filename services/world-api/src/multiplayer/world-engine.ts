@@ -174,6 +174,8 @@ import {
   justiceErrorMessage,
 } from "../justice/service.js";
 import type { JusticeCatalog, CaseCategoryId, JudgmentOutcomeId, AppealOutcomeId } from "../justice/types.js";
+import { PoliceCatalogService, PoliceService, initializePoliceWorldState, seedPoliceWorld, policeErrorMessage } from "../police/index.js";
+import type { IncidentCategoryId, DispatchPriorityId, MisconductCategoryId } from "../police/types.js";
 import { loadLifeCatalog, dateForWorldDay, isValidDate, worldClockSnapshot } from "../life/calendar.js";
 import {
   advanceWorldLife,
@@ -526,6 +528,7 @@ export class MultiplayerWorld {
   private readonly governmentCatalog: GovernmentCatalog = loadGovernmentCatalog();
   private readonly electionsCatalog: ElectionsCatalog = loadElectionsCatalog();
   private readonly justiceCatalog: JusticeCatalog = loadJusticeCatalog();
+  private readonly policeCatalog = new PoliceCatalogService();
   private readonly lifeCatalog = loadLifeCatalog();
   private lastTickAt: number;
   private lastBroadcastAt = 0;
@@ -815,6 +818,7 @@ export class MultiplayerWorld {
       case "government.action": await this.governmentAction(context, player, message, requestId); return;
       case "election.action": await this.electionAction(context, player, message, requestId); return;
       case "justice.action": await this.justiceAction(context, player, message, requestId); return;
+      case "police.action": await this.policeAction(context, player, message, requestId); return;
       case "chat.send": this.handleChat(context, player, message, requestId); return;
       case "player.interact": this.handlePlayerInteraction(context, player, message, requestId); return;
       case "relationship.progress": await this.progressRelationship(context, player, message, requestId); return;
@@ -920,6 +924,8 @@ export class MultiplayerWorld {
     initializeElectionWorldState(this.store.state);
     initializeJusticeWorldState(this.store.state);
     seedJusticeWorld(this.store.state, this.store.state.worldClock.world_date, this.now(), this.justiceCatalog);
+    initializePoliceWorldState(this.store.state);
+    seedPoliceWorld(this.store.state, this.store.state.worldClock.world_date);
     this.playerByTokenHash.set(tokenHash, playerId);
     this.playerByCreationKeyHash.set(creationKeyHash, playerId);
     // The upcoming snapshot includes all current changes; keep later concurrent dirtiness intact.
@@ -2822,6 +2828,304 @@ export class MultiplayerWorld {
     await this.flushDirty();
   }
 
+  private async policeAction(
+    context: ConnectionContext,
+    player: PersistentPlayer,
+    message: Record<string, unknown>,
+    requestId?: string,
+  ): Promise<void> {
+    const data = message;
+    const action = typeof data.action === "string" ? data.action : "";
+    if (!action || action.length > 48) {
+      this.send(context, appendOptionalRequestId({
+        type: "police.error", action: "", code: "police_action_invalid",
+        message: "Choose a supported police action.",
+      }, requestId));
+      return;
+    }
+
+    const characterId = player.character.character_id;
+    const worldDate = this.store.state.worldClock.world_date;
+    const policeService = new PoliceService(this.store.state, this.policeCatalog);
+    let messageText = "";
+    const responseData: Record<string, unknown> = {};
+
+    try {
+      switch (action) {
+        case "list_stations": {
+          const stations = policeService.listStations();
+          responseData.stations = stations.map((s) => policeService.getStationSnapshot(s.unit_id));
+          messageText = `Found ${stations.length} police station(s).`;
+          break;
+        }
+        case "view_station": {
+          const stationId = typeof data.station_id === "string" ? data.station_id : "";
+          if (!stationId) throw new Error("police_station_required");
+          const snapshot = policeService.getStationSnapshot(stationId);
+          if (!snapshot) throw new Error("police_station_not_found");
+          responseData.station = snapshot;
+          messageText = `Station: ${snapshot.name}`;
+          break;
+        }
+        case "list_officers": {
+          const stationId = typeof data.station_id === "string" ? data.station_id : undefined;
+          const officers = policeService.listOfficers(stationId);
+          responseData.officers = officers.map((o) => policeService.getOfficerSnapshot(o.officer_id)).filter(Boolean);
+          messageText = `Found ${officers.length} officer(s).`;
+          break;
+        }
+        case "apply_recruitment": {
+          const stationId = typeof data.station_id === "string" ? data.station_id : "";
+          if (!stationId) throw new Error("police_station_required");
+          const education = typeof data.education === "string" ? data.education : player.character.education_level;
+          const birthDate = player.character.date_of_birth ?? { year: worldDate.year - 20, month: 1, day: 1 };
+          const app = policeService.applyForRecruitment({ character_id: characterId, station_id: stationId, education, birth_date: birthDate }, worldDate);
+          responseData.application = app;
+          messageText = "Recruitment application submitted.";
+          break;
+        }
+        case "submit_incident": {
+          const category = typeof data.category === "string" ? data.category as IncidentCategoryId : "" as IncidentCategoryId;
+          const description = typeof data.description === "string" ? data.description : "";
+          const summary = typeof data.summary === "string" ? data.summary : "";
+          if (!category || !description || !summary) throw new Error("police_incident_fields_required");
+          const inc = policeService.submitIncident({
+            category,
+            description,
+            summary,
+            reporter_character_id: characterId,
+            reported_character_id: typeof data.reported_character_id === "string" ? data.reported_character_id : null,
+            location_id: typeof data.location_id === "string" ? data.location_id : null,
+            priority: typeof data.priority === "string" ? data.priority as DispatchPriorityId : "normal",
+            confidentiality: typeof data.confidentiality === "string" ? data.confidentiality as "public" | "confidential" | "anonymous" : "public",
+          }, worldDate);
+          responseData.incident = inc;
+          messageText = `Incident reported: ${inc.reference_number}`;
+          break;
+        }
+        case "list_incidents": {
+          const stationId = typeof data.station_id === "string" ? data.station_id : undefined;
+          const status = typeof data.status === "string" ? data.status as import("../police/types.js").IncidentStatusId : undefined;
+          const incidents = policeService.listIncidents(stationId, status);
+          responseData.incidents = incidents.map((i) => ({
+            incident_id: i.incident_id,
+            reference_number: i.reference_number,
+            category: i.category,
+            summary: i.summary,
+            priority: i.priority,
+            status: i.status,
+            reported_at: i.reported_at,
+          }));
+          messageText = `Found ${incidents.length} incident(s).`;
+          break;
+        }
+        case "view_incident": {
+          const incidentId = typeof data.incident_id === "string" ? data.incident_id : "";
+          if (!incidentId) throw new Error("police_incident_required");
+          const inc = policeService.getIncident(incidentId);
+          if (!inc) throw new Error("police_incident_not_found");
+          responseData.incident = inc;
+          messageText = `Incident ${inc.reference_number}: ${inc.status}`;
+          break;
+        }
+        case "dispatch_unit": {
+          const incidentId = typeof data.incident_id === "string" ? data.incident_id : "";
+          const stationId = typeof data.station_id === "string" ? data.station_id : "";
+          const notes = typeof data.notes === "string" ? data.notes : "";
+          if (!incidentId || !stationId || !notes) throw new Error("police_dispatch_fields_required");
+          const officer = policeService.getOfficerByCharacter(characterId);
+          if (!officer) throw new Error("police_not_an_officer");
+          const dispatchParams: { incident_id: string; station_id: string; notes: string; priority?: DispatchPriorityId; requesting_officer_id: string } = {
+            incident_id: incidentId,
+            station_id: stationId,
+            notes,
+            requesting_officer_id: officer.officer_id,
+          };
+          if (typeof data.priority === "string") dispatchParams.priority = data.priority as DispatchPriorityId;
+          const dispatch = policeService.dispatchUnit(dispatchParams, worldDate);
+          responseData.dispatch = dispatch;
+          messageText = "Unit dispatched.";
+          break;
+        }
+        case "open_investigation": {
+          const incidentId = typeof data.incident_id === "string" ? data.incident_id : "";
+          const stationId = typeof data.station_id === "string" ? data.station_id : "";
+          const summary = typeof data.summary === "string" ? data.summary : "";
+          const category = typeof data.category === "string" ? data.category as IncidentCategoryId : "" as IncidentCategoryId;
+          if (!incidentId || !stationId || !summary || !category) throw new Error("police_investigation_fields_required");
+          const officer = policeService.getOfficerByCharacter(characterId);
+          if (!officer) throw new Error("police_not_an_officer");
+          const inv = policeService.openInvestigation({
+            incident_id: incidentId,
+            station_id: stationId,
+            lead_officer_id: officer.officer_id,
+            category,
+            summary,
+          }, worldDate);
+          responseData.investigation = inv;
+          messageText = "Investigation opened.";
+          break;
+        }
+        case "list_investigations": {
+          const officer = policeService.getOfficerByCharacter(characterId);
+          const officerId = officer?.officer_id;
+          const status = typeof data.status === "string" ? data.status as import("../police/types.js").InvestigationStatusId : undefined;
+          const investigations = policeService.listInvestigations(officerId, status);
+          responseData.investigations = investigations.map((i) => ({
+            investigation_id: i.investigation_id,
+            incident_id: i.incident_id,
+            category: i.category,
+            summary: i.summary,
+            status: i.status,
+            evidence_count: i.evidence_ids.length,
+            opened_at: i.opened_at,
+          }));
+          messageText = `Found ${investigations.length} investigation(s).`;
+          break;
+        }
+        case "submit_evidence": {
+          const incidentId = typeof data.incident_id === "string" ? data.incident_id : "";
+          const investigationId = typeof data.investigation_id === "string" ? data.investigation_id : null;
+          const evidenceCategory = typeof data.category === "string" ? data.category : "";
+          const description = typeof data.description === "string" ? data.description : "";
+          if (!incidentId || !evidenceCategory || !description) throw new Error("police_evidence_fields_required");
+          const officer = policeService.getOfficerByCharacter(characterId);
+          if (!officer) throw new Error("police_not_an_officer");
+          const ev = policeService.submitEvidence({
+            incident_id: incidentId,
+            investigation_id: investigationId,
+            category: evidenceCategory,
+            description,
+            collected_by_officer_id: officer.officer_id,
+          }, worldDate);
+          responseData.evidence = ev;
+          messageText = "Evidence submitted.";
+          break;
+        }
+        case "request_wanted": {
+          const targetCharacterId = typeof data.character_id === "string" ? data.character_id : "";
+          const reason = typeof data.reason === "string" ? data.reason : "";
+          const legalBasis = typeof data.legal_basis === "string" ? data.legal_basis : "";
+          if (!targetCharacterId || !reason || !legalBasis) throw new Error("police_wanted_fields_required");
+          const officer = policeService.getOfficerByCharacter(characterId);
+          if (!officer) throw new Error("police_not_an_officer");
+          const wanted = policeService.requestWantedRecord({
+            character_id: targetCharacterId,
+            reason,
+            legal_basis: legalBasis,
+            issuing_officer_id: officer.officer_id,
+            incident_id: typeof data.incident_id === "string" ? data.incident_id : null,
+            investigation_id: typeof data.investigation_id === "string" ? data.investigation_id : null,
+          }, worldDate);
+          responseData.wanted = wanted;
+          messageText = "Wanted record request submitted.";
+          break;
+        }
+        case "list_wanted": {
+          const records = policeService.listWantedRecords();
+          const activeWanted = records.filter((w) => w.status === "active").map((w) => ({
+            wanted_id: w.wanted_id,
+            character_id: w.character_id,
+            reason: w.reason,
+            legal_basis: w.legal_basis,
+            priority: w.priority,
+            status: w.status,
+            issued_at: w.issued_at,
+          }));
+          responseData.wanted_records = activeWanted;
+          messageText = `Found ${activeWanted.length} active wanted record(s).`;
+          break;
+        }
+        case "execute_arrest": {
+          const targetCharacterId = typeof data.character_id === "string" ? data.character_id : "";
+          const reason = typeof data.reason === "string" ? data.reason : "";
+          const legalBasis = typeof data.legal_basis === "string" ? data.legal_basis : "";
+          if (!targetCharacterId || !reason || !legalBasis) throw new Error("police_arrest_fields_required");
+          const officer = policeService.getOfficerByCharacter(characterId);
+          if (!officer) throw new Error("police_not_an_officer");
+          const arrest = policeService.executeArrest({
+            character_id: targetCharacterId,
+            arresting_officer_id: officer.officer_id,
+            reason,
+            legal_basis: legalBasis,
+            incident_id: typeof data.incident_id === "string" ? data.incident_id : null,
+            wanted_id: typeof data.wanted_id === "string" ? data.wanted_id : null,
+          }, worldDate);
+          responseData.arrest = arrest;
+          messageText = "Arrest executed.";
+          break;
+        }
+        case "file_complaint": {
+          const accusedOfficerId = typeof data.accused_officer_id === "string" ? data.accused_officer_id : "";
+          const category = typeof data.category === "string" ? data.category as MisconductCategoryId : "" as MisconductCategoryId;
+          const description = typeof data.description === "string" ? data.description : "";
+          if (!accusedOfficerId || !category || !description) throw new Error("police_complaint_fields_required");
+          const complaint = policeService.submitMisconductComplaint({
+            complainant_character_id: characterId,
+            accused_officer_id: accusedOfficerId,
+            category,
+            description,
+          }, worldDate);
+          responseData.complaint = complaint;
+          messageText = "Misconduct complaint filed.";
+          break;
+        }
+        case "police_profile": {
+          const profile = policeService.getPoliceProfile(characterId);
+          responseData.profile = profile;
+          messageText = profile.is_officer ? `Officer profile: ${profile.rank_label} (${profile.badge_number})` : "No police record.";
+          break;
+        }
+        case "list_arrests": {
+          const targetId = typeof data.character_id === "string" ? data.character_id : undefined;
+          const arrests = policeService.listArrests(targetId);
+          responseData.arrests = arrests.map((a) => ({
+            arrest_id: a.arrest_id,
+            character_id: a.character_id,
+            reason: a.reason,
+            legal_basis: a.legal_basis,
+            status: a.status,
+            arrested_at: a.arrested_at,
+          }));
+          messageText = `Found ${arrests.length} arrest record(s).`;
+          break;
+        }
+        case "list_complaints": {
+          const officerId = typeof data.officer_id === "string" ? data.officer_id : undefined;
+          const complaints = policeService.listComplaints(officerId);
+          responseData.complaints = complaints.map((c) => ({
+            complaint_id: c.complaint_id,
+            accused_officer_id: c.accused_officer_id,
+            category: c.category,
+            status: c.status,
+            submitted_at: c.submitted_at,
+          }));
+          messageText = `Found ${complaints.length} complaint(s).`;
+          break;
+        }
+        default:
+          throw new Error("police_action_unknown");
+      }
+    } catch (error) {
+      const code = this.errorCode(error);
+      this.send(context, appendOptionalRequestId({
+        type: "police.error",
+        action,
+        code,
+        message: policeErrorMessage(code),
+      }, requestId));
+      return;
+    }
+
+    this.markRequestProcessed(player, requestId);
+    if (!["list_stations", "view_station", "list_officers", "list_incidents", "view_incident", "list_investigations", "list_wanted", "list_arrests", "list_complaints", "police_profile"].includes(action)) this.touchPlayer(player);
+    this.send(context, appendOptionalRequestId({
+      type: "police.result", action, ok: true, message: messageText, data: responseData,
+    }, requestId));
+    this.sendCharacterSnapshot(context);
+    await this.flushDirty();
+  }
+
   private programSeatCount(programId: string): number {
     if (!programId) return 0;
     const occupied = new Set<string>();
@@ -3105,6 +3409,7 @@ export class MultiplayerWorld {
     try { snapshot.government_appointments = getCharacterAppointments(this.store.state, player.character.character_id); } catch { snapshot.government_appointments = []; }
     try { const pp = getPoliticalProfile(this.store.state, player.character.character_id); if (pp) snapshot.political_profile = pp; } catch { /* ignore */ }
     try { const lp = getLegalProfile(this.store.state, player.character.character_id); if (lp) snapshot.legal_profile = lp; } catch { /* ignore */ }
+    try { const policeService = new PoliceService(this.store.state, this.policeCatalog); const pp = policeService.getPoliceProfile(player.character.character_id); if (pp.is_officer) snapshot.police_profile = pp; } catch { /* ignore */ }
     return snapshot;
   }
 

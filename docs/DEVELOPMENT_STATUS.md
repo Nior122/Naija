@@ -4,7 +4,7 @@
 
 ## Current stage and verification gate
 
-**Stage 12 — Laws, Courts and Justice: backend implementation and Node tests pass; justice integrates with Stage 10 (government) for legislative authority and jurisdiction, Stage 11 (elections) for political profiles, and Stage 7 (economy) for fine enforcement; Godot client/runtime verification is blocked.** Stages 0–11 remain preserved on the same `nigeria-main` world. The server still owns one shared online timeline. The earlier Stage 5 Godot limitation is still open; Stages 6–12 do not resolve it.
+**Stage 13 — Police and Security System: backend implementation and Node tests pass; police integrates with Stage 12 (justice) for evidence handoff and case referral, Stage 10 (government) for organizational hierarchy, and Stage 7 (economy) for officer compensation; Godot client/runtime verification is blocked.** Stages 0–12 remain preserved on the same `nigeria-main` world. The server still owns one shared online timeline. The earlier Stage 5 Godot limitation is still open; Stages 6–13 do not resolve it.
 
 Godot 4.7.2 is not installed (`godot: command not found`). Project import, engine type-checking, scenes, rendered careers UI, clicks through work/application flows, offline client journeys, and Godot multiplayer/reconnect/save runtime behavior have not been run. Do not infer client success from Node tests or gdtoolkit.
 
@@ -228,6 +228,78 @@ The Godot client path has not been engine-tested in this workspace. See [`docs/L
 | WebSocket legal_profile, my_cases | WebSocket test | **Passed (Node)** |
 | Schema-v8 to v9 migration preserving all records | Persistence test | **Passed (Node)** |
 | Godot project import, engine typing, client justice UI | Godot unavailable | **Blocked / not run** |
+
+## Stage 13 implementation
+
+### Police organizations and stations
+
+- `game/data/police/catalog.json` configures 4 police levels, 10 ranks (Constable through Commissioner), 14 incident categories, 4 dispatch priorities, 9 misconduct categories, 8 training modules, 9 complaint outcomes, and 4 seed stations.
+- Police organizational hierarchy: national → state → division → station.
+- Seed stations created automatically on world initialization (idempotent).
+
+### Recruitment and officer management
+
+- Recruitment eligibility enforced server-side: minimum age 18, minimum education secondary.
+- Application lifecycle: submitted → under_review → accepted/rejected → training → completed.
+- Officer enrollment with badge number generation.
+- Rank promotion requiring strictly higher rank level.
+
+### Incident reporting and dispatch
+
+- Incident reports with reference numbers (NPF-{CAT}-{YEAR}-{SEQ}).
+- Duplicate detection within configurable time window.
+- Triage: accept (assign to station) or reject with reason.
+- Dispatch workflow: awaiting_dispatch → acknowledged → en_route → at_location → resolved.
+
+### Investigations and evidence
+
+- Investigation opening linked to incidents, with max active investigations per officer (20).
+- Timeline tracking for all investigation actions.
+- Evidence collection with chain-of-custody tracking.
+- Evidence integrity status: unverified → verified → challenged → rejected.
+
+### Wanted records and arrests
+
+- Wanted records require reason and legal basis (not mere accusations).
+- Authorization by higher-ranking officer required before activation.
+- Arrests linked to incidents, investigations, and wanted records.
+- Arrest processing: release or referral to justice system.
+
+### Misconduct accountability
+
+- Complaints filed against officers with 9 misconduct categories.
+- Resolution outcomes: no_finding through legal_referral (9 options).
+- Officer status changes: suspension or dismissal on complaint resolution.
+
+### Schema and integration
+
+Schema version advanced to 10 with 11 new persistent maps. `services/world-api/src/police/` contains typed catalogue, service, and exports. `services/world-api/src/multiplayer/world-engine.ts` integrates `police.action` commands with 18 actions and police profiles in character snapshots.
+
+See [`docs/POLICE_AND_SECURITY_SYSTEM_PLAN.md`](POLICE_AND_SECURITY_SYSTEM_PLAN.md) for full details.
+
+## Stage 13 acceptance coverage
+
+| Area | Evidence | Result |
+|---|---|---|
+| Catalogue structure, ranks, categories | `services/world-api/test/police.test.mjs` | **Passed (Node)** |
+| Empty maps and initialization | Police service tests | **Passed (Node)** |
+| Station seeding and idempotency | Police service tests | **Passed (Node)** |
+| Recruitment eligibility (age, education) | Police service tests | **Passed (Node)** |
+| Officer enrollment and badge generation | Police service tests | **Passed (Node)** |
+| Rank promotion validation | Police service tests | **Passed (Node)** |
+| Incident reporting and reference numbers | Police service tests | **Passed (Node)** |
+| Incident triage (accept/reject) | Police service tests | **Passed (Node)** |
+| Investigation lifecycle | Police service tests | **Passed (Node)** |
+| Evidence chain-of-custody | Police service tests | **Passed (Node)** |
+| Wanted record authorization hierarchy | Police service tests | **Passed (Node)** |
+| Arrest with/without wanted records | Police service tests | **Passed (Node)** |
+| Misconduct complaints and resolution | Police service tests | **Passed (Node)** |
+| Police profile snapshots | Police service tests | **Passed (Node)** |
+| Audit trail creation | Police service tests | **Passed (Node)** |
+| WebSocket list_stations, submit_incident | WebSocket test | **Passed (Node)** |
+| WebSocket police_profile, error handling | WebSocket test | **Passed (Node)** |
+| Schema-v9 to v10 migration with police maps | Persistence test | **Passed (Node)** |
+| Godot project import, engine typing, client police UI | Godot unavailable | **Blocked / not run** |
 
 ## Stage 11 acceptance coverage
 

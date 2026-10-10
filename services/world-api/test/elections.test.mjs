@@ -51,7 +51,7 @@ afterEach(async () => {
 function makeWorld() {
   return {
     state: {
-      schemaVersion: 9,
+      schemaVersion: 10,
       worldId: "nigeria-main",
       worldClock: { day: 1, minute_of_day: 0, millisecond_of_minute: 0, updated_at: new Date(0).toISOString(), world_date: { year: 2025, month: 1, day: 1 } },
       players: {},
@@ -518,14 +518,14 @@ test("election my_history works through WebSocket", async () => {
 
 // ─── Schema migration ─────────────────────────────────────────────
 
-test("schema version 8 state migrates to version 9 with empty justice maps", async () => {
+test("schema version 8 state migrates to version 10 with empty justice and police maps", async () => {
   const { serverPort, stateFile, server } = await startServer();
   try {
     const { peer } = await createOnlinePeer(serverPort);
     await delay(500);
     await peer.close();
     const saved = JSON.parse(await readFile(stateFile, "utf8"));
-    assert.equal(saved.schemaVersion, 9);
+    assert.equal(saved.schemaVersion, 10);
     saved.schemaVersion = 8;
   delete saved.laws; delete saved.lawProvisions; delete saved.legislativeProposals;
   delete saved.courts; delete saved.legalProfessionals; delete saved.legalRepresentations;
@@ -533,12 +533,17 @@ test("schema version 8 state migrates to version 9 with empty justice maps", asy
   delete saved.witnesses; delete saved.hearings; delete saved.judgments;
   delete saved.sentences; delete saved.fines; delete saved.settlements;
   delete saved.appeals; delete saved.legalAudits;
+  delete saved.policeUnits; delete saved.policeOfficers; delete saved.recruitmentApplications;
+  delete saved.policeIncidents; delete saved.dispatches; delete saved.investigations;
+  delete saved.policeEvidence; delete saved.wantedRecords; delete saved.arrestRecords;
+  delete saved.misconductComplaints; delete saved.policeAudits;
     await writeFile(stateFile, JSON.stringify(saved), "utf8");
     const migrated = new WorldStore(stateFile, Date.UTC(2025, 0, 2));
-    assert.equal(migrated.state.schemaVersion, 9);
+    assert.equal(migrated.state.schemaVersion, 10);
     assert.ok(typeof migrated.state.laws === "object");
     assert.ok(typeof migrated.state.courts === "object");
     assert.ok(typeof migrated.state.cases === "object");
+    assert.ok(typeof migrated.state.policeUnits === "object");
   } finally { server.close(); }
 });
 
