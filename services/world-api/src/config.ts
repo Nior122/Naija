@@ -95,6 +95,11 @@ export function parseWorldStateFormat(env: NodeJS.ProcessEnv): WorldFileFormat {
 
 export function readApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
   const environment = readRuntimeEnvironment(env, { required: true }) as RuntimeEnvironment;
+  // Production persists to PostgreSQL only. The startup check in persistence/open.ts enforces the same rule; this
+  // rejects the combination at configuration time as well, so the reader and the startup agree.
+  if (environment === "production" && env.PERSISTENCE_BACKEND?.trim().toLowerCase() === "file") {
+    throw new Error("PERSISTENCE_BACKEND=file is not allowed when NAIJA_ENV=production. Production requires PostgreSQL.");
+  }
   const metricsAccess = parseMetricsAccess(env, environment);
   const rawPort = env.PORT ?? "3000";
   const port = Number(rawPort);

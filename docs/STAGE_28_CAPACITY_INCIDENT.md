@@ -88,3 +88,30 @@ This changes notifications only. It does not change what is stored or how saves 
    This needs a reviewed migration plan for any existing oversized row, since no automatic deletion is allowed.
 4. Recovery notice (G3): design a "saved again" signal, or document that clients must reconnect to re-learn save state.
 5. Keep the 629 investigation open. Locate the original world (if any) and its logs before drawing any conclusion.
+
+## 8. Test-run integrity anomalies (UNEXPLAINED, recorded this phase)
+
+A green full run has not always reported every test. Each case below exited 0 with no `not ok`, and the count fell below the expected number:
+
+| Run | Expected | Reported | Missing leaf results |
+|---|---|---|---|
+| Default `npm test`, first run of this phase (`/tmp/s28/final-default.log`) | 948 | 946 | 2 from `test/justice-filing.test.mjs` |
+| DB+TLS `npm test`, first run of this phase (`/tmp/s28/final-dbtls.log`) | 971 | 967 | 7 from `test/social.test.mjs` (`Hashtag System` and `Report System`) |
+| Earlier default r5 (before this phase) | — | — | all `justice-filing` results |
+
+Reruns of the same code were complete: default 948/948 (`final-default-2.log`), DB+TLS 971/971 (`final-dbtls-2.log`), `social.test.mjs` alone 32/32, `justice-filing.test.mjs` alone 37/37. The cause is **unknown**. The full suite runs `node --test --test-force-exit test/*.test.mjs`. Without `--test-force-exit` the suite does not finish. It hung until the 300 s timeout (`default-noforce.log`, exit 124), so the flag is needed, but it is not shown to be the cause of the truncation.
+
+Consequence: exit 0 from the full suite does not prove every test ran. Use per-file counts, or a runner that fails when a file reports fewer results than expected, before relying on a full-suite pass. Suggested next step: capture the TAP stream per file with an explicit expected count, and check whether the omission depends on timing.
+
+## 9. Conflict-branch retry review (`4dabe0f`, UNVERIFIED)
+
+Review of the conflict branch in `commitIdentity`: when the compensating save succeeds, the code is correct. When the conflict branch returns `identity_creation_conflict` and tells the player to try again, two things are not yet verified:
+
+- The conflict branch returns before `playerByCreationKeyHash` and `playerByTokenHash` are set (around `world-engine.ts` lines 1134–1135). A retry with the same creation key may therefore create a second identity.
+- The first identity can exist only in the saved file, and its token is never delivered.
+
+Expected effect, from reading the code and not from a test: live state does not contain the first identity, so the next successful save should remove it, and the budget may count it once more than it should. Nothing here was reproduced. Reproduction needs a forced merge conflict, a failing compensating flush (`creationFaultHook`), and a retry. Until then this is a risk to report, not a confirmed defect, and no fix has been made.
+
+## 10. Config change in this phase
+
+`readApiConfig` now rejects `PERSISTENCE_BACKEND=file` when `NAIJA_ENV=production`, case-insensitively, with the same message as the startup check. It was previously accepted at config time and refused only at startup. Test: `test/production-persistence-config.test.mjs` (3/3). The pre-fix config fails the rejection case (2 pass, 1 fail), so the test catches the gap.

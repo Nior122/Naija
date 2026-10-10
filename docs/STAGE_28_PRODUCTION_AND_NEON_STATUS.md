@@ -40,18 +40,17 @@ The config reader was run with `NAIJA_ENV=production` and placeholder values. Th
 | Production, `NAIJA_METRICS_ACCESS` not set | **Rejected**: "NAIJA_METRICS_ACCESS is required in production: token, ingress, or disabled." |
 | Production, `token` mode, token of 5 characters | **Rejected**: token must be at least 32 characters with no whitespace. |
 | Production, `ingress` mode | **Accepted**. Metrics access `ingress`. Identity budget disabled. Trusted proxies 0. |
-| Production, `PERSISTENCE_BACKEND=file` | `readApiConfig` **accepts** it (see note). |
+| Production, `PERSISTENCE_BACKEND=file` | **Rejected** by `readApiConfig` (added in this phase; `test/production-persistence-config.test.mjs`, 3/3). |
 | Same, through the real startup (`node dist/index.js`) | **Exit 1**: "PERSISTENCE_BACKEND=file is not allowed when NAIJA_ENV=production. Production requires PostgreSQL." No `data/` directory was created. |
 
-**Note (low risk, recorded for review).** The file-backend refusal in production is enforced at startup, not in the
-config reader. Startup refuses before listening, so the server does not run in that configuration. But the config
-reader accepts it. A reviewer may want the same rule in both places.
+**Note.** Before this phase, the file-backend refusal in production was enforced only at startup, and the config reader
+accepted the combination. The config reader now rejects it too. Startup still enforces the same rule.
 
 ### 1.4 Item status
 
 | Check | Status | Evidence |
 |---|---|---|
-| Production requires PostgreSQL (fail-closed) | PASS (local, startup) | Startup exit 1 with file backend. |
+| Production requires PostgreSQL (fail-closed) | PASS (local, config reader and startup) | Config rejects a file backend (3/3 tests). Startup exit 1 with file backend. |
 | Production requires a metrics setting | PASS (local, config reader) | Rejected without a setting. |
 | Metrics token rules | PASS (local, config reader) | Short token rejected. Tokens are not printed by these checks. |
 | Ingress blocks `/metrics` from the public internet | **BLOCKED** | No ingress configuration in the repository. |
