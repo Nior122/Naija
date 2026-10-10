@@ -13,7 +13,7 @@ async function main(): Promise<void> {
     process.exitCode = 1;
     return;
   }
-  const { port, dataFile, websocketPath, allowedOrigins, gameMinuteMs, environment, metricsAccess } = config;
+  const { port, dataFile, websocketPath, allowedOrigins, gameMinuteMs, environment, metricsAccess, identityBudget } = config;
   monitoring.configureWorldStateWarnings(config.worldStateWarnPercent);
 
   // A configured PostgreSQL backend that cannot be opened stops the process here. There is no file fallback.
@@ -33,6 +33,7 @@ async function main(): Promise<void> {
     worldStore: persistence.store,
     persistenceHealth: () => persistence.health(),
     metricsAccess,
+    ...(identityBudget === undefined ? {} : { identityBudget }),
     ...(gameMinuteMs === undefined ? {} : { gameMinuteMs }),
   });
 
@@ -41,6 +42,13 @@ async function main(): Promise<void> {
     console.info(`Environment: ${environment}`);
     console.info(`Multiplayer WebSocket path: ${websocketPath}`);
     console.info(`Persistence backend: ${persistence.backend}`);
+    if (identityBudget === undefined) {
+      console.info("Identity creation budget: disabled (NAIJA_IDENTITY_BUDGET is not 'enabled').");
+    } else {
+      console.info(
+        `Identity creation budget: enabled, ${identityBudget.perIpLimit} new identities per IP and ${identityBudget.globalLimit} in total per ${identityBudget.windowMs / 60_000} minutes.`,
+      );
+    }
     if (metricsAccess.mode === "ingress") {
       console.warn(
         "[Metrics] NAIJA_METRICS_ACCESS=ingress: the application does not check access to /metrics. Confirm that the ingress blocks /metrics and /metrics/prometheus from the public internet.",

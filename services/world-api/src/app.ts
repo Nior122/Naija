@@ -2,7 +2,7 @@ import { createServer, type Server, type ServerResponse } from "node:http";
 import { performance } from "node:perf_hooks";
 import { WebSocket, WebSocketServer } from "ws";
 import { fileURLToPath } from "node:url";
-import { MultiplayerWorld } from "./multiplayer/world-engine.js";
+import { MultiplayerWorld, type IdentityBudgetOptions } from "./multiplayer/world-engine.js";
 import { WorldStore, type WorldStoreLike } from "./multiplayer/persistence.js";
 import type { ServerOptions } from "./multiplayer/types.js";
 import type { DeathCauseCategory, InheritanceEventRecord, LifeEventRecord } from "./life/types.js";
@@ -27,6 +27,8 @@ export interface ApiServer extends Server {
 
 export interface ApiServerOptions extends ServerOptions {
   readonly allowedOrigins?: readonly string[];
+  /** R4 identity-creation budget. Absent means no budget (the production entry point sets it from the environment). */
+  readonly identityBudget?: IdentityBudgetOptions;
   readonly websocketPath?: string;
   /** Pre-opened world store (for example PostgreSQL). Defaults to the JSON file store at stateFile. */
   readonly worldStore?: WorldStoreLike;

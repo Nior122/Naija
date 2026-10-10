@@ -375,7 +375,46 @@ interface WindowCounter {
   count: number;
 }
 
+/**
+ * R4 identity-creation budget: new identities (not recoveries) allowed in a rolling window.
+ * Limits are enforced inside the persistence queue, so a check and its commit cannot interleave.
+ * The global count is derived from saved identities (createdAt), so it survives a restart. The per-IP count
+ * is held in memory and resets on restart. Operators set these through NAIJA_IDENTITY_* (see docs).
+ */
+export interface IdentityBudgetOptions {
+  /** New identities allowed from one client address in the window. */
+  readonly perIpLimit: number;
+  /** New identities allowed from all clients together in the window. */
+  readonly globalLimit: number;
+  /** Length of the rolling window in milliseconds. */
+  readonly windowMs: number;
+  /** Most client addresses tracked at once. While full, unknown addresses are refused (fail closed) until entries expire. */
+  readonly maxTrackedAddresses?: number;
+}
+
+const DEFAULT_MAX_TRACKED_ADDRESSES = 10_000;
+const IDENTITY_LIMITED_CODE = "identity_creation_limited";
+
+function validatedIdentityBudget(budget: IdentityBudgetOptions): IdentityBudgetOptions & { readonly maxTrackedAddresses: number } {
+  const maxTrackedAddresses = budget.maxTrackedAddresses ?? DEFAULT_MAX_TRACKED_ADDRESSES;
+  const values = [budget.perIpLimit, budget.globalLimit, budget.windowMs, maxTrackedAddresses];
+  if (!values.every((value) => Number.isSafeInteger(value) && value >= 1)) {
+    throw new Error("identityBudget values must be positive integers.");
+  }
+  return { ...budget, maxTrackedAddresses };
+}
+
+/** Milliseconds until `limit` entries in the window can be admitted, or null when there is room now. */
+function waitForIdentitySlot(times: readonly number[], limit: number, windowMs: number, now: number): number | null {
+  const live = times.filter((time) => now - time < windowMs).sort((a, b) => a - b);
+  if (live.length < limit) return null;
+  // The entry at this index must expire before the count drops below the limit.
+  const freeing = live[live.length - limit] ?? now;
+  return Math.max(1, freeing + windowMs - now);
+}
+
 export interface WorldEngineOptions {
+  readonly identityBudget?: IdentityBudgetOptions;
   readonly tickIntervalMs?: number;
   readonly gameMinuteMs?: number;
   readonly broadcastIntervalMs?: number;
@@ -538,6 +577,9 @@ export class MultiplayerWorld {
   private readonly broadcastIntervalMs: number;
   private readonly maxConnections: number;
   private readonly connectionAttemptsPerMinute: number;
+  private readonly identityBudget: (IdentityBudgetOptions & { readonly maxTrackedAddresses: number }) | null;
+  /** Times of successful new identities, by client address. Process-local (documented). */
+  private readonly identityTimesByAddress = new Map<string, number[]>();
   private readonly creationFaultHook: ((point: string) => void) | undefined;
   private readonly geographyRegion: GeographicRegion;
   private readonly educationCatalog: EducationCatalog;
@@ -570,6 +612,7 @@ export class MultiplayerWorld {
     this.broadcastIntervalMs = Math.max(50, options.broadcastIntervalMs ?? 100);
     this.maxConnections = Math.max(1, options.maxConnections ?? 64);
     this.connectionAttemptsPerMinute = Math.max(1, options.connectionAttemptsPerMinute ?? 30);
+    this.identityBudget = options.identityBudget ? validatedIdentityBudget(options.identityBudget) : null;
     this.creationFaultHook = options.creationFaultHook;
     this.geographyRegion = loadAkureSouthRegion();
     this.educationCatalog = loadEducationCatalog();
@@ -741,6 +784,45 @@ export class MultiplayerWorld {
     const run = this.persistenceQueue.then(operation, operation);
     this.persistenceQueue = run.then(() => undefined, () => undefined);
     return run;
+  }
+
+  /** R4: null when a new identity may be created now; otherwise the wait in ms. Runs inside the persistence queue. */
+  private identityBudgetWaitMs(address: string, now: number): number | null {
+    const budget = this.identityBudget;
+    if (budget === null) return null;
+    // Drop expired address entries, then refuse an unknown address while the table is full (fail closed).
+    for (const [key, times] of this.identityTimesByAddress) {
+      const live = times.filter((time) => now - time < budget.windowMs);
+      if (live.length === 0) this.identityTimesByAddress.delete(key);
+      else if (live.length !== times.length) this.identityTimesByAddress.set(key, live);
+    }
+    if (!this.identityTimesByAddress.has(address) && this.identityTimesByAddress.size >= budget.maxTrackedAddresses) {
+      let earliest = Number.POSITIVE_INFINITY;
+      for (const times of this.identityTimesByAddress.values()) earliest = Math.min(earliest, Math.min(...times));
+      return Math.max(1, earliest + budget.windowMs - now);
+    }
+    const perIp = waitForIdentitySlot(this.identityTimesByAddress.get(address) ?? [], budget.perIpLimit, budget.windowMs, now);
+    if (perIp !== null) return perIp;
+    const created: number[] = [];
+    for (const player of Object.values(this.store.state.players)) {
+      const time = Date.parse(player.createdAt);
+      if (Number.isFinite(time)) created.push(time);
+    }
+    return waitForIdentitySlot(created, budget.globalLimit, budget.windowMs, now);
+  }
+
+  private recordIdentityCreated(address: string, now: number): void {
+    const budget = this.identityBudget;
+    if (budget === null) return;
+    const times = (this.identityTimesByAddress.get(address) ?? []).filter((time) => now - time < budget.windowMs);
+    times.push(now);
+    this.identityTimesByAddress.set(address, times);
+  }
+
+  /** Says how long to wait without naming the limit that applied, and without any address or player data. */
+  private identityLimitMessage(waitMs: number): string {
+    const minutes = Math.max(1, Math.ceil(waitMs / 60_000));
+    return `Too many new identities were created recently. Try again in about ${minutes} minute${minutes === 1 ? "" : "s"}.`;
   }
 
   private allowConnection(address: string, now: number): boolean {
@@ -915,6 +997,13 @@ export class MultiplayerWorld {
       await this.recoverIdentity(context, existingPlayerId, existingPlayer, requestId);
       return;
     }
+    // R4: a recovery above is not a new identity and never uses the budget. A refusal changes nothing.
+    const budgetNow = this.now();
+    const budgetWaitMs = this.identityBudgetWaitMs(context.remoteAddress, budgetNow);
+    if (budgetWaitMs !== null) {
+      this.sendError(context, IDENTITY_LIMITED_CODE, this.identityLimitMessage(budgetWaitMs), requestId);
+      return;
+    }
     if (Object.keys(this.store.state.players).length >= MAX_PERSISTED_PLAYERS) {
       this.sendError(context, "world_capacity_reached", "The prototype player record limit has been reached.", requestId);
       return;
@@ -1000,6 +1089,7 @@ export class MultiplayerWorld {
       this.sendError(context, "identity_creation_conflict", "The world changed while the identity was being created. Try again.", requestId);
       return;
     }
+    this.recordIdentityCreated(context.remoteAddress, budgetNow);
     this.playerByTokenHash.set(tokenHash, playerId);
     this.playerByCreationKeyHash.set(creationKeyHash, playerId);
     this.lastPersistAt = this.now();

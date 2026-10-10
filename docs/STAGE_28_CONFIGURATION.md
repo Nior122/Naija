@@ -27,6 +27,10 @@ options stay off unless the environment is named.
 | `PERSISTENCE_BACKEND` | `postgres` or unset. **`file` is refused** | `postgres` or `file`. Unset with `DATABASE_URL` → `postgres`. Unset without it → **refused** | as development |
 | `DATA_FILE` | not used for persistence | file mode only; default `data/world-state.json` | file mode only; **must be a temporary file** (the live file is refused) |
 | `WORLD_STATE_WARN_PERCENT` | optional: strictly ascending integers from 1 to 99, for example `75,90` (default `75,90`). Invalid values stop startup and are not echoed | as production | as production |
+| `NAIJA_IDENTITY_BUDGET` | optional: `enabled` or `disabled` (default `disabled`). **Not enabled in production until reviewed** (R4). Other values stop startup and are not echoed | `disabled` unless set | `disabled` unless set |
+| `NAIJA_IDENTITY_LIMIT_PER_IP` | optional: integer 1–1000 (default `10`). Applies only when the budget is enabled. Validated always | as above | as above |
+| `NAIJA_IDENTITY_LIMIT_GLOBAL` | optional: integer 1–100000 (default `100`). Applies only when the budget is enabled. Validated always | as above | as above |
+| `NAIJA_IDENTITY_WINDOW_MINUTES` | optional: integer 1–1440 (default `60`). Rolling window. Applies only when enabled. Validated always | as above | as above |
 | `DB_SSL` | `true` or unset. **`false` is refused** | `false` allowed to a **loopback** host only | as development |
 | `DB_SSL_REJECT_UNAUTHORIZED` | `true` or unset. **`false` is refused** | `false` allowed (private test CA) | `false` allowed |
 | `NAIJA_METRICS_ACCESS` | **required**: `token`, `ingress`, or `disabled`. `open` is refused | `token`, `ingress`, `disabled`, or `open` (default open) | as development |

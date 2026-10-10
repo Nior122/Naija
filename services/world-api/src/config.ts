@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 import { parseMetricsAccess, type MetricsAccess } from "./metrics-access.js";
 import { readRuntimeEnvironment, type RuntimeEnvironment } from "./runtime-environment.js";
+import type { IdentityBudgetOptions } from "./multiplayer/world-engine.js";
 
 // The API workspace lives at services/world-api; keep local-only config at the repository root.
 const localEnvFile = new URL("../../../.env", import.meta.url);
@@ -23,6 +24,37 @@ export interface ApiConfig {
   readonly metricsAccess: MetricsAccess;
   /** Usage percentages of the world-state size limit that log a warning (strictly ascending). */
   readonly worldStateWarnPercent: readonly number[];
+  /** R4 identity-creation budget. Undefined unless NAIJA_IDENTITY_BUDGET=enabled. */
+  readonly identityBudget: IdentityBudgetOptions | undefined;
+}
+
+const IDENTITY_BUDGET_DEFAULTS = { perIp: 10, global: 100, windowMinutes: 60 } as const;
+
+function parseBoundedInteger(raw: string | undefined, fallback: number, min: number, max: number, name: string): number {
+  if (raw === undefined || raw.trim() === "") return fallback;
+  const value = /^\d{1,9}$/.test(raw.trim()) ? Number(raw.trim()) : Number.NaN;
+  if (!Number.isInteger(value) || value < min || value > max) {
+    // The value is not echoed back, so a secret or a typo is not written to logs.
+    throw new Error(`${name} must be an integer from ${min} to ${max}.`);
+  }
+  return value;
+}
+
+/**
+ * R4 identity-creation budget. NAIJA_IDENTITY_BUDGET: "enabled" or "disabled" (default disabled, so nothing is enforced
+ * until an operator turns it on). When enabled, NAIJA_IDENTITY_LIMIT_PER_IP (default 10), NAIJA_IDENTITY_LIMIT_GLOBAL
+ * (default 100) and NAIJA_IDENTITY_WINDOW_MINUTES (default 60) apply. Limits are validated even when disabled.
+ */
+export function parseIdentityBudget(env: NodeJS.ProcessEnv): IdentityBudgetOptions | undefined {
+  const perIpLimit = parseBoundedInteger(env.NAIJA_IDENTITY_LIMIT_PER_IP, IDENTITY_BUDGET_DEFAULTS.perIp, 1, 1000, "NAIJA_IDENTITY_LIMIT_PER_IP");
+  const globalLimit = parseBoundedInteger(env.NAIJA_IDENTITY_LIMIT_GLOBAL, IDENTITY_BUDGET_DEFAULTS.global, 1, 100_000, "NAIJA_IDENTITY_LIMIT_GLOBAL");
+  const windowMinutes = parseBoundedInteger(env.NAIJA_IDENTITY_WINDOW_MINUTES, IDENTITY_BUDGET_DEFAULTS.windowMinutes, 1, 1440, "NAIJA_IDENTITY_WINDOW_MINUTES");
+  const mode = (env.NAIJA_IDENTITY_BUDGET ?? "disabled").trim();
+  if (mode !== "enabled" && mode !== "disabled") {
+    throw new Error("NAIJA_IDENTITY_BUDGET must be 'enabled' or 'disabled'.");
+  }
+  if (mode === "disabled") return undefined;
+  return { perIpLimit, globalLimit, windowMs: windowMinutes * 60_000 };
 }
 
 /**
@@ -88,5 +120,6 @@ export function readApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     environment,
     metricsAccess,
     worldStateWarnPercent: parseWorldStateWarnPercent(env),
+    identityBudget: parseIdentityBudget(env),
   };
 }
