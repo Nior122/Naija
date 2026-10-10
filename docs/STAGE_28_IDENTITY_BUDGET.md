@@ -113,7 +113,7 @@ Each test runs against a temporary world file and never touches `data/world-stat
 
 The equivalence was confirmed by reading the walk, not assumed. The header is inert for an untrusted socket by construction.
 
-Earlier results (before the proxy wiring): 8 of 13 engine tests failed when per-IP recording was removed. The trusted-proxy tests were run against the pre-change code: the proxy-trust test failed (the header was not used), and the refusal and metrics tests failed (no time field, no counters).
+Earlier results (before the proxy wiring): 8 of 13 engine tests failed when per-IP recording was removed. The trusted-proxy budget tests were run against the pre-wiring code: 2 of 7 passed (the two that require the header to be ignored: a spoofed header without a trusted proxy, and an untrusted socket that claims a trusted address). The other 5 failed (the forwarded client was not used, and the refusal and metrics tests found no retry time or counters).
 
 ## 5. Privacy and data
 
