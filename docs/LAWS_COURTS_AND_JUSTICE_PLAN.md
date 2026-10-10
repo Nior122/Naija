@@ -135,6 +135,16 @@ A court accepts a case when its `permitted_categories` lists the case's `law_cat
 
 Secondary commentary on the Constitution of Nigeria 1999 (section 251, Federal High Court) describes exclusive federal jurisdiction over revenue of the Federal Government, taxation of companies and persons subject to federal taxation, banking matters, and challenges to executive or administrative action of the Federal Government or its agencies. State high courts have general civil jurisdiction under section 272. This is why `financial` belongs to the federal high court in the seed configuration, and why an administrative penalty dispute is not a state-court matter when a federal agency is involved. The game does not model these distinctions yet.
 
+### Ondo state courts (PROVISIONAL gameplay assumptions; not legally verified)
+
+Added after the Stage 28 review (decision F1). They are labelled provisional in `game/data/justice/catalog.json` (top-level `notice`) and in `docs/JUSTICE_COURT_ELIGIBILITY_DESIGN.md`.
+
+- **What was added:** `court:magistrate-ondo`, `court:state-high-ondo`, and `court:customary-ondo`. Each has `applicable_jurisdiction_id: ng:state:on` and copies the permitted categories and level of its FCT counterpart (`court:magistrate-fct`, `court:state-high-fct`, `court:customary-fct`).
+- **What is provisional:** the choice of categories and the level of each court. The mirror of the FCT courts is a gameplay assumption. It has not been checked against Ondo State law or court rules, and it has not been checked by a lawyer.
+- **What did not change:** the federal courts, and the FCT courts (not rewritten). No stored court in any saved world is overwritten. Seeding adds only missing court IDs during character creation.
+- **Jurisdiction checks:** unchanged. An FCT-located filer is still rejected at the Ondo courts, and an Ondo-located filer is still rejected at the FCT state courts. An unlocated filer is still accepted at a state court as `unverified_no_location`, and is never treated as proof of eligibility.
+- **Open:** legal-model review of the Ondo categories and levels. This review remains open. Until it is complete, nothing in the game may describe these courts as legally verified.
+
 ### Open decisions
 
 1. Whether `administration` should be listed by `federal-high` (its constitutional basis above). This would not change acceptance today, because regulatory penalties are also civil.

@@ -26,6 +26,7 @@ options stay off unless the environment is named.
 | `DATABASE_URL` | **required** (`postgres://` or `postgresql://`) | optional | optional; live tests need it |
 | `PERSISTENCE_BACKEND` | `postgres` or unset. **`file` is refused** | `postgres` or `file`. Unset with `DATABASE_URL` → `postgres`. Unset without it → **refused** | as development |
 | `DATA_FILE` | not used for persistence | file mode only; default `data/world-state.json` | file mode only; **must be a temporary file** (the live file is refused) |
+| `WORLD_STATE_WARN_PERCENT` | optional: strictly ascending integers from 1 to 99, for example `75,90` (default `75,90`). Invalid values stop startup and are not echoed | as production | as production |
 | `DB_SSL` | `true` or unset. **`false` is refused** | `false` allowed to a **loopback** host only | as development |
 | `DB_SSL_REJECT_UNAUTHORIZED` | `true` or unset. **`false` is refused** | `false` allowed (private test CA) | `false` allowed |
 | `NAIJA_METRICS_ACCESS` | **required**: `token`, `ingress`, or `disabled`. `open` is refused | `token`, `ingress`, `disabled`, or `open` (default open) | as development |
@@ -35,6 +36,8 @@ options stay off unless the environment is named.
 
 Any other variable named in `.env.example` keeps its existing meaning. Unknown `NAIJA_ENV`, `PERSISTENCE_BACKEND`, or
 `NAIJA_METRICS_ACCESS` values are refused, not defaulted.
+
+Capacity: each successful save is measured against the 16 MiB world-state limit. Crossing a warning percentage logs one line per level. A save over the limit is refused with `world_capacity_reached`, and the previous file is kept. See `docs/STAGE_28_CAPACITY.md`. The metrics JSON reports `world.state_bytes_last_saved`, `world.state_limit_bytes`, `world.state_usage_ratio`, and `world.persisted_players`. The Prometheus output has the matching `naija_world_api_world_state_bytes`, `naija_world_api_world_state_limit_bytes`, `naija_world_api_world_state_usage_ratio`, and `naija_world_api_persisted_players` gauges.
 
 ## 3. Persistence rules (fail closed)
 

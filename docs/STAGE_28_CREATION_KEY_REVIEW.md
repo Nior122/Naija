@@ -102,3 +102,20 @@ Not covered: old-token rejection after rotation (E1); offline takeover; second s
 - The 22 KB per-identity figure is measured on this code and seed data, and will change with content.
 - "Impact on existing players after the cap" (E8) was not tested.
 - This review does not claim the system is secure or ready for launch.
+
+## 9. Status update (this phase, after the review)
+
+| Item | Status | Where |
+|---|---|---|
+| R1 (same-key concurrency) | **Implemented** for one server process, with separate-socket tests. Not a general exactly-once guarantee. | `docs/STAGE_28_CREATION_ATOMICITY.md` |
+| R2 (rollback of a failed creation) | **Implemented** for the tested save paths (file and PostgreSQL), with injected failures at ten points and a lost-response test. | `docs/STAGE_28_CREATION_ATOMICITY.md` |
+| R3 (count invalid keys) | Not implemented. | — |
+| R4 (identity creation budget) | Not implemented. Needs an operator decision. | — |
+| R5 (state cap policy) | **Diagnosed and partly implemented**: refusal before write, metrics, warning thresholds. The 16 MiB cap is **not** raised. No pruning. | `docs/STAGE_28_CAPACITY.md` |
+| R6 (key-hash hardening) | Not implemented. | — |
+| R7 (rotation and revocation) | **Design and test plan only.** | `docs/STAGE_28_R7_CREDENTIAL_LIFECYCLE_DESIGN.md` |
+| R8 (stop key-only recovery) | **Design only.** Key-only recovery is still in place. | `docs/STAGE_28_R8_RECOVERY_DESIGN.md` |
+| R9 (client validation) | Not implemented (client change). | — |
+| R10 (require TLS in production) | Not implemented in this phase. | — |
+
+The "Current" statements in sections 1–4 describe the code before this phase. Where they conflict with this section, this section is the later record.

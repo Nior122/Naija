@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "world_id": "nigeria-main",
-  "notice": "Stage 12 — Laws, Courts and Justice System. Static catalogue of court types, legal categories, case statuses, legal professional roles, law statuses, and configurable rules. All values are game-design parameters.",
+  "notice": "Stage 12 — Laws, Courts and Justice System. Static catalogue of court types, legal categories, case statuses, legal professional roles, law statuses, and configurable rules. All values are game-design parameters. The Ondo state courts (court:magistrate-ondo, court:state-high-ondo, court:customary-ondo) and their permitted categories are PROVISIONAL gameplay assumptions that mirror the FCT courts. They are not legally verified and await legal-model review. The federal and FCT courts are unchanged.",
   "law_categories": [
     { "id": "constitutional", "label": "Constitutional and Foundational" },
     { "id": "criminal", "label": "Criminal Law" },
