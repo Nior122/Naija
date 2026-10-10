@@ -9,10 +9,15 @@ import { AccountRepository, CharacterRepository, accountRepository, characterRep
  * Tests database connection, schema, migrations, and repositories
  * 
  * NOTE: These tests require a PostgreSQL database to be available.
- * If DATABASE_URL is not set, tests will be skipped.
+ * Live tests run only when DATABASE_URL is set AND NAIJA_ALLOW_DB_TESTS=true.
  */
 
-const hasDatabase = !!process.env.DATABASE_URL;
+// Live tests write rows and apply additive migrations, so they require BOTH a URL and an explicit opt-in.
+// Point DATABASE_URL only at a disposable development or test database, never at data you need.
+const hasDatabase = !!process.env.DATABASE_URL && process.env.NAIJA_ALLOW_DB_TESTS === "true";
+if (process.env.DATABASE_URL && !hasDatabase) {
+  console.warn("[db-tests] DATABASE_URL is set but NAIJA_ALLOW_DB_TESTS is not set to the literal string true; live database tests are skipped.");
+}
 
 test("Database: module imports work without database", async () => {
   assert.ok(DatabaseConnection);
@@ -31,7 +36,7 @@ test("Database: loadDatabaseConfigFromEnv returns config", () => {
   assert.ok(typeof config === "object");
 });
 
-test.skip(!hasDatabase, "Database: connection test", async () => {
+test("Database: connection test", { skip: !hasDatabase }, async () => {
   const config = loadDatabaseConfigFromEnv();
   const db = new DatabaseConnection(config);
   
@@ -50,7 +55,7 @@ test.skip(!hasDatabase, "Database: connection test", async () => {
   }
 });
 
-test.skip(!hasDatabase, "Database: migration initialization", async () => {
+test("Database: migration initialization", { skip: !hasDatabase }, async () => {
   const config = loadDatabaseConfigFromEnv();
   const db = new DatabaseConnection(config);
   
@@ -67,7 +72,7 @@ test.skip(!hasDatabase, "Database: migration initialization", async () => {
   }
 });
 
-test.skip(!hasDatabase, "Database: account repository create and find", async () => {
+test("Database: account repository create and find", { skip: !hasDatabase }, async () => {
   const config = loadDatabaseConfigFromEnv();
   const db = new DatabaseConnection(config);
   
@@ -106,7 +111,7 @@ test.skip(!hasDatabase, "Database: account repository create and find", async ()
   }
 });
 
-test.skip(!hasDatabase, "Database: character repository create and find", async () => {
+test("Database: character repository create and find", { skip: !hasDatabase }, async () => {
   const config = loadDatabaseConfigFromEnv();
   const db = new DatabaseConnection(config);
   
@@ -160,7 +165,7 @@ test.skip(!hasDatabase, "Database: character repository create and find", async 
   }
 });
 
-test.skip(!hasDatabase, "Database: character money update with transaction", async () => {
+test("Database: character money update with transaction", { skip: !hasDatabase }, async () => {
   const config = loadDatabaseConfigFromEnv();
   const db = new DatabaseConnection(config);
   

@@ -3,6 +3,11 @@ import { Pool, type PoolConfig } from "pg";
 /**
  * Database connection management for Naija: One World
  * Provides connection pooling and health checking for PostgreSQL
+ *
+ * Security notes:
+ * - TLS certificates are verified by default. Disabling verification requires an
+ *   explicit DB_SSL_REJECT_UNAUTHORIZED=false (for private test CAs only).
+ * - Error messages never include the connection string or password.
  */
 
 export interface DatabaseConfig {
@@ -13,8 +18,49 @@ export interface DatabaseConfig {
   user?: string;
   password?: string;
   ssl?: boolean;
+  /** Defaults to true. Set false only for private CAs in local/test environments. */
+  rejectUnauthorized?: boolean;
   maxConnections?: number;
   idleTimeoutMs?: number;
+}
+
+const POSTGRES_URL_PATTERN = /^postgres(ql)?:\/\//i;
+
+/**
+ * Builds the pg pool configuration from DatabaseConfig without opening a connection.
+ * Exported so the TLS and validation rules can be tested without a live database.
+ */
+export function buildPoolConfig(config: DatabaseConfig = {}): PoolConfig {
+  const poolConfig: PoolConfig = {};
+
+  if (config.connectionString) {
+    // Validate the scheme only; never echo the value back in an error.
+    if (!POSTGRES_URL_PATTERN.test(config.connectionString)) {
+      throw new Error("DATABASE_URL must be a postgres:// or postgresql:// connection URL.");
+    }
+    poolConfig.connectionString = config.connectionString;
+  } else {
+    poolConfig.host = config.host ?? "localhost";
+    poolConfig.port = config.port ?? 5432;
+    poolConfig.database = config.database ?? "naija_world";
+    poolConfig.user = config.user ?? "postgres";
+    poolConfig.password = config.password;
+  }
+
+  if (config.ssl === false) {
+    poolConfig.ssl = false;
+  } else {
+    // Verify server certificates by default. Note: if the connection string itself
+    // carries an sslmode parameter, pg applies that parameter over this option.
+    poolConfig.ssl = {
+      rejectUnauthorized: config.rejectUnauthorized ?? true,
+    };
+  }
+
+  poolConfig.max = config.maxConnections ?? 20;
+  poolConfig.idleTimeoutMillis = config.idleTimeoutMs ?? 30000;
+
+  return poolConfig;
 }
 
 export class DatabaseConnection {
@@ -34,39 +80,24 @@ export class DatabaseConnection {
       return;
     }
 
-    const poolConfig: PoolConfig = {};
-
-    if (this.config.connectionString) {
-      poolConfig.connectionString = this.config.connectionString;
-    } else {
-      poolConfig.host = this.config.host ?? "localhost";
-      poolConfig.port = this.config.port ?? 5432;
-      poolConfig.database = this.config.database ?? "naija_world";
-      poolConfig.user = this.config.user ?? "postgres";
-      poolConfig.password = this.config.password;
-    }
-
-    // SSL configuration for Neon and other cloud providers
-    if (this.config.ssl !== false) {
-      poolConfig.ssl = {
-        rejectUnauthorized: false, // Required for some cloud providers
-      };
-    }
-
-    poolConfig.max = this.config.maxConnections ?? 20;
-    poolConfig.idleTimeoutMillis = this.config.idleTimeoutMs ?? 30000;
-
-    this.pool = new Pool(poolConfig);
+    const pool = new Pool(buildPoolConfig(this.config));
+    this.pool = pool;
 
     // Test connection
     try {
-      const client = await this.pool.connect();
-      await client.query("SELECT 1");
-      client.release();
+      const client = await pool.connect();
+      try {
+        await client.query("SELECT 1");
+      } finally {
+        client.release();
+      }
       this.isConnected = true;
       console.log("[Database] Connected to PostgreSQL");
     } catch (error) {
       this.isConnected = false;
+      // Discard the failed pool so a later connect() can retry instead of silently reusing it.
+      this.pool = null;
+      await pool.end().catch(() => undefined);
       throw new Error(`Database connection failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
@@ -180,19 +211,32 @@ export class DatabaseConnection {
 // Global database instance
 export const database = new DatabaseConnection();
 
+function parseBooleanEnv(name: string, value: string): boolean {
+  if (value === "true") return true;
+  if (value === "false") return false;
+  throw new Error(`${name} must be either "true" or "false".`);
+}
+
 /**
  * Load database configuration from environment
  */
 export function loadDatabaseConfigFromEnv(): DatabaseConfig {
   const connectionString = process.env.DATABASE_URL;
-  
+
   if (connectionString) {
-    return { connectionString };
+    const config: DatabaseConfig = { connectionString };
+    if (process.env.DB_SSL_REJECT_UNAUTHORIZED) {
+      config.rejectUnauthorized = parseBooleanEnv(
+        "DB_SSL_REJECT_UNAUTHORIZED",
+        process.env.DB_SSL_REJECT_UNAUTHORIZED,
+      );
+    }
+    return config;
   }
 
   // Fallback to individual environment variables
   const config: DatabaseConfig = {};
-  
+
   if (process.env.DB_HOST) {
     config.host = process.env.DB_HOST;
   }
@@ -211,9 +255,15 @@ export function loadDatabaseConfigFromEnv(): DatabaseConfig {
   if (process.env.DB_SSL) {
     config.ssl = process.env.DB_SSL === "true";
   }
+  if (process.env.DB_SSL_REJECT_UNAUTHORIZED) {
+    config.rejectUnauthorized = parseBooleanEnv(
+      "DB_SSL_REJECT_UNAUTHORIZED",
+      process.env.DB_SSL_REJECT_UNAUTHORIZED,
+    );
+  }
   if (process.env.DB_MAX_CONNECTIONS) {
     config.maxConnections = parseInt(process.env.DB_MAX_CONNECTIONS, 10);
   }
-  
+
   return config;
 }
