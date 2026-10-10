@@ -41,7 +41,10 @@ if (!Number.isInteger(target) || target < 1) throw new Error("--identities must 
 const directory = mkdtempSync(join(tmpdir(), "naija-capacity-"));
 const stateFile = join(directory, "world-state.json");
 const cap = mode === "default-cap" ? WORLD_STATE_LIMIT_BYTES : Number(args["max-bytes"] ?? 1024 ** 3);
-const inner = new WorldStore(stateFile, Date.now(), { maxBytes: cap });
+// --format pretty (default, the format the store writes unless configured otherwise) or compact (opt-in). Recorded in the report.
+const format = args.format ?? "pretty";
+if (format !== "pretty" && format !== "compact") throw new Error("--format must be pretty or compact");
+const inner = new WorldStore(stateFile, Date.now(), { maxBytes: cap, format });
 
 const saveDurations = [];
 const memory = [];
@@ -184,6 +187,7 @@ await new Promise((resolve) => server.close(resolve));
 
 const report = {
   mode,
+  format,
   label: mode === "noop-flush"
     ? "NO-OP FLUSH during creations: no per-creation save; one real save timed at the end"
     : mode === "default-cap"

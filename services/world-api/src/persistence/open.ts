@@ -1,7 +1,7 @@
 import { DatabaseConnection, loadDatabaseConfigFromEnv } from "../database/connection.js";
 import { MigrationManager } from "../database/migrations.js";
 import { PostgresWorldStore } from "../database/world-store.js";
-import { WorldStore, type WorldStoreLike } from "../multiplayer/persistence.js";
+import { WorldStore, type WorldFileFormat, type WorldStoreLike } from "../multiplayer/persistence.js";
 import type { HealthCheck } from "../monitoring.js";
 import { assertTestWorldFileIsolation, readRuntimeEnvironment } from "../runtime-environment.js";
 
@@ -30,6 +30,8 @@ export interface OpenPersistenceOptions {
   readonly stateFile: string;
   readonly now?: number;
   readonly log?: (message: string) => void;
+  /** File backend only: save format. Default "pretty". See NAIJA_WORLD_STATE_FORMAT. */
+  readonly fileFormat?: WorldFileFormat;
 }
 
 export function resolvePersistenceBackend(env: NodeJS.ProcessEnv = process.env): PersistenceBackend {
@@ -76,7 +78,7 @@ export async function openWorldPersistence(options: OpenPersistenceOptions): Pro
       log("[Persistence] PERSISTENCE_BACKEND=file overrides DATABASE_URL; world state is NOT stored in PostgreSQL.");
     }
     log("[Persistence] File backend (development mode). Single-instance only; not shared across instances.");
-    const store = new WorldStore(options.stateFile, now);
+    const store = new WorldStore(options.stateFile, now, { format: options.fileFormat ?? "pretty" });
     return {
       backend,
       store,

@@ -1,6 +1,6 @@
 # Stage 28 — Capacity (R5): diagnosis, measured results, and recommendation
 
-**Status:** diagnosis and measurements complete for the single-file store. Decision 2 (compact JSON on save) and Decision 1 (notify once per capacity episode) are **implemented** (section 5). **The 16 MiB limit is not raised.** The 10,000-identity figure is a planning target and is **not** a supported claim. No automatic pruning or deletion was added. The R4 identity budget (review section 5) is **not** implemented.
+**Status:** diagnosis and measurements for the single-file store and a local PostgreSQL test database. Compact JSON is implemented as an **opt-in** setting (`NAIJA_WORLD_STATE_FORMAT=compact`); the default stays pretty. **Rollout of compact output to existing saved-world data is BLOCKED** (`docs/STAGE_28_COMPACT_JSON_ROLLOUT.md`). Decision 1 (notify once per capacity episode) is implemented (section 4.1). **The 16 MiB limit is not raised.** The 10,000-identity figure is a planning target and is **not** a supported claim. No automatic pruning or deletion was added. The R4 identity budget is implemented, **disabled by default**, and not enabled in production (`docs/STAGE_28_IDENTITY_BUDGET.md`).
 
 **Evidence:** raw JSON results are in `docs/evidence/stage28-capacity/`. They contain no creation keys, tokens, or player names. The server logs from the runs are not committed (they are verbose connection logs).
 
@@ -13,15 +13,20 @@
 ### 1.1 What limits the world
 
 - The whole world is one JSON document (`world-state.json` for the file backend; one `world_state` JSONB row for PostgreSQL). Every save serializes all records and writes them again.
-- The file backend used to serialize with `JSON.stringify(state, null, 2)` (**pretty-printed**). It now writes compact JSON, `JSON.stringify(state)`, with the same content and schema (section 5, item 2). The PostgreSQL backend already wrote compact JSON (`src/database/world-store.ts`, `JSON.stringify(state)`), with the same 16 MiB limit (`MAX_SNAPSHOT_BYTES`). Its ceiling was therefore not affected by this change.
+- The file backend serialized with `JSON.stringify(state, null, 2)` (**pretty-printed**) before this phase. It can now write compact JSON, `JSON.stringify(state)`, with the same content and schema, **when `NAIJA_WORLD_STATE_FORMAT=compact` is set**. The default is still pretty, so an upgrade does not convert existing files (section 5, item 2). The PostgreSQL backend already wrote compact JSON (`src/database/world-store.ts`, `JSON.stringify(state)`), with the same 16 MiB limit (`MAX_SNAPSHOT_BYTES`). Its ceiling was therefore not affected by this change.
 - Before this phase, a save over the limit failed at a point where the in-memory world had already been changed (R2). This is now refused before anything is written. The previous valid file is kept, and no record is removed.
 - Before the compact change, a starter family added about **23.5 KB** of pretty-printed JSON per identity (measured, section 3). With compact JSON it adds about **15.8 KB** per identity (measured, section 5.1). The limit is 16,777,216 bytes. The file backend therefore reached the limit after about 700 identities before the change and about 1,050 after it.
 
-### 1.2 Why the failure point varies (629 earlier, 705–713 now)
+### 1.2 The failure point: 629 (earlier record) versus 705–713 and 708–709 (re-measured)
 
-- The earlier figure (629–653, review E8) came from the code before the R2 fix. Those runs were not saved in full, so I cannot fully explain the difference from the current 705–713. The likely contributors are the random sibling count in starter families (`Math.random` in `src/life/service.ts`), which changes each identity's size, and the orphan records that the old code kept after failed saves. **This is not verified.**
-- The pre-change code gave three repeated default-cap runs: 705, 706, and 713 identities created, each followed by a refused save with `world_capacity_reached`.
-- With compact JSON (current code), three repeated default-cap runs gave 1,059, 1,069, and 1,047 identities created (section 5.1). The 629 figure is still not reproduced, and the cause of the 629 result remains undiagnosed.
+- **The 629 figure is not reproduced.** It comes from review E8 (`docs/STAGE_28_CREATION_KEY_REVIEW.md`, 629 and 653). The raw output of those runs was not kept, so the figure cannot be checked against a saved artefact.
+- **Re-measured on the pre-fix code** (parent of `9bb9c0e`, commit `b206f40`, extracted with `git archive`; driver: `services/world-api/scripts/capacity-baseline-driver.mjs`, with `TREE_ROOT` set to that tree). Three runs, real saves, one socket per creation, 16 MiB limit:
+  - run 1: 709 created; attempt 710 `persistence_failed`; clean shutdown.
+  - run 2: 709 created; attempt 710 `persistence_failed`; clean shutdown.
+  - run 3: 708 created; attempt 709 `persistence_failed`; **shutdown threw** `World data file exceeds the 16 MiB prototype limit.` (`docs/evidence/stage28-capacity/prefix-b206f40-repro-run{1,2,3}.json`).
+- **The shutdown failure at the limit is reproduced** on the pre-fix code (1 of 3 runs). This matches E8's report. On the current code, shutdown after the refusal was clean in every recorded run (sections 5.1 and 5.2).
+- **Current code, pretty format (after the compact guard):** 706 created, `world_capacity_reached` at 707, clean shutdown (`docs/evidence/stage28-capacity/default-cap-pretty-run1.json`).
+- **Why the size varies.** Each identity's size varies with the starter household. The household profile is chosen by a hash of the character ID (`starterFamilyProfile`, `src/life/service.ts`), so the sibling count depends on the random ID. The family and child names come from `Math.random` (`src/life/service.ts`). The spread in the runs above is 708–713. **The 629 gap is not explained.** It is not known whether E8 used a different code state, profile, or environment, so no cause is claimed.
 
 ### 1.3 Other costs that grow with the world
 
@@ -102,8 +107,8 @@ These are arithmetic from the measured per-identity size. They are labelled as e
 
 ## 4. Conclusion: what the architecture can and cannot do
 
-- **Safe today (file backend, compact JSON):** up to about 1,000 identities per world under the 16 MiB limit. Real saves reached 1,047–1,069 identities before the first refused save (section 5.1). Saves over the limit are refused cleanly, with no data loss. The 1,000 mark is close to the limit: one run was at 16,048,106 bytes at 1,000 identities.
-- **Previously:** up to about 700 identities (measured 705–713 with pretty JSON). That figure is superseded by the compact measurements.
+- **Safe today:** up to about 700 identities per world with the default pretty format, and about 1,000 with compact JSON when it is enabled for a temporary file (compact is opt-in; rollout to existing data is BLOCKED). Real saves reached 706 identities in pretty format and 1,047–1,069 in compact format before the first refused save (sections 5.1 and 5.2). Saves over the limit are refused cleanly, with no data loss. The 1,000 mark is close to the limit: one run was at 16,048,106 bytes at 1,000 identities.
+- **PostgreSQL:** the same 16 MiB limit applies to the JSON the store writes. A local test-database run reached 1,059 identities before the first refused save, the same ceiling as compact files (section 5.4). PostgreSQL does not raise the limit, and its saves were slower.
 - **Not supported:** 2,500, 5,000, or 10,000 identities in one file-backed or PostgreSQL-backed world. The single-document design and the 16 MiB limit prevent it. The no-op-flush runs show that the process also gets slower as the world grows.
 - **Bottlenecks, in order of impact on the limit:**
   1. The single document and its 16 MiB limit. (Formatting was about a third of the bytes; compact JSON removed it for the file backend.)
@@ -130,20 +135,11 @@ Still open: the in-memory changes made after the last successful save exist only
 2. **Compact JSON on save. IMPLEMENTED (Decision 2, approved by the user).** Same JSON content and no schema change; `src/multiplayer/persistence.ts` writes `JSON.stringify(state)`.
    - Tests: `test/world-state-format.test.mjs` (a save reloads to an equal state; a pretty-printed file from the earlier format still loads to the same state; compact saves are smaller).
    - Size measurements at 250, 500, 750, and 1,000 identities are in section 5.1 (checkpoints from the default-cap runs).
-   - **Not yet done:** a round-trip on a copy of the 284-file saved-data corpus. That corpus is **not present** in the current sandbox (`/home/user/data-backups` and `/home/user/data-investigation` are missing), so it was not run. Rollout should wait for that check.
+   - **Opt-in only (guard added).** The default is `pretty`, so an upgrade does not convert an existing saved world on its first save. Compact is enabled with `NAIJA_WORLD_STATE_FORMAT=compact`.
+   - **Rollout BLOCKED.** The 284-file corpus is **not present** in the current sandbox (`/home/user/data-backups` and `/home/user/data-investigation` are missing). The validation tool `scripts/saved-world-format-check.mjs` is written and self-tested on generated files only. The required steps are in `docs/STAGE_28_COMPACT_JSON_ROLLOUT.md`.
 3. **Stop copying the whole world per creation.** Build the new records and diff only the touched subtrees. Measure creation time before and after. Medium effort.
 4. **For 5,000 to 10,000 identities:** move records out of the single document (one row per record, or per collection). This is a database schema redesign. It is **out of scope for this phase** and needs a separate approved plan, a migration review, and tests on a disposable database. The PostgreSQL store has the same single-document limit today.
 5. **R4 (identity creation budget)** remains open. It limits how fast the world can fill up and needs an operator decision.
-
-## 6. Limits (keep with every capacity claim)
-
-- All measurements are from one sandbox (2 CPUs, about 4 GB RAM), one process, and loopback sockets. They are not production measurements.
-- The no-op-flush runs skip the per-creation save, so they do not measure a real save at each creation. They are labelled as such.
-- The 1 GiB runs change the limit for testing only. The production limit is unchanged.
-- PostgreSQL was not measured at capacity sizes. The local development database was used only for the functional tests in `identity-rollback`. Neon and production were not tested (BLOCKED).
-- The 629 figure from earlier was not reproduced. The cause of the difference is unverified (section 1.2).
-- Random family sizes mean that per-identity size varies. The spread across three runs is 705–713.
-- `pg_dump` was not available and no backup or restore was tested in this phase.
 
 ## 5.1 Compact-format measurements (after Decision 2)
 
@@ -160,3 +156,53 @@ Source: `docs/evidence/stage28-capacity/default-cap-compact-run{1,2,3}.json`. Sa
 - Pretty-format runs, for comparison (section 1.2): 705, 706, and 713 identities.
 - These are single-process loopback runs in the sandbox. They are not production measurements.
 - A run at 2,500 identities or more was **not** done with real saves. Each creation rewrites the whole world, so such a run would take far longer than this phase allows. The earlier no-op-flush runs (section 3) skip the save and do not show what a real save costs at those sizes.
+
+## 5.2 Pretty format after the compact guard (current default)
+
+Source: `docs/evidence/stage28-capacity/default-cap-pretty-run1.json` (`--format pretty`, the default). One run.
+
+| Run | Identities created | First refusal | Final file bytes | Marginal bytes per identity | Creation p50 / p95 (ms) | Save p50 / p95 (ms) | Shutdown (ms) |
+|---|---|---|---|---|---|---|---|
+| pretty, current code, requested 3,000 | 706 | #707 `world_capacity_reached` | 16,772,011 | 23,756 | 187 / 352 | 89 / 170 | 167 (no error) |
+| pretty, current code, requested 2,500 | 707 | #708 `world_capacity_reached` | 16,774,936 | n/a | n/a | n/a | 168 (no error) |
+
+The 2,500-target run is `docs/evidence/stage28-capacity/default-cap-pretty-target2500.json`. The request size does not change the outcome: the run stops at the first refused save.
+
+## 5.3 Pre-fix baseline (commit `b206f40`, the parent of the R1/R2 fixes)
+
+Source: `docs/evidence/stage28-capacity/prefix-b206f40-repro-run{1,2,3}.json`. Pretty format (the only format that code had). Three runs.
+
+| Run | Created | First failure | Final bytes | Shutdown |
+|---|---|---|---|---|
+| 1 | 709 | #710 `persistence_failed` | 16,756,585 | clean (144 ms) |
+| 2 | 709 | #710 `persistence_failed` | 16,761,553 | clean (146 ms) |
+| 3 | 708 | #709 `persistence_failed` | 16,772,826 | **threw**: `World data file exceeds the 16 MiB prototype limit.` (111 ms) |
+
+The pre-fix code reported `persistence_failed` at the limit, not `world_capacity_reached`, and in one run its shutdown threw. The current code reports `world_capacity_reached` and kept shutdown clean in every recorded run (sections 5.1 and 5.2). Caveat on comparison: the current-code runs (sections 5.1 and 5.2) used `scripts/capacity-probe.mjs`, and the pre-fix runs used `scripts/capacity-baseline-driver.mjs`. Both create identities over real sockets, one socket each, with the same profile. They are not identical harnesses: the probe also samples latency and memory, and the driver records only counts, sizes, and shutdown.
+
+## 5.4 PostgreSQL (local test database, real saves)
+
+Source: `docs/evidence/stage28-capacity/postgres-local-probe-run1.json`. Script: `services/world-api/scripts/capacity-probe-postgres.mjs`. Database: the local development test database (`naija_stage28_test` on a loopback PostgreSQL 17 instance). It is **not Neon and not production**. The script refuses any database whose name lacks "test" or "probe", and it deletes only its own world key afterwards (verified: 0 probe rows left; other keys untouched).
+
+| Requested | Created | First refusal | Final JSONB text (`octet_length(value::text)`) | Creation p50 / p95 / max (ms) | Creation phase | Shutdown |
+|---|---|---|---|---|---|---|
+| 1,500 | 1,059 | #1,060 `world_capacity_reached` | 17,828,109 | 559 / 1,089 / 1,398 | 604 s | 853 ms, no error |
+| 2,500 | 1,056 | #1,057 `world_capacity_reached` | 17,822,747 | 559 / 1,133 / 1,420 | 610 s | 804 ms, no error |
+
+Evidence: `postgres-local-probe-run1.json` (requested 1,500) and `postgres-local-probe-target2500-run2.json` (requested 2,500). Each run deleted its own probe row (0 probe rows left, checked by query).
+
+- The limit applies to the JSON text the store writes (`JSON.stringify(state)`, checked against `MAX_SNAPSHOT_BYTES`). The value above is PostgreSQL's own re-serialized text of the same document, which adds spaces, so it is larger. The probe did not record the written size, but the store's check passed for every save that succeeded.
+- PostgreSQL reached the same ceiling as compact files (1,056 and 1,059 against 1,047–1,069). It does not raise the limit.
+- Saves were slower than the file store at this size (creation p50 559 ms against about 219 ms with compact files).
+- This is one run on a local test database, with the probe and the database on the same machine. It says nothing about Neon or production.
+
+## 6. Limits (keep with every capacity claim)
+
+- All measurements are from one sandbox (2 CPUs, about 4 GB RAM), one process, and loopback sockets. They are not production measurements.
+- The no-op-flush runs skip the per-creation save, so they do not measure a real save at each creation. They are labelled as such.
+- The 1 GiB runs change the limit for testing only. The production limit is unchanged.
+- PostgreSQL was measured once at capacity size on a **local test database** (section 5.4). Neon and production were **not** tested (BLOCKED).
+- The 629 figure from earlier was not reproduced: the pre-fix code gave 708–709 in three runs (section 1.2). The cause of the difference is unverified.
+- Per-identity size varies with the starter household (hash of the character ID) and with name length (`Math.random`). The spread across pretty runs is 706–713 on the current code and 708–709 on the pre-fix code.
+- `pg_dump` was not available and no backup or restore was tested in this phase.
+- **Not a 2,500, 5,000, or 10,000 identity measurement.** Under the production limit these targets are refused at about 700 (pretty), about 1,050 (compact, file), or about 1,059 (PostgreSQL, local test). Larger targets need a different storage design (section 5, item 4), which has not been measured.

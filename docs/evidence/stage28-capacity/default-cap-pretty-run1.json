@@ -1,0 +1,60 @@
+{
+  "mode": "default-cap",
+  "format": "pretty",
+  "label": "Real saves with the production 16 MiB limit; stops at the first refused save",
+  "requested_identities": 3000,
+  "created_identities": 706,
+  "first_failure": {
+    "after_identities": 706,
+    "outcome": "error",
+    "code": "world_capacity_reached"
+  },
+  "size_limit_bytes": 16777216,
+  "creation_latency_ms": {
+    "count": 706,
+    "p50": 187.12,
+    "p95": 352.05,
+    "max": 516.28
+  },
+  "save_latency_ms": {
+    "count": 707,
+    "p50": 88.51,
+    "p95": 169.57,
+    "max": 247.68
+  },
+  "creation_phase_seconds": 130.53,
+  "final_file_bytes": 16772011,
+  "bytes_per_identity_marginal": 23756,
+  "final_save": null,
+  "shutdown_ms": 166.58,
+  "shutdown_error": null,
+  "memory": [
+    {
+      "identities": 250,
+      "rss_mb": 221.47,
+      "heap_used_mb": 60.79
+    },
+    {
+      "identities": 500,
+      "rss_mb": 248.27,
+      "heap_used_mb": 63.39
+    },
+    {
+      "identities": 706,
+      "rss_mb": 324.73,
+      "heap_used_mb": 73.77
+    }
+  ],
+  "size_checkpoints": [
+    {
+      "identities": 250,
+      "file_bytes": 5931994
+    },
+    {
+      "identities": 500,
+      "file_bytes": 11850254
+    }
+  ],
+  "node": "v22.22.3",
+  "finished_at": "2026-10-10T19:36:44.449Z"
+}

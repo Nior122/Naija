@@ -1012,22 +1012,34 @@ export interface WorldStoreLike {
   saveState(candidate: PersistentWorldState): Promise<void>;
 }
 
+export type WorldFileFormat = "pretty" | "compact";
+
 export interface WorldStoreOptions {
   /**
    * Size limit override for tests and the capacity probe only. It must be a positive integer.
    * Production code uses the default, WORLD_STATE_LIMIT_BYTES.
    */
   readonly maxBytes?: number;
+  /**
+   * Output format for saves. Default "pretty" (the format used before compact output existed), so an existing
+   * file is not converted by a save. "compact" is opt-in (NAIJA_WORLD_STATE_FORMAT=compact) and is for use only
+   * after the saved-world validation in docs/STAGE_28_COMPACT_JSON_ROLLOUT.md has been approved.
+   * Loading accepts both formats.
+   */
+  readonly format?: WorldFileFormat;
 }
 
 export class WorldStore implements WorldStoreLike {
   readonly filePath: string;
   readonly state: PersistentWorldState;
   private readonly maxBytes: number;
+  private readonly format: WorldFileFormat;
   private writeQueue: Promise<void> = Promise.resolve();
 
   constructor(filePath: string, now: number = Date.now(), options: WorldStoreOptions = {}) {
     this.filePath = resolve(filePath);
+    this.format = options.format ?? "pretty";
+    if (this.format !== "pretty" && this.format !== "compact") throw new Error('format must be "pretty" or "compact".');
     this.maxBytes = options.maxBytes ?? WORLD_STATE_LIMIT_BYTES;
     if (!Number.isSafeInteger(this.maxBytes) || this.maxBytes < 1) throw new Error("maxBytes must be a positive integer.");
     try {
@@ -1061,9 +1073,9 @@ export class WorldStore implements WorldStoreLike {
    */
   private async writeSnapshot(state: PersistentWorldState): Promise<void> {
     const write = async (): Promise<void> => {
-      // Compact JSON: the same content and schema as the pretty-printed format written before, about a third smaller.
-      // Files written in either format load the same way.
-      const snapshot = JSON.stringify(state);
+      // "pretty" is the default and matches the earlier output. "compact" is opt-in (same content and schema, about a
+      // third smaller). Files in either format load the same way.
+      const snapshot = this.format === "compact" ? JSON.stringify(state) : JSON.stringify(state, null, 2);
       if (Buffer.byteLength(snapshot, "utf8") > this.maxBytes) throw new WorldStateCapacityError();
       await mkdir(dirname(this.filePath), { recursive: true });
       const temporaryPath = `${this.filePath}.${process.pid}.${randomUUID()}.tmp`;

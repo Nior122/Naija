@@ -23,9 +23,9 @@ function tempFile() {
   return join(directory, "world-state.json");
 }
 
-test("R5 format: a save is compact JSON and reloads to an equal state", async () => {
+test("R5 format: an explicitly compact save is compact JSON and reloads to an equal state", async () => {
   const file = tempFile();
-  const store = new WorldStore(file, Date.UTC(2026, 9, 10));
+  const store = new WorldStore(file, Date.UTC(2026, 9, 10), { format: "compact" });
   const original = structuredClone(store.state);
   await store.flush();
 
@@ -47,17 +47,54 @@ test("R5 format: a pretty-printed file from the earlier format still loads to th
   const loaded = new WorldStore(file, Date.UTC(2026, 9, 10));
   assert.deepEqual(loaded.state, expected, "the pretty-printed file loads unchanged");
 
-  // Re-saving the same state in the new format keeps the content.
-  await loaded.flush();
+  // Re-saving with the compact format keeps the content.
+  const compact = new WorldStore(file, Date.UTC(2026, 9, 10), { format: "compact" });
+  await compact.flush();
   assert.equal(readFileSync(file, "utf8").includes("\n"), false);
   assert.deepEqual(new WorldStore(file, Date.UTC(2026, 9, 10)).state, expected);
 });
 
 test("R5 format: compact saves are smaller than the pretty-printed form of the same state", async () => {
   const file = tempFile();
-  const store = new WorldStore(file, Date.UTC(2026, 9, 10));
+  const store = new WorldStore(file, Date.UTC(2026, 9, 10), { format: "compact" });
   await store.flush();
   const compactBytes = statSync(file).size;
   const prettyBytes = Buffer.byteLength(JSON.stringify(store.state, null, 2), "utf8");
   assert.ok(compactBytes < prettyBytes, `compact ${compactBytes} bytes should be below pretty ${prettyBytes} bytes`);
+});
+
+/*
+ * Rollout guard (Decision 1, Stage 28). Compact output is opt-in. The default keeps writing the pretty-printed
+ * format, so loading and saving an existing file does not convert it until an operator enables compact output
+ * after the saved-world validation has been approved (docs/STAGE_28_COMPACT_JSON_ROLLOUT.md).
+ */
+
+test("R5 rollout guard: by default a save keeps the pretty-printed format, so an existing file is not converted", async () => {
+  const file = tempFile();
+  const seeded = new WorldStore(file, Date.UTC(2026, 9, 10));
+  const state = structuredClone(seeded.state);
+  writeFileSync(file, JSON.stringify(state, null, 2));
+  const before = readFileSync(file);
+
+  const loaded = new WorldStore(file, Date.UTC(2026, 9, 10));
+  await loaded.flush();
+  const after = readFileSync(file);
+  assert.equal(after.toString("utf8"), JSON.stringify(loaded.state, null, 2), "the default save writes pretty-printed JSON");
+  assert.ok(after.includes(Buffer.from("\n")), "the file still has line breaks after a default save");
+  assert.deepEqual(JSON.parse(after.toString("utf8")), JSON.parse(before.toString("utf8")), "the content is unchanged");
+});
+
+test("R5 rollout guard: compact output is written only when the format is explicitly set", async () => {
+  const file = tempFile();
+  const pretty = new WorldStore(file, Date.UTC(2026, 9, 10));
+  await pretty.flush();
+  assert.ok(readFileSync(file, "utf8").includes("\n"), "the default writes pretty-printed JSON");
+
+  const compact = new WorldStore(file, Date.UTC(2026, 9, 10), { format: "compact" });
+  await compact.flush();
+  assert.equal(readFileSync(file, "utf8").includes("\n"), false, "the explicit compact format writes compact JSON");
+});
+
+test("R5 rollout guard: an unknown format is rejected when the store is created", () => {
+  assert.throws(() => new WorldStore(tempFile(), Date.UTC(2026, 9, 10), { format: "yaml" }), /format must be/);
 });
