@@ -10,6 +10,7 @@
     "test": "npm run build && node --test --test-force-exit test/*.test.mjs"
   },
   "dependencies": {
+    "pg": "^8.13.1",
     "ws": "^8.22.0"
   },
   "devDependencies": {
