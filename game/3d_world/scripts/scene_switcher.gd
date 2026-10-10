@@ -133,3 +133,16 @@ func get_current_mode() -> String:
 func is_3d_mode_active() -> bool:
 	"""Check if 3D mode is currently active"""
 	return current_mode == "3d"
+
+
+func get_multiplayer_client() -> Node:
+	"""Get the multiplayer client from the current mode"""
+	if current_mode == "2d" and mode_2d_instance:
+		# Try to get multiplayer client from 2D prototype
+		if mode_2d_instance.has_method("get_multiplayer_client"):
+			return mode_2d_instance.get_multiplayer_client()
+		# Otherwise look for it as a child
+		var client = mode_2d_instance.get_node_or_null("MultiplayerClient")
+		if client:
+			return client
+	return null

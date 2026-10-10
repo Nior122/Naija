@@ -5,7 +5,7 @@ config_version=5
 
 config/name="Naija: One World"
 config/description="A small first playable life-simulation prototype set in a fictional Nigerian neighbourhood."
-run/main_scene="res://scenes/prototype.tscn"
+run/main_scene="res://scenes/main.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 
 [display]
@@ -21,3 +21,11 @@ window/stretch/mode="canvas_items"
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
 environment/defaults/default_clear_color=Color(0.025, 0.045, 0.045, 1)
+
+[input]
+
+toggle_3d_mode={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":4194342,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
+]
+}

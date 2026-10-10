@@ -1207,3 +1207,61 @@ func _save_game(show_result: bool = true) -> void:
 		ui.show_save_result(save_message, save_ok)
 	elif not save_ok:
 		ui.notify("Autosave failed: %s" % str(result.get("error", "unknown error")))
+
+
+func get_shared_state() -> Dictionary:
+	"""Get the current game state for sharing with 3D mode"""
+	if character == null or clock == null:
+		return {}
+	
+	# Update character position before sharing
+	character.position = player.position
+	character.current_location = world.location_id
+	
+	return {
+		"character": character.to_dict(),
+		"clock": clock.to_dict(),
+		"player_position": player.position,
+		"player_location": world.location_id,
+		"playing": playing,
+		"online_mode": _online_mode,
+		"career_profile": _online_career_profile
+	}
+
+
+func set_shared_state(state: Dictionary) -> void:
+	"""Restore game state from 3D mode"""
+	if state.is_empty():
+		return
+	
+	# Restore character state
+	if state.has("character") and character != null:
+		character.from_dict(state.character)
+	
+	# Restore clock
+	if state.has("clock") and clock != null:
+		clock.from_dict(state.clock)
+	
+	# Restore player position and location
+	if state.has("player_position"):
+		player.position = state.player_position
+	if state.has("player_location"):
+		world.location_id = state.player_location
+	
+	# Restore playing state
+	if state.has("playing"):
+		playing = state.playing
+	
+	# Restore online mode
+	if state.has("online_mode"):
+		_online_mode = state.online_mode
+	
+	# Restore career profile
+	if state.has("career_profile"):
+		_online_career_profile = state.career_profile
+
+
+func get_multiplayer_client() -> Node:
+	"""Get the multiplayer client node"""
+	return multiplayer_client
+

@@ -12,6 +12,7 @@ class_name World3DController
 var environment_config: EnvironmentConfig
 var time_of_day: TimeOfDay
 var player_character: CharacterBody3D
+var multiplayer_manager: Multiplayer3DManager = null
 
 # Building management
 var buildings: Dictionary = {}
@@ -35,6 +36,19 @@ func _ready() -> void:
 	environment_config = $Environment as EnvironmentConfig
 	time_of_day = $TimeOfDay as TimeOfDay
 	player_character = $Characters/PlayerCharacter as CharacterBody3D
+	
+	# Initialize multiplayer manager
+	multiplayer_manager = Multiplayer3DManager.new()
+	multiplayer_manager.name = "Multiplayer3DManager"
+	add_child(multiplayer_manager)
+	
+	# Try to get multiplayer client from parent (scene switcher)
+	var scene_switcher = get_parent()
+	if scene_switcher and scene_switcher.has_method("get_multiplayer_client"):
+		var client = scene_switcher.get_multiplayer_client()
+		if client:
+			multiplayer_manager.setup(client, player_character)
+			print("[World3D] Multiplayer manager initialized with client")
 	
 	# Configure environment based on region
 	_configure_environment()
@@ -229,3 +243,35 @@ func get_performance_stats() -> Dictionary:
 		"active_buildings": active_buildings.size(),
 		"region": region_id
 	}
+
+
+func get_shared_state() -> Dictionary:
+	"""Get the current 3D world state for sharing with 2D mode"""
+	var state = {
+		"region_id": region_id,
+		"time_of_day": time_of_day.current_time if time_of_day else 10.0
+	}
+	
+	# Get player character state if available
+	if player_character and player_character.has_method("get_character_state"):
+		state["player_state"] = player_character.get_character_state()
+	
+	return state
+
+
+func set_shared_state(state: Dictionary) -> void:
+	"""Restore 3D world state from 2D mode"""
+	if state.is_empty():
+		return
+	
+	# Restore region
+	if state.has("region_id") and state.region_id != region_id:
+		change_region(state.region_id)
+	
+	# Restore time of day
+	if state.has("time_of_day") and time_of_day:
+		time_of_day.set_time(state.time_of_day)
+	
+	# Restore player state
+	if state.has("player_state") and player_character and player_character.has_method("apply_network_state"):
+		player_character.apply_network_state(state.player_state)
