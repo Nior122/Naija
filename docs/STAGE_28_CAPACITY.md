@@ -107,6 +107,16 @@ These are arithmetic from the measured per-identity size. They are labelled as e
   2. The whole-world copy and diff on each creation (creation time).
   3. The whole-world save on each change (save and shutdown time).
 
+## 4.1 Open issue found during this phase (NOT fixed; needs a decision)
+
+When the world is at the limit, the in-memory world keeps changing from gameplay, but no save can succeed. Measured behaviour from the code (not yet load-tested with players):
+
+- The tick runs every 50 ms. A dirty world retries its save about once per second (`lastPersistAt` moves only on success).
+- Each failed retry sends `world_capacity_reached` to **every** online player and writes one log line. So at the limit, every online player receives an error about once per second.
+- Changes made after the last successful save exist only in memory. A restart loses them. This is the same class of risk as any refused save, but at the limit it is continuous.
+
+Options for approval (none implemented): notify each player once per capacity episode and not every second; reject new gameplay writes at the limit with a clear message; and show the operator a single warning. The choice is a product and operations decision.
+
 ## 5. Recommendation (smallest safe improvements; NOT implemented, awaiting approval)
 
 1. **Keep the 16 MiB limit.** Do not raise it until items 2 and 3 are measured.
