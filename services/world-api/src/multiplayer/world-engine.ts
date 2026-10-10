@@ -614,6 +614,8 @@ export class MultiplayerWorld {
   private flushInFlight = false;
   /** True from the first refused save (over the size limit) until the next successful save. */
   private capacityEpisodeOpen = false;
+  /** True from the first non-capacity save failure until the next successful save. */
+  private persistenceEpisodeOpen = false;
   private closed = false;
 
   constructor(private readonly store: WorldStoreLike, options: WorldEngineOptions = {}) {
@@ -1104,6 +1106,7 @@ export class MultiplayerWorld {
     // Committed. Merge without awaiting, and only if no live value that the creation relies on has changed.
     this.creationFaultHook?.("after-save");
     this.capacityEpisodeOpen = false;
+    this.persistenceEpisodeOpen = false;
     const conflicts = mergeStateChanges(this.store.state, changes);
     if (conflicts.length > 0) {
       // The saved world now holds the identity, but the live world cannot take it. Save the live world
@@ -1198,6 +1201,7 @@ export class MultiplayerWorld {
       await this.store.flush();
       this.lastPersistAt = this.now();
       this.capacityEpisodeOpen = false;
+      this.persistenceEpisodeOpen = false;
     } catch {
       this.dirty = true;
       if (player.tokenHash === tokenHash) player.tokenHash = oldTokenHash;
@@ -4864,6 +4868,13 @@ export class MultiplayerWorld {
     return true;
   }
 
+  /** Returns true when this failure opens a new persistence episode (the first failure since the last successful save). */
+  private enterPersistenceEpisode(): boolean {
+    if (this.persistenceEpisodeOpen) return false;
+    this.persistenceEpisodeOpen = true;
+    return true;
+  }
+
   private async flushDirty(): Promise<void> {
     if (!this.dirty || this.flushInFlight) return;
     this.flushInFlight = true;
@@ -4873,6 +4884,7 @@ export class MultiplayerWorld {
       await this.serialize(() => this.store.flush());
       this.lastPersistAt = this.now();
       this.capacityEpisodeOpen = false;
+      this.persistenceEpisodeOpen = false;
     } catch (error) {
       writeFailed = true;
       this.dirty = true;
@@ -4885,8 +4897,10 @@ export class MultiplayerWorld {
             this.sendError(context, "world_capacity_reached", "The world has reached its size limit. Recent changes are not saved yet.");
           }
         }
-      } else {
-        console.error("multiplayer persistence failed");
+      } else if (this.enterPersistenceEpisode()) {
+        // One notice and one log line per episode, as for capacity. Retries stay silent until a save succeeds.
+        // Gap: no "saved again" message exists yet, so clients are not told when a later save succeeds.
+        console.error("multiplayer persistence failed; retries continue silently until a save succeeds");
         for (const context of this.online.values()) this.sendError(context, "persistence_failed", "Server state could not be saved.");
       }
     } finally {
