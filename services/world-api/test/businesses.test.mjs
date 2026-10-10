@@ -52,7 +52,7 @@ function makeWorld(date = { year: 2025, month: 1, day: 4 }) {
   const lifeCatalog = loadLifeCatalog();
   const day = worldDayForDate(date, lifeCatalog);
   const state = {
-    schemaVersion: 10,
+    schemaVersion: 11,
     worldId: "nigeria-main",
     worldClock: normalizeWorldClock({
       day,
@@ -605,7 +605,7 @@ test("schema version 8 state migrates to version 10 with empty justice and polic
   const { peer, ready } = await createOnlinePeer(serverPort);
   await peer.close();
   const saved = JSON.parse(await readFile(stateFile, "utf8"));
-  assert.equal(saved.schemaVersion, 10);
+  assert.equal(saved.schemaVersion, 11);
   saved.schemaVersion = 8;
   delete saved.laws; delete saved.lawProvisions; delete saved.legislativeProposals;
   delete saved.courts; delete saved.legalProfessionals; delete saved.legalRepresentations;
@@ -617,9 +617,14 @@ test("schema version 8 state migrates to version 10 with empty justice and polic
   delete saved.policeIncidents; delete saved.dispatches; delete saved.investigations;
   delete saved.policeEvidence; delete saved.wantedRecords; delete saved.arrestRecords;
   delete saved.misconductComplaints; delete saved.policeAudits;
+  delete saved.militaryOrganizations; delete saved.militaryBases; delete saved.militaryUnits;
+  delete saved.militaryRecruitments; delete saved.militaryServiceRecords; delete saved.militaryTrainingRecords;
+  delete saved.militaryRankHistory; delete saved.militaryCommandAppointments; delete saved.militaryAssignments;
+  delete saved.militaryLeaveRecords; delete saved.militaryAssets; delete saved.nationalSecurityEvents;
+  delete saved.militaryDisciplinaryRecords; delete saved.militaryAudits;
   await writeFile(stateFile, JSON.stringify(saved), "utf8");
   const migrated = new WorldStore(stateFile, Date.UTC(2025, 0, 2));
-  assert.equal(migrated.state.schemaVersion, 10);
+  assert.equal(migrated.state.schemaVersion, 11);
   assert.ok(typeof migrated.state.laws === "object");
   assert.ok(typeof migrated.state.courts === "object");
   assert.ok(typeof migrated.state.governmentProjects === "object");

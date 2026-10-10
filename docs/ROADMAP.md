@@ -1,6 +1,6 @@
 # Master Roadmap
 
-The roadmap describes intended development, not completed features. Stage 0 is complete. Stages 1–7 remain in place; Godot runtime verification is still pending. Stages 4–13 have backend/persistence/multiplayer checks passing, while their Godot client verification remains blocked. Stage 13 is implementation-present and backend-tested; Stage 14 is next. See `DEVELOPMENT_STATUS.md` for exact results and limits.
+The roadmap describes intended development, not completed features. Stage 0 is complete. Stages 1–7 remain in place; Godot runtime verification is still pending. Stages 4–14 have backend/persistence/multiplayer checks passing, while their Godot client verification remains blocked. Stage 14 is implementation-present and backend-tested; Stage 15 is next. See `DEVELOPMENT_STATUS.md` for exact results and limits.
 
 | Phase | Name | Purpose | Status |
 |---:|---|---|---|
@@ -46,7 +46,7 @@ The implementation is in place across `game/data/education/catalog.json`, the of
 
 The prior Stage 4 verification reported 26 Node tests, including eight focused education tests for enrollment/progression, attendance/grades/results, final exam outcomes/persistence, tertiary and ND/HND pathways, training/apprenticeship, scholarships/history, geography, online schoolyard co-presence, attendance replication and save/restart. The current full suite has since grown to 48 Node tests and continues to cover those regressions. Geography reproducibility and GDScript formatting pass. Static GDScript lint has structural findings. **Godot 4.7.2 is unavailable**, so Stage 4 project import, offline/client UI/save journeys and Godot multiplayer/runtime regressions remain unverified. See `DEVELOPMENT_STATUS.md` and `EDUCATION_PLAN.md` for the remaining client gate. Stage 5 implementation has been added without replacing or declaring these Godot checks successful; the Stage 4 client limitation remains open.
 
-Next roadmap line: **Stage 14**. Stage 13 — Police and Security System is implemented with configurable police organizations, officer recruitment, incident reporting, dispatch, investigations, evidence chain-of-custody, wanted records, arrests, and misconduct accountability; it does not remove the pending Stage 5–13 Godot client verification gate.
+Next roadmap line: **Stage 15 — Crime and Consequences**. Stage 14 — Military System is implemented with organizations, bases, units, recruitment, training, ranks, promotions, assignments, assets, national-security events, discipline, and audit trails; it does not remove the pending Stage 5–14 Godot client verification gate.
 
 ## Stage 5 exit gate
 

@@ -4,7 +4,7 @@
 
 ## Current stage and verification gate
 
-**Stage 13 — Police and Security System: backend implementation and Node tests pass; police integrates with Stage 12 (justice) for evidence handoff and case referral, Stage 10 (government) for organizational hierarchy, and Stage 7 (economy) for officer compensation; Godot client/runtime verification is blocked.** Stages 0–12 remain preserved on the same `nigeria-main` world. The server still owns one shared online timeline. The earlier Stage 5 Godot limitation is still open; Stages 6–13 do not resolve it.
+**Stage 14 — Military System: backend implementation and Node tests pass; military integrates with Stage 6 (careers), Stage 7 (economy), Stage 10 (government for civilian oversight), Stage 12 (justice for legal referrals), and Stage 13 (police for inter-agency coordination); Godot client/runtime verification is blocked.** Stages 0–13 remain preserved on the same `nigeria-main` world. The server still owns one shared online timeline. The earlier Stage 5 Godot limitation is still open; Stages 6–14 do not resolve it.
 
 Godot 4.7.2 is not installed (`godot: command not found`). Project import, engine type-checking, scenes, rendered careers UI, clicks through work/application flows, offline client journeys, and Godot multiplayer/reconnect/save runtime behavior have not been run. Do not infer client success from Node tests or gdtoolkit.
 
@@ -300,6 +300,71 @@ See [`docs/POLICE_AND_SECURITY_SYSTEM_PLAN.md`](POLICE_AND_SECURITY_SYSTEM_PLAN.
 | WebSocket police_profile, error handling | WebSocket test | **Passed (Node)** |
 | Schema-v9 to v10 migration with police maps | Persistence test | **Passed (Node)** |
 | Godot project import, engine typing, client police UI | Godot unavailable | **Blocked / not run** |
+
+## Stage 14 implementation
+
+### Military organizations and bases
+
+- `game/data/military/catalog.json` configures 3 service branches (Army, Navy, Air Force), 16 ranks per branch, 8 base categories, 14 unit categories, 18 training courses, 10 assignment types, 10 equipment categories, 8 national security event categories, 9 disciplinary outcomes, 7 seed organizations, and 4 seed bases.
+- Organizational hierarchy: Defence HQ → Service HQs → Commands → Units.
+- Cycle detection prevents invalid parent-child relationships.
+
+### Recruitment and service
+
+- Recruitment eligibility enforced server-side: minimum age 18, minimum education secondary.
+- Application lifecycle: submitted → under_review → approved/rejected.
+- Service enrollment with unique service numbers (NA/NN/NAF prefix).
+- Double enlistment prevention.
+
+### Training and ranks
+
+- 18 configurable training courses with prerequisites.
+- Promotion requires minimum time in rank (180-1095 days depending on category).
+- Full rank history preserved.
+- Command appointments separate from rank.
+
+### Assignments, leave, and assets
+
+- Configurable assignment types with max 2 active per person.
+- Leave request/approval workflow.
+- Equipment asset management with custody chain tracking.
+
+### National security events and discipline
+
+- 8 national security event categories with authorization and resolution workflow.
+- Disciplinary cases with 9 outcome types.
+- Disciplinary outcomes automatically affect service status.
+- Legal referral bridge to justice system.
+
+### Schema and integration
+
+Schema version advanced to 11 with 14 new persistent maps. `services/world-api/src/military/` contains typed catalogue, service, and exports. `services/world-api/src/multiplayer/world-engine.ts` integrates `military.action` commands with 24 actions and military profiles in character snapshots.
+
+See [`docs/MILITARY_SYSTEM_PLAN.md`](MILITARY_SYSTEM_PLAN.md) for full details.
+
+## Stage 14 acceptance coverage
+
+| Area | Evidence | Result |
+|---|---|---|
+| Catalogue structure, branches, ranks, categories | `services/world-api/test/military.test.mjs` | **Passed (Node)** |
+| Empty maps and initialization | Military service tests | **Passed (Node)** |
+| Organization seeding and idempotency | Military service tests | **Passed (Node)** |
+| Base creation and snapshots | Military service tests | **Passed (Node)** |
+| Unit creation | Military service tests | **Passed (Node)** |
+| Recruitment eligibility (age, education) | Military service tests | **Passed (Node)** |
+| Service enrollment and service numbers | Military service tests | **Passed (Node)** |
+| Double enlistment prevention | Military service tests | **Passed (Node)** |
+| Training enrollment and completion | Military service tests | **Passed (Node)** |
+| Promotion with time-in-rank | Military service tests | **Passed (Node)** |
+| Assignments and completion | Military service tests | **Passed (Node)** |
+| Asset management and custody chain | Military service tests | **Passed (Node)** |
+| National security events | Military service tests | **Passed (Node)** |
+| Disciplinary cases and outcomes | Military service tests | **Passed (Node)** |
+| Military profile snapshots | Military service tests | **Passed (Node)** |
+| WebSocket list_branches, military_profile | WebSocket test | **Passed (Node)** |
+| WebSocket error handling | WebSocket test | **Passed (Node)** |
+| Schema-v10 to v11 migration with military maps | Persistence test | **Passed (Node)** |
+| Godot project import, engine typing, client military UI | Godot unavailable | **Blocked / not run** |
 
 ## Stage 11 acceptance coverage
 

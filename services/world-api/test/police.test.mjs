@@ -577,22 +577,27 @@ test("policeErrorMessage returns readable messages", () => {
 
 // ─── Persistence migration ────────────────────────────────────────
 
-test("schema version 9 state migrates to version 10 with empty police maps", async () => {
+test("schema version 9 state migrates to version 11 with empty police and military maps", async () => {
   const directory = await mkdtemp(join(tmpdir(), "naija-police-migration-"));
   activeDirectories.add(directory);
   const stateFile = join(directory, "world-state.json");
   const original = new WorldStore(stateFile, Date.UTC(2025, 0, 1));
   await original.flush();
   const saved = JSON.parse(await readFile(stateFile, "utf8"));
-  assert.equal(saved.schemaVersion, 10);
+  assert.equal(saved.schemaVersion, 11);
   saved.schemaVersion = 9;
   delete saved.policeUnits; delete saved.policeOfficers; delete saved.recruitmentApplications;
   delete saved.policeIncidents; delete saved.dispatches; delete saved.investigations;
   delete saved.policeEvidence; delete saved.wantedRecords; delete saved.arrestRecords;
   delete saved.misconductComplaints; delete saved.policeAudits;
+  delete saved.militaryOrganizations; delete saved.militaryBases; delete saved.militaryUnits;
+  delete saved.militaryRecruitments; delete saved.militaryServiceRecords; delete saved.militaryTrainingRecords;
+  delete saved.militaryRankHistory; delete saved.militaryCommandAppointments; delete saved.militaryAssignments;
+  delete saved.militaryLeaveRecords; delete saved.militaryAssets; delete saved.nationalSecurityEvents;
+  delete saved.militaryDisciplinaryRecords; delete saved.militaryAudits;
   await writeFile(stateFile, JSON.stringify(saved), "utf8");
   const migrated = new WorldStore(stateFile, Date.UTC(2025, 0, 2));
-  assert.equal(migrated.state.schemaVersion, 10);
+  assert.equal(migrated.state.schemaVersion, 11);
   assert.ok(typeof migrated.state.policeUnits === "object");
   assert.ok(typeof migrated.state.policeOfficers === "object");
   assert.ok(typeof migrated.state.policeIncidents === "object");

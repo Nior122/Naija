@@ -176,6 +176,8 @@ import {
 import type { JusticeCatalog, CaseCategoryId, JudgmentOutcomeId, AppealOutcomeId } from "../justice/types.js";
 import { PoliceCatalogService, PoliceService, initializePoliceWorldState, seedPoliceWorld, policeErrorMessage } from "../police/index.js";
 import type { IncidentCategoryId, DispatchPriorityId, MisconductCategoryId } from "../police/types.js";
+import { MilitaryCatalogService, MilitaryService, initializeMilitaryWorldState, seedMilitaryWorld, militaryErrorMessage } from "../military/index.js";
+import type { ServiceBranchId, AssignmentTypeId, EquipmentCategoryId, NationalSecurityEventCategoryId } from "../military/types.js";
 import { loadLifeCatalog, dateForWorldDay, isValidDate, worldClockSnapshot } from "../life/calendar.js";
 import {
   advanceWorldLife,
@@ -529,6 +531,7 @@ export class MultiplayerWorld {
   private readonly electionsCatalog: ElectionsCatalog = loadElectionsCatalog();
   private readonly justiceCatalog: JusticeCatalog = loadJusticeCatalog();
   private readonly policeCatalog = new PoliceCatalogService();
+  private readonly militaryCatalog = new MilitaryCatalogService();
   private readonly lifeCatalog = loadLifeCatalog();
   private lastTickAt: number;
   private lastBroadcastAt = 0;
@@ -819,6 +822,7 @@ export class MultiplayerWorld {
       case "election.action": await this.electionAction(context, player, message, requestId); return;
       case "justice.action": await this.justiceAction(context, player, message, requestId); return;
       case "police.action": await this.policeAction(context, player, message, requestId); return;
+      case "military.action": await this.militaryAction(context, player, message, requestId); return;
       case "chat.send": this.handleChat(context, player, message, requestId); return;
       case "player.interact": this.handlePlayerInteraction(context, player, message, requestId); return;
       case "relationship.progress": await this.progressRelationship(context, player, message, requestId); return;
@@ -926,6 +930,8 @@ export class MultiplayerWorld {
     seedJusticeWorld(this.store.state, this.store.state.worldClock.world_date, this.now(), this.justiceCatalog);
     initializePoliceWorldState(this.store.state);
     seedPoliceWorld(this.store.state, this.store.state.worldClock.world_date);
+    initializeMilitaryWorldState(this.store.state);
+    seedMilitaryWorld(this.store.state, this.store.state.worldClock.world_date);
     this.playerByTokenHash.set(tokenHash, playerId);
     this.playerByCreationKeyHash.set(creationKeyHash, playerId);
     // The upcoming snapshot includes all current changes; keep later concurrent dirtiness intact.
@@ -3126,6 +3132,278 @@ export class MultiplayerWorld {
     await this.flushDirty();
   }
 
+  private async militaryAction(
+    context: ConnectionContext,
+    player: PersistentPlayer,
+    message: Record<string, unknown>,
+    requestId?: string,
+  ): Promise<void> {
+    const data = message;
+    const action = typeof data.action === "string" ? data.action : "";
+    if (!action || action.length > 48) {
+      this.send(context, appendOptionalRequestId({
+        type: "military.error", action: "", code: "military_action_invalid",
+        message: "Choose a supported military action.",
+      }, requestId));
+      return;
+    }
+
+    const characterId = player.character.character_id;
+    const worldDate = this.store.state.worldClock.world_date;
+    const militaryService = new MilitaryService(this.store.state, this.militaryCatalog);
+    let messageText = "";
+    const responseData: Record<string, unknown> = {};
+
+    try {
+      switch (action) {
+        case "list_branches": {
+          const branches = this.militaryCatalog.get().service_branches;
+          responseData.branches = branches;
+          messageText = `Found ${branches.length} service branch(es).`;
+          break;
+        }
+        case "list_organizations": {
+          const branch = typeof data.branch === "string" ? data.branch as ServiceBranchId : undefined;
+          const orgs = militaryService.listOrganizations(branch);
+          responseData.organizations = orgs.map((o) => ({ org_id: o.org_id, name: o.name, branch: o.branch, org_type: o.org_type, status: o.status }));
+          messageText = `Found ${orgs.length} organization(s).`;
+          break;
+        }
+        case "view_organization": {
+          const orgId = typeof data.org_id === "string" ? data.org_id : "";
+          if (!orgId) throw new Error("military_org_not_found");
+          const org = militaryService.getOrganization(orgId);
+          if (!org) throw new Error("military_org_not_found");
+          responseData.organization = org;
+          messageText = `Organization: ${org.name}`;
+          break;
+        }
+        case "list_bases": {
+          const branch = typeof data.branch === "string" ? data.branch as ServiceBranchId : undefined;
+          const bases = militaryService.listBases(branch);
+          responseData.bases = bases.map((b) => militaryService.getBaseSnapshot(b.base_id)).filter(Boolean);
+          messageText = `Found ${bases.length} base(s).`;
+          break;
+        }
+        case "view_base": {
+          const baseId = typeof data.base_id === "string" ? data.base_id : "";
+          if (!baseId) throw new Error("military_base_not_found");
+          const snapshot = militaryService.getBaseSnapshot(baseId);
+          if (!snapshot) throw new Error("military_base_not_found");
+          responseData.base = snapshot;
+          messageText = `Base: ${snapshot.name}`;
+          break;
+        }
+        case "list_units": {
+          const branch = typeof data.branch === "string" ? data.branch as ServiceBranchId : undefined;
+          const units = militaryService.listUnits(branch);
+          responseData.units = units.map((u) => militaryService.getUnitSnapshot(u.unit_id)).filter(Boolean);
+          messageText = `Found ${units.length} unit(s).`;
+          break;
+        }
+        case "apply_for_service": {
+          const branch = typeof data.branch === "string" ? data.branch as ServiceBranchId : "" as ServiceBranchId;
+          if (!branch) throw new Error("military_branch_invalid");
+          const education = typeof data.education === "string" ? data.education : player.character.education_level;
+          const birthDate = player.character.date_of_birth ?? { year: worldDate.year - 20, month: 1, day: 1 };
+          const app = militaryService.applyForService({ character_id: characterId, branch, education, birth_date: birthDate }, worldDate);
+          responseData.application = app;
+          messageText = "Military application submitted.";
+          break;
+        }
+        case "enlist": {
+          const applicationId = typeof data.application_id === "string" ? data.application_id : "";
+          if (!applicationId) throw new Error("military_application_not_found");
+          const svc = militaryService.enrollServiceMember(applicationId, worldDate);
+          responseData.service = militaryService.getServiceSnapshot(svc.service_id);
+          messageText = `Enlisted: ${svc.service_number}`;
+          break;
+        }
+        case "military_profile": {
+          const profile = militaryService.getMilitaryProfile(characterId);
+          responseData.profile = profile;
+          messageText = profile.is_service_member ? `Service: ${profile.branch} — ${profile.rank_label} (${profile.service_number})` : "No military record.";
+          break;
+        }
+        case "list_training": {
+          const branch = typeof data.branch === "string" ? data.branch as ServiceBranchId : undefined;
+          const courses = branch ? this.militaryCatalog.getTrainingCoursesForBranch(branch) : this.militaryCatalog.get().training_courses;
+          responseData.courses = courses.map((c) => ({ id: c.id, label: c.label, duration_days: c.duration_days, branch: c.branch }));
+          messageText = `Found ${courses.length} training course(s).`;
+          break;
+        }
+        case "enroll_training": {
+          const serviceId = typeof data.service_id === "string" ? data.service_id : "";
+          const courseId = typeof data.course_id === "string" ? data.course_id : "";
+          if (!serviceId || !courseId) throw new Error("military_training_course_not_found");
+          const t = militaryService.enrollInTraining({ service_id: serviceId, course_id: courseId }, worldDate);
+          responseData.training = t;
+          messageText = "Enrolled in training.";
+          break;
+        }
+        case "complete_training": {
+          const trainingId = typeof data.training_record_id === "string" ? data.training_record_id : "";
+          const result = typeof data.result === "string" && data.result === "fail" ? "fail" as const : "pass" as const;
+          if (!trainingId) throw new Error("military_training_not_found");
+          const t = militaryService.completeTraining(trainingId, result, worldDate);
+          responseData.training = t;
+          messageText = `Training ${result === "pass" ? "completed" : "failed"}.`;
+          break;
+        }
+        case "promote": {
+          const serviceId = typeof data.service_id === "string" ? data.service_id : "";
+          const newRank = typeof data.rank === "string" ? data.rank : "";
+          const reason = typeof data.reason === "string" ? data.reason : "Promotion";
+          if (!serviceId || !newRank) throw new Error("military_rank_not_found");
+          const svc = militaryService.promoteServiceMember(serviceId, newRank, characterId, reason, worldDate);
+          responseData.service = militaryService.getServiceSnapshot(svc.service_id);
+          messageText = `Promoted to ${newRank}.`;
+          break;
+        }
+        case "rank_history": {
+          const serviceId = typeof data.service_id === "string" ? data.service_id : "";
+          if (!serviceId) throw new Error("military_service_not_found");
+          const history = militaryService.getRankHistory(serviceId);
+          responseData.history = history;
+          messageText = `Found ${history.length} rank record(s).`;
+          break;
+        }
+        case "create_appointment": {
+          const serviceId = typeof data.service_id === "string" ? data.service_id : "";
+          const orgId = typeof data.org_id === "string" ? data.org_id : "";
+          const role = typeof data.role === "string" ? data.role : "";
+          if (!serviceId || !orgId || !role) throw new Error("military_org_not_found");
+          const apt = militaryService.createCommandAppointment({ service_id: serviceId, org_id: orgId, role, appointing_authority: characterId }, worldDate);
+          responseData.appointment = apt;
+          messageText = "Command appointment created.";
+          break;
+        }
+        case "assign": {
+          const serviceId = typeof data.service_id === "string" ? data.service_id : "";
+          const assignmentType = typeof data.assignment_type === "string" ? data.assignment_type as AssignmentTypeId : "" as AssignmentTypeId;
+          if (!serviceId || !assignmentType) throw new Error("military_assignment_type_invalid");
+          const assignParams: { service_id: string; assignment_type: AssignmentTypeId; unit_id?: string | null; base_id?: string | null; assigned_by: string; description?: string } = {
+            service_id: serviceId,
+            assignment_type: assignmentType,
+            assigned_by: characterId,
+          };
+          if (typeof data.unit_id === "string") assignParams.unit_id = data.unit_id;
+          if (typeof data.base_id === "string") assignParams.base_id = data.base_id;
+          if (typeof data.description === "string") assignParams.description = data.description;
+          const a = militaryService.assignServiceMember(assignParams, worldDate);
+          responseData.assignment = a;
+          messageText = "Assignment created.";
+          break;
+        }
+        case "request_leave": {
+          const serviceId = typeof data.service_id === "string" ? data.service_id : "";
+          const leaveType = typeof data.leave_type === "string" ? data.leave_type : "annual";
+          const startDate = typeof data.start_date === "string" ? data.start_date : "";
+          const endDate = typeof data.end_date === "string" ? data.end_date : "";
+          const reason = typeof data.reason === "string" ? data.reason : "";
+          if (!serviceId || !startDate || !endDate) throw new Error("military_leave_not_found");
+          const l = militaryService.requestLeave({
+            service_id: serviceId, leave_type: leaveType,
+            start_date: startDate, end_date: endDate, reason,
+            start_world_date: worldDate, end_world_date: worldDate,
+          }, worldDate);
+          responseData.leave = l;
+          messageText = "Leave requested.";
+          break;
+        }
+        case "create_asset": {
+          const name = typeof data.name === "string" ? data.name : "";
+          const category = typeof data.category === "string" ? data.category as EquipmentCategoryId : "" as EquipmentCategoryId;
+          if (!name || !category) throw new Error("military_equipment_category_invalid");
+          const asset = militaryService.createAsset({
+            name, category,
+            org_id: typeof data.org_id === "string" ? data.org_id : null,
+            base_id: typeof data.base_id === "string" ? data.base_id : null,
+          }, worldDate);
+          responseData.asset = asset;
+          messageText = `Asset created: ${asset.name}`;
+          break;
+        }
+        case "list_assets": {
+          const baseId = typeof data.base_id === "string" ? data.base_id : undefined;
+          const assets = militaryService.listAssets(baseId);
+          responseData.assets = assets.map((a) => ({ asset_id: a.asset_id, name: a.name, category: a.category, status: a.status, base_id: a.base_id }));
+          messageText = `Found ${assets.length} asset(s).`;
+          break;
+        }
+        case "create_security_event": {
+          const category = typeof data.category === "string" ? data.category as NationalSecurityEventCategoryId : "" as NationalSecurityEventCategoryId;
+          const title = typeof data.title === "string" ? data.title : "";
+          const description = typeof data.description === "string" ? data.description : "";
+          if (!category || !title || !description) throw new Error("military_event_category_invalid");
+          const ev = militaryService.createNationalSecurityEvent({
+            category, title, description,
+            authorizing_authority: characterId,
+            state_id: typeof data.state_id === "string" ? data.state_id : null,
+            public_info: typeof data.public_info === "string" ? data.public_info : null,
+          }, worldDate);
+          responseData.event = ev;
+          messageText = `Security event: ${ev.category}`;
+          break;
+        }
+        case "list_security_events": {
+          const status = typeof data.status === "string" ? data.status as import("../military/types.js").NationalSecurityEventStatusId : undefined;
+          const events = militaryService.listNationalSecurityEvents(status);
+          responseData.events = events.map((e) => ({ event_id: e.event_id, category: e.category, title: e.title, status: e.status, started_at: e.started_at }));
+          messageText = `Found ${events.length} security event(s).`;
+          break;
+        }
+        case "file_disciplinary_case": {
+          const accusedServiceId = typeof data.accused_service_id === "string" ? data.accused_service_id : "";
+          const conduct = typeof data.alleged_conduct === "string" ? data.alleged_conduct : "";
+          if (!accusedServiceId || !conduct) throw new Error("military_disciplinary_not_found");
+          const c = militaryService.submitDisciplinaryCase({
+            accused_service_id: accusedServiceId,
+            alleged_conduct: conduct,
+            reviewing_authority: characterId,
+          }, worldDate);
+          responseData.case = c;
+          messageText = "Disciplinary case filed.";
+          break;
+        }
+        case "list_disciplinary_cases": {
+          const serviceId = typeof data.service_id === "string" ? data.service_id : undefined;
+          const cases = militaryService.listDisciplinaryCases(serviceId);
+          responseData.cases = cases.map((c) => ({ case_id: c.case_id, accused_service_id: c.accused_service_id, status: c.status, outcome: c.outcome, submitted_at: c.submitted_at }));
+          messageText = `Found ${cases.length} case(s).`;
+          break;
+        }
+        case "service_profile": {
+          const serviceId = typeof data.service_id === "string" ? data.service_id : "";
+          if (!serviceId) throw new Error("military_service_not_found");
+          responseData.service = militaryService.getServiceSnapshot(serviceId);
+          const serviceSnap = responseData.service as { service_number?: string } | null;
+          messageText = serviceSnap ? `Service: ${serviceSnap.service_number ?? "unknown"}` : "Service record not found.";
+          break;
+        }
+        default:
+          throw new Error("military_action_unknown");
+      }
+    } catch (error) {
+      const code = this.errorCode(error);
+      this.send(context, appendOptionalRequestId({
+        type: "military.error",
+        action,
+        code,
+        message: militaryErrorMessage(code),
+      }, requestId));
+      return;
+    }
+
+    this.markRequestProcessed(player, requestId);
+    if (!["list_branches", "list_organizations", "view_organization", "list_bases", "view_base", "list_units", "list_training", "list_assets", "list_security_events", "list_disciplinary_cases", "military_profile", "service_profile", "rank_history"].includes(action)) this.touchPlayer(player);
+    this.send(context, appendOptionalRequestId({
+      type: "military.result", action, ok: true, message: messageText, data: responseData,
+    }, requestId));
+    this.sendCharacterSnapshot(context);
+    await this.flushDirty();
+  }
+
   private programSeatCount(programId: string): number {
     if (!programId) return 0;
     const occupied = new Set<string>();
@@ -3410,6 +3688,7 @@ export class MultiplayerWorld {
     try { const pp = getPoliticalProfile(this.store.state, player.character.character_id); if (pp) snapshot.political_profile = pp; } catch { /* ignore */ }
     try { const lp = getLegalProfile(this.store.state, player.character.character_id); if (lp) snapshot.legal_profile = lp; } catch { /* ignore */ }
     try { const policeService = new PoliceService(this.store.state, this.policeCatalog); const pp = policeService.getPoliceProfile(player.character.character_id); if (pp.is_officer) snapshot.police_profile = pp; } catch { /* ignore */ }
+    try { const militaryService = new MilitaryService(this.store.state, this.militaryCatalog); const mp = militaryService.getMilitaryProfile(player.character.character_id); if (mp.is_service_member) snapshot.military_profile = mp; } catch { /* ignore */ }
     return snapshot;
   }
 
