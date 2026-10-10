@@ -464,7 +464,7 @@ test("schema version 15 state migrates to version 16 with empty entertainment an
   const original = new WorldStore(stateFile, Date.UTC(2025, 0, 1));
   await original.flush();
   const saved = JSON.parse(await readFile(stateFile, "utf8"));
-  assert.equal(saved.schemaVersion, 17);
+  assert.equal(saved.schemaVersion, 18);
   saved.schemaVersion = 14;
   delete saved.entertainmentProfiles; delete saved.musicProjects; delete saved.filmProjects;
   delete saved.contentRecords; delete saved.entertainmentEvents; delete saved.entertainmentContracts;
@@ -477,7 +477,7 @@ test("schema version 15 state migrates to version 16 with empty entertainment an
   delete saved.socialAdCampaigns; delete saved.socialTrendingTopics; delete saved.socialAudits;
   await writeFile(stateFile, JSON.stringify(saved), "utf8");
   const migrated = new WorldStore(stateFile, Date.UTC(2025, 0, 2));
-  assert.equal(migrated.state.schemaVersion, 17);
+  assert.equal(migrated.state.schemaVersion, 18);
   assert.ok(typeof migrated.state.entertainmentProfiles === "object");
   assert.ok(typeof migrated.state.musicProjects === "object");
   assert.ok(typeof migrated.state.newsReports === "object");
@@ -538,7 +538,7 @@ test("schema version 16 state migrates to version 17 with empty NPC maps", async
   const original = new WorldStore(stateFile, Date.UTC(2025, 0, 1));
   await original.flush();
   const saved = JSON.parse(await readFile(stateFile, "utf8"));
-  assert.equal(saved.schemaVersion, 17);
+  assert.equal(saved.schemaVersion, 18);
   saved.schemaVersion = 16;
   delete saved.npcProfiles; delete saved.npcRoutines; delete saved.npcActivityRecords;
   delete saved.npcNeeds; delete saved.npcMovements; delete saved.npcSocialInteractions;
@@ -546,7 +546,7 @@ test("schema version 16 state migrates to version 17 with empty NPC maps", async
   delete saved.npcSimulationState;
   await writeFile(stateFile, JSON.stringify(saved), "utf8");
   const migrated = new WorldStore(stateFile, Date.UTC(2025, 0, 2));
-  assert.equal(migrated.state.schemaVersion, 17);
+  assert.equal(migrated.state.schemaVersion, 18);
   assert.ok(typeof migrated.state.npcProfiles === "object");
   assert.ok(typeof migrated.state.npcRoutines === "object");
   assert.ok(migrated.state.npcSimulationState !== null);

@@ -1,0 +1,216 @@
+{
+  "schema_version": 1,
+  "world_id": "nigeria-main",
+  "notice": "World event catalog for Naija: One World. Defines event types, processing rules, and consumer configurations.",
+  "rules": {
+    "event_retention_days": 90,
+    "max_event_payload_size_kb": 64,
+    "max_causation_chain_depth": 10,
+    "max_retry_attempts": 5,
+    "retry_backoff_seconds": 60,
+    "retry_max_backoff_seconds": 3600,
+    "batch_size": 50,
+    "processing_timeout_seconds": 30,
+    "dead_letter_queue_enabled": true,
+    "idempotency_window_hours": 24,
+    "event_deduplication_enabled": true
+  },
+  "event_priorities": {
+    "low": {
+      "description": "Non-urgent events that can be processed asynchronously",
+      "processing_delay_seconds": 300,
+      "retry_priority": "last"
+    },
+    "normal": {
+      "description": "Standard priority events",
+      "processing_delay_seconds": 60,
+      "retry_priority": "normal"
+    },
+    "high": {
+      "description": "Important events that should be processed quickly",
+      "processing_delay_seconds": 10,
+      "retry_priority": "first"
+    },
+    "critical": {
+      "description": "Critical events requiring immediate processing",
+      "processing_delay_seconds": 0,
+      "retry_priority": "first"
+    }
+  },
+  "event_categories": {
+    "government": {
+      "description": "Government policy and administrative events",
+      "requires_authorization": true,
+      "authorization_level": "government_official",
+      "visibility_default": "public",
+      "allowed_source_types": ["government", "system"]
+    },
+    "economy": {
+      "description": "Economic and financial events",
+      "requires_authorization": true,
+      "authorization_level": "system",
+      "visibility_default": "public",
+      "allowed_source_types": ["system"]
+    },
+    "business": {
+      "description": "Business operations and changes",
+      "requires_authorization": true,
+      "authorization_level": "business_owner",
+      "visibility_default": "public",
+      "allowed_source_types": ["player", "npc", "system"]
+    },
+    "infrastructure": {
+      "description": "Infrastructure and public works events",
+      "requires_authorization": true,
+      "authorization_level": "government_official",
+      "visibility_default": "public",
+      "allowed_source_types": ["government", "system"]
+    },
+    "transport": {
+      "description": "Transportation and traffic events",
+      "requires_authorization": false,
+      "authorization_level": "system",
+      "visibility_default": "public",
+      "allowed_source_types": ["system", "player", "npc"]
+    },
+    "election": {
+      "description": "Election and political events",
+      "requires_authorization": true,
+      "authorization_level": "election_commission",
+      "visibility_default": "public",
+      "allowed_source_types": ["government", "system"]
+    },
+    "social": {
+      "description": "Social and community events",
+      "requires_authorization": false,
+      "authorization_level": "public",
+      "visibility_default": "public",
+      "allowed_source_types": ["player", "npc", "system"]
+    },
+    "npc": {
+      "description": "NPC life and activity events",
+      "requires_authorization": true,
+      "authorization_level": "system",
+      "visibility_default": "restricted",
+      "allowed_source_types": ["system"]
+    },
+    "culture": {
+      "description": "Cultural and community events",
+      "requires_authorization": false,
+      "authorization_level": "public",
+      "visibility_default": "public",
+      "allowed_source_types": ["player", "npc", "system", "government"]
+    },
+    "entertainment": {
+      "description": "Entertainment and media events",
+      "requires_authorization": false,
+      "authorization_level": "public",
+      "visibility_default": "public",
+      "allowed_source_types": ["player", "npc", "system"]
+    },
+    "crime": {
+      "description": "Crime and security events",
+      "requires_authorization": true,
+      "authorization_level": "law_enforcement",
+      "visibility_default": "restricted",
+      "allowed_source_types": ["system", "government"]
+    },
+    "justice": {
+      "description": "Justice and legal events",
+      "requires_authorization": true,
+      "authorization_level": "judicial",
+      "visibility_default": "public",
+      "allowed_source_types": ["government", "system"]
+    },
+    "emergency": {
+      "description": "Emergency and disaster events",
+      "requires_authorization": true,
+      "authorization_level": "emergency_services",
+      "visibility_default": "public",
+      "allowed_source_types": ["government", "system"]
+    },
+    "environment": {
+      "description": "Environmental and weather events",
+      "requires_authorization": true,
+      "authorization_level": "system",
+      "visibility_default": "public",
+      "allowed_source_types": ["system", "government"]
+    }
+  },
+  "consumer_configurations": [
+    {
+      "consumer_id": "economy_consumer",
+      "consumer_name": "Economy System Consumer",
+      "consumer_system": "economy",
+      "subscribed_categories": ["government", "economy", "business"],
+      "subscribed_types": ["tax_rate_changed", "price_index_changed", "business_opened", "business_closed"],
+      "enabled": true,
+      "priority": "high"
+    },
+    {
+      "consumer_id": "business_consumer",
+      "consumer_name": "Business System Consumer",
+      "consumer_system": "businesses",
+      "subscribed_categories": ["economy", "business", "government"],
+      "subscribed_types": ["tax_rate_changed", "policy_enacted", "infrastructure_project_completed"],
+      "enabled": true,
+      "priority": "normal"
+    },
+    {
+      "consumer_id": "transport_consumer",
+      "consumer_name": "Transport System Consumer",
+      "consumer_system": "transportation",
+      "subscribed_categories": ["infrastructure", "transport", "emergency"],
+      "subscribed_types": ["road_closed", "road_reopened", "infrastructure_damaged", "emergency_declared"],
+      "enabled": true,
+      "priority": "high"
+    },
+    {
+      "consumer_id": "npc_consumer",
+      "consumer_name": "NPC System Consumer",
+      "consumer_system": "npc",
+      "subscribed_categories": ["business", "transport", "economy", "emergency", "social"],
+      "subscribed_types": ["business_opened", "business_closed", "road_closed", "tax_rate_changed", "emergency_declared"],
+      "enabled": true,
+      "priority": "normal"
+    },
+    {
+      "consumer_id": "social_consumer",
+      "consumer_name": "Social Network Consumer",
+      "consumer_system": "social",
+      "subscribed_categories": ["government", "election", "social", "entertainment"],
+      "subscribed_types": ["policy_enacted", "election_results_finalized", "public_announcement", "media_published"],
+      "enabled": true,
+      "priority": "normal"
+    },
+    {
+      "consumer_id": "election_consumer",
+      "consumer_name": "Election System Consumer",
+      "consumer_system": "elections",
+      "subscribed_categories": ["government", "election"],
+      "subscribed_types": ["election_scheduled", "campaign_started", "policy_enacted"],
+      "enabled": true,
+      "priority": "high"
+    }
+  ],
+  "causal_chains": {
+    "policy_to_economy": {
+      "description": "Government policy changes affecting the economy",
+      "example_chain": ["policy_enacted", "tax_rate_changed", "business_cost_change", "price_adjustment"],
+      "max_depth": 4,
+      "cooldown_hours": 24
+    },
+    "infrastructure_to_transport": {
+      "description": "Infrastructure changes affecting transport",
+      "example_chain": ["infrastructure_project_completed", "road_reopened", "traffic_flow_restored"],
+      "max_depth": 3,
+      "cooldown_hours": 12
+    },
+    "business_to_employment": {
+      "description": "Business changes affecting employment",
+      "example_chain": ["business_opened", "business_hiring", "npc_employment_change"],
+      "max_depth": 3,
+      "cooldown_hours": 6
+    }
+  }
+}

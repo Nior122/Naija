@@ -448,7 +448,7 @@ test("schema version 12 state migrates to version 13 with empty culture maps", a
   const original = new WorldStore(stateFile, Date.UTC(2025, 0, 1));
   await original.flush();
   const saved = JSON.parse(await readFile(stateFile, "utf8"));
-  assert.equal(saved.schemaVersion, 17);
+  assert.equal(saved.schemaVersion, 18);
   saved.schemaVersion = 12;
   delete saved.communities; delete saved.communityMemberships; delete saved.institutions;
   delete saved.institutionMemberships; delete saved.culturalProfiles; delete saved.communityEvents;
@@ -465,7 +465,7 @@ test("schema version 12 state migrates to version 13 with empty culture maps", a
   delete saved.socialAdCampaigns; delete saved.socialTrendingTopics; delete saved.socialAudits;
   await writeFile(stateFile, JSON.stringify(saved), "utf8");
   const migrated = new WorldStore(stateFile, Date.UTC(2025, 0, 2));
-  assert.equal(migrated.state.schemaVersion, 17);
+  assert.equal(migrated.state.schemaVersion, 18);
   assert.ok(typeof migrated.state.communities === "object");
   assert.ok(typeof migrated.state.institutions === "object");
   assert.ok(typeof migrated.state.culturalProfiles === "object");

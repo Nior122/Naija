@@ -1,6 +1,6 @@
 # Master Roadmap
 
-The roadmap describes intended development, not completed features. Stage 0 is complete. Stages 1–7 remain in place; Godot runtime verification is still pending. Stages 4–20 have backend/persistence/multiplayer checks passing, while their Godot client verification remains blocked. Stages 19–20 are implementation-present and backend-tested. See `DEVELOPMENT_STATUS.md` for exact results and limits.
+The roadmap describes intended development, not completed features. Stage 0 is complete. Stages 1–7 remain in place; Godot runtime verification is still pending. Stages 4–21 have backend/persistence/multiplayer checks passing, while their Godot client verification remains blocked. Stages 19–20 are implementation-present and backend-tested. See `DEVELOPMENT_STATUS.md` for exact results and limits.
 
 | Phase | Name | Purpose | Status |
 |---:|---|---|---|
@@ -25,7 +25,7 @@ The roadmap describes intended development, not completed features. Stage 0 is c
 | 18 | Social Network | Introduce in-world publishing, profiles, feeds, privacy controls, reporting, and moderation. | **Implementation present; backend verified; Godot runtime verification pending** |
 | 19 | Transportation & Infrastructure | Expand roads, public and private transport, rail, airports, ports, utilities, and travel systems. | **Implementation present; backend verified; Godot runtime verification pending** |
 | 20 | Living NPC Society | Develop population cohorts and purposeful NPC routines, relationships, work, and reactions. | **Implementation present; backend verified; Godot runtime verification pending** |
-| 21 | Dynamic Nigerian World | Connect the clock, weather, markets, public events, institutions, NPCs, and player actions into evolving state. | Not started |
+| 21 | Dynamic Nigerian World | Connect the clock, weather, markets, public events, institutions, NPCs, and player actions into evolving state. | **Implementation present; backend verified; Godot runtime verification pending** |
 | 22 | Full Nigeria | Broaden and validate national geographic, institutional, and cultural coverage across the country. | Not started |
 | 23 | Advanced 3D World | Evolve presentation, environments, interiors, animation, lighting, and performance toward the intended visual direction. | Not started |
 | 24 | One-World Scaling | Partition physical workloads and data while preserving globally coherent authoritative Nigeria state. | Not started |
