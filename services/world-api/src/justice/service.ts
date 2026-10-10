@@ -640,6 +640,16 @@ export function getProfessionalForCharacter(state: PersistentWorldState, charact
 
 // ─── Cases ────────────────────────────────────────────────────────
 
+/** Shape of a state identifier in the geography catalog, for example ng:state:fc. */
+const STATE_ID_PATTERN = /^ng:state:[a-z]{2}$/;
+
+/**
+ * Result of the jurisdiction check recorded in the case_filed audit entry.
+ * "unverified_no_location": the court is tied to a state but the filer has no recorded location, so
+ * the filer could not be placed. The filing is accepted for compatibility; it is not proof of eligibility.
+ */
+export type JurisdictionCheck = "not_required" | "verified" | "unverified_no_location";
+
 /**
  * A court handles a case category when its permitted_categories lists the category's law category
  * (its legal subject matter) or the category's case type (civil or criminal). Nothing else is accepted.
@@ -678,8 +688,17 @@ export function fileCase(
   // that state. A filer with no recorded geographic location cannot be placed, so this check does not
   // apply to them. That gap is recorded in docs/STAGE_28_AUDIT.md and needs a product decision.
   const filerLocation = filingPlayer.character.geographic_location ?? null;
-  if (court.applicable_jurisdiction_id && filerLocation !== null && filerLocation.state_id !== court.applicable_jurisdiction_id) {
-    throw new Error("justice_court_jurisdiction_mismatch");
+  if (filerLocation !== null && !STATE_ID_PATTERN.test(filerLocation.state_id)) throw new Error("justice_filer_location_invalid");
+  let jurisdictionCheck: JurisdictionCheck = "not_required";
+  if (court.applicable_jurisdiction_id) {
+    if (filerLocation === null) {
+      // Not verified: a character without a recorded location is not placed in any state, so this is not proof of eligibility.
+      jurisdictionCheck = "unverified_no_location";
+    } else if (filerLocation.state_id !== court.applicable_jurisdiction_id) {
+      throw new Error("justice_court_jurisdiction_mismatch");
+    } else {
+      jurisdictionCheck = "verified";
+    }
   }
   if (filingPlayer.character.life_status === "deceased") throw new Error("justice_character_deceased");
   if (filingPlayer.character.age < catalog.rules.minimum_filing_age) throw new Error("justice_age_ineligible");
@@ -751,7 +770,7 @@ export function fileCase(
     state.caseParticipants[def.participant_id] = def;
   }
 
-  appendJusticeAudit(state, "case_filed", null, null, caseRec.case_id, null, null, filingPartyCharacterId, `Case filed: ${caseRec.case_number}`, date, now, { category, court_id: courtId });
+  appendJusticeAudit(state, "case_filed", null, null, caseRec.case_id, null, null, filingPartyCharacterId, `Case filed: ${caseRec.case_number}`, date, now, { category, court_id: courtId, jurisdiction_check: jurisdictionCheck });
   return caseRec;
 }
 

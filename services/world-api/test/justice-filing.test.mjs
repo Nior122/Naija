@@ -202,14 +202,95 @@ test("Filing rejected: a rejected filing changes neither the cases nor the court
   assert.equal(JSON.stringify({ cases: world.state.cases, courts: world.state.courts, audit: world.state.legalAudits }), before);
 });
 
-// ─── Documented gap: no recorded location ─────────────────────────
+// ─── Jurisdiction status: missing, valid, and invalid location data ────────
 
-test("Filing: a filer with no recorded geographic location is not placed by the jurisdiction rule (documented gap)", () => {
+function jurisdictionCheckFor(world, caseRec) {
+  const audit = Object.values(world.state.legalAudits).find((a) => a.category === "case_filed" && a.case_id === caseRec.case_id);
+  assert.ok(audit, "the case_filed audit entry exists");
+  return audit.details.jurisdiction_check;
+}
+
+test("Location, missing: a state court accepts the filing, and the audit records it as unverified (not eligible)", () => {
   const { world, catalog } = seededWorld();
   const unplaced = addPlayer(world, "Unplaced", 30, null);
-  // This is accepted today. It is the gap in docs/STAGE_28_AUDIT.md: the rule needs a decision on
-  // how to treat characters without a location. Changing it is a product decision, not a bug fix.
-  assert.equal(file(world, catalog, "civil_general", "court:state-high-fct", unplaced).court_id, "court:state-high-fct");
+  const caseRec = file(world, catalog, "civil_general", "court:state-high-fct", unplaced);
+  assert.equal(caseRec.court_id, "court:state-high-fct");
+  // The filing is accepted for compatibility with characters that have no location. It is not proof that
+  // the filer is within the court's state, so the audit entry must not say "verified".
+  assert.equal(jurisdictionCheckFor(world, caseRec), "unverified_no_location");
+});
+
+test("Location, missing: a local court is also recorded as unverified", () => {
+  const { world, catalog } = seededWorld();
+  const unplaced = addPlayer(world, "Unplaced Tenant", 26, null);
+  const caseRec = file(world, catalog, "tenancy_dispute", "court:customary-fct", unplaced);
+  assert.equal(jurisdictionCheckFor(world, caseRec), "unverified_no_location");
+});
+
+test("Location, missing: a federal court does not need a location, and the audit says so", () => {
+  const { world, catalog } = seededWorld();
+  const unplaced = addPlayer(world, "Unplaced Worker", 30, null);
+  const caseRec = file(world, catalog, "employment_claim", "court:nic", unplaced);
+  assert.equal(jurisdictionCheckFor(world, caseRec), "not_required");
+});
+
+test("Location, valid: a filer in the court's state is recorded as verified", () => {
+  const { world, catalog } = seededWorld();
+  const fcFiler = addPlayer(world, "FCT Resident", 30, "ng:state:fc");
+  const caseRec = file(world, catalog, "civil_general", "court:state-high-fct", fcFiler);
+  assert.equal(jurisdictionCheckFor(world, caseRec), "verified");
+});
+
+test("Location, valid: a filer in another state is rejected at a state court", () => {
+  const { world, catalog } = seededWorld();
+  const laFiler = addPlayer(world, "Lagos Resident", 30, "ng:state:la");
+  assert.throws(() => file(world, catalog, "civil_general", "court:state-high-fct", laFiler), /justice_court_jurisdiction_mismatch/);
+});
+
+test("Location, invalid: a malformed state identifier is rejected at a state court", () => {
+  const { world, catalog } = seededWorld();
+  const filer = addPlayer(world, "Malformed", 30, "ng:state:fc");
+  world.state.players[`player-${filer}`].character.geographic_location.state_id = "FC";
+  assert.throws(() => file(world, catalog, "civil_general", "court:state-high-fct", filer), /justice_filer_location_invalid/);
+});
+
+test("Location, invalid: a malformed state identifier is rejected even at a federal court", () => {
+  const { world, catalog } = seededWorld();
+  const filer = addPlayer(world, "Malformed Worker", 30, "ng:state:fc");
+  world.state.players[`player-${filer}`].character.geographic_location.state_id = "";
+  assert.throws(() => file(world, catalog, "employment_claim", "court:nic", filer), /justice_filer_location_invalid/);
+});
+
+test("Location, invalid: a rejected filing leaves cases and audit entries unchanged", () => {
+  const { world, catalog } = seededWorld();
+  const filer = addPlayer(world, "Malformed", 30, "ng:state:fc");
+  world.state.players[`player-${filer}`].character.geographic_location.state_id = "FC";
+  const before = JSON.stringify({ cases: world.state.cases, audit: world.state.legalAudits });
+  assert.throws(() => file(world, catalog, "civil_general", "court:state-high-fct", filer), /justice_filer_location_invalid/);
+  assert.equal(JSON.stringify({ cases: world.state.cases, audit: world.state.legalAudits }), before);
+});
+
+test("Location: a case filed with an unverified jurisdiction check passes record validation", () => {
+  const { world, catalog } = seededWorld();
+  const unplaced = addPlayer(world, "Unplaced", 30, null);
+  file(world, catalog, "civil_general", "court:state-high-fct", unplaced);
+  const result = validateJusticeRecords(world.state);
+  assert.deepEqual(result.issues, [], JSON.stringify(result.issues.slice(0, 3)));
+});
+
+// ─── Law category mapping: reviewed table ─────────────────────────
+
+test("Law category mapping: each case category maps to the reviewed law category (changing it is a deliberate review)", () => {
+  // Reviewed in docs/LAWS_COURTS_AND_JUSTICE_PLAN.md (section "Law category meanings"). Changing any entry needs review.
+  const REVIEWED = {
+    civil_general: "civil", contract_dispute: "commercial", debt_recovery: "civil", property_dispute: "property",
+    tenancy_dispute: "property", employment_claim: "employment", compensation_claim: "civil",
+    criminal_misdemeanor: "criminal", criminal_felony: "criminal", regulatory_penalty: "administration",
+    commercial_dispute: "commercial",
+  };
+  const catalog = loadJusticeCatalog();
+  const actual = Object.fromEntries(catalog.case_categories.map((c) => [c.id, c.law_category]));
+  assert.deepEqual(actual, REVIEWED);
 });
 
 // ─── Compatibility with stored worlds ─────────────────────────────

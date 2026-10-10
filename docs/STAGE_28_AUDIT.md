@@ -434,28 +434,37 @@ Local PostgreSQL results are not evidence for Neon or production.
 - **Stage 27 password hashing is unverified** (existing limitation).
 - **Build output:** `services/world-api/dist/` is rebuilt for tests and is not committed.
 
-### 11.7 Justice court-category decision (Task 1)
+### 11.7 Justice court-category decision (Task 1, revised after review)
 
-**Problem found.** Seeded courts list **law** categories (for example `supreme` = `constitutional, criminal, civil, commercial, property, employment`). The filing check accepted a case only when the court listed the case's **category ID** (for example `employment_claim`) or its **type** (`civil` or `criminal`). So `commercial`, `property`, `employment`, and the other law categories matched no case, and `court:nic` (which lists only `employment`) accepted no filing. There was also no jurisdiction check: a filer in any state could file at a state court tied to another state. Before the fix, the old build (`26a124f`) rejected an employment claim at `court:nic` with `justice_court_category_not_permitted`.
+**Problem found.** Seeded courts list **law** categories (for example `supreme` = `constitutional, criminal, civil, commercial, property, employment`). The filing check accepted a case only when the court listed the case's **category ID** (for example `employment_claim`) or its **type** (`civil` or `criminal`). So `commercial`, `property`, `employment`, and the other law categories matched no case, and `court:nic` (which lists only `employment`) accepted no filing. There was also no jurisdiction check. Before the fix, the old build (`26a124f`) rejected an employment claim at `court:nic` with `justice_court_category_not_permitted`.
 
-**Decision.**
-- A court's `permitted_categories` lists **law categories**. This is the vocabulary used by the seeded courts and the stored worlds.
-- Each case category declares a `law_category` in `game/data/justice/catalog.json`. The loader rejects a case category whose `law_category` is not a law category, and a seed court that lists a non-law category (`justice_catalog_case_law_category_unknown`, `justice_catalog_court_category_unknown`).
-- A filing is accepted when the court lists the case's `law_category` or its `type`. The case-ID match is removed.
-- Order of checks in `fileCase`: unknown case category (`justice_case_category_invalid`); court category (`justice_court_category_not_permitted`); jurisdiction (`justice_court_jurisdiction_mismatch`).
-- Jurisdiction: a court with `applicable_jurisdiction_id` rejects a filer whose `geographic_location.state_id` is present and different. Federal courts have no `applicable_jurisdiction_id` and accept filers from any state.
-- Seed change: `court:customary-fct` changes `tenancy_dispute` to `property`. Saved worlds keep the old list. The old entry is a string, still valid, and matches the tenancy case through its `property` law category. Seeding does not overwrite existing courts.
-- The validator still accepts `permitted_categories` as an array of strings. Tightening it to law categories would reject valid stored data (252 corpus court copies carry `tenancy_dispute`).
+**Decision (implemented).**
+- A court's `permitted_categories` lists **law categories**. Each case category declares a `law_category` in `game/data/justice/catalog.json`. The loader rejects an unknown law category in a case category or a seed court list.
+- A filing is accepted when the court lists the case's `law_category` **or** its `type`. The case-ID match is removed.
+- Check order in `fileCase`: unknown case category (`justice_case_category_invalid`); court category (`justice_court_category_not_permitted`); filer location shape (`justice_filer_location_invalid`); jurisdiction (`justice_court_jurisdiction_mismatch`).
+- `court:customary-fct` lists `property` instead of `tenancy_dispute`. Saved worlds keep the old list, which is still valid and still matches through `property`. Seeding does not overwrite existing courts.
+- The validator still accepts `permitted_categories` as an array of strings. Tightening it would reject valid stored data (283 of 284 corpus files carry `tenancy_dispute`).
 
-**Implications and gaps (need product decisions).**
-- `debt_recovery` maps to `financial`, and `regulatory_penalty` maps to `administration`. Neither law category is listed by any court that would otherwise reject them. `financial` is listed only by `court:federal-high`, and no seeded court lists `administration`. Both case types are `civil`, so these cases are still fileable at every court that lists `civil`. Those mappings therefore change nothing about which courts accept them today.
-- **Type-level matches are broad.** A court that lists `civil` accepts every civil case type. For example, `court:customary-fct` (`civil`, `property`) accepts a `commercial_dispute` and a `regulatory_penalty`. This is how the code worked before this pass, and it is kept. Narrowing it (for example, listing law categories only) is a product decision.
-- **Jurisdiction scope.** The three FCT courts (`court:magistrate-fct`, `court:state-high-fct`, `court:customary-fct`) are tied to `ng:state:fc`. The four federal courts have no `applicable_jurisdiction_id` and accept filers from any state.
-- **No location, no jurisdiction check.** A character with no recorded `geographic_location` is not placed, so the jurisdiction rule does not apply. Requiring a location would block characters that have none, so it needs a decision.
-- **Backward compatibility.** The new acceptance rule is a superset of the old one for the seeded data: a case the old rule accepted is still accepted. The only new rejection is the jurisdiction check, which is a deliberate tightening. The court lists are restricted, not opened to all filings.
-- No seeded data is deleted or regenerated. The change does not touch `courts` records in stored worlds.
+**Decision 1: characters without a recorded location (implemented as a known limitation).**
+- A character with no `geographic_location` is accepted by every state court, for compatibility. This is **not** proof of jurisdiction eligibility. The case-filed audit entry records `jurisdiction_check: "unverified_no_location"`. Federal courts record `not_required`. A verified match records `verified`.
+- A malformed `state_id` (not `ng:state:<two lowercase letters>`) is rejected at any court, with `justice_filer_location_invalid`. A location is never invented or written to the character.
+- Measured: **all 283 saved characters have no location**, so the state-court jurisdiction check is inactive for saved data. This is the largest practical gap in the justice system.
+- Tests: `test/justice-filing.test.mjs` covers missing, valid, and invalid location data, and checks the recorded status.
+- The long-term design (server-side residence, phased enforcement, migration) is in `docs/JUSTICE_COURT_ELIGIBILITY_DESIGN.md`. It is a proposal and needs approval before enforcement.
 
-**Evidence.** `test/justice-filing.test.mjs` (20 tests): catalog consistency; accepted filings (employment at NIC, commercial at the FCT High Court and at the Federal High Court, tenancy through the customary court, federal courts for any state, filer in the court's state); rejected filings (civil general and criminal felony at NIC, criminal misdemeanor at customary, unknown category, other-state filer at state and local courts); a rejected filing leaves cases and courts unchanged; the no-location gap; stored-world compatibility; seeded data passes record validation. Mutation check: removing the law-category match fails 3 tests, and disabling the jurisdiction check fails 3 tests. The restored build passes all 20.
+**Decision 2: broad civil and criminal matching (kept; documented; not changed).**
+- A court listing `civil` accepts every civil case type. For example, `court:customary-fct` accepts a commercial dispute and a regulatory penalty. This is pre-existing and kept for compatibility.
+- A law-category-only rule would change **19** (court, category) pairs: 15 seed and 4 stored customary. No saved case exists, so no saved filing would change. The list is in the design document (section 4).
+- Stricter matching is a separate design, with migration and tests (`docs/JUSTICE_COURT_ELIGIBILITY_DESIGN.md`). It is not implemented.
+
+**Decision 3: financial and administration mappings (reviewed; one mapping changed).**
+- `debt_recovery` was changed from `financial` to `civil`. A general debt claim is a civil claim. The federal high court's financial jurisdiction covers banking and revenue matters, which the game does not model as separate categories. Changing the mapping changed **no** seeded court's acceptance (checked for all seed courts and the stored customary list).
+- `regulatory_penalty` stays `administration`. The catalog label is "Public Administration", and section 251(1)(r) of the Constitution (secondary sources) gives the federal high court exclusive jurisdiction over challenges to federal administrative action. No seeded court lists `administration`, so the mapping changes no acceptance today. Whether `federal-high` should list it is an open decision.
+- `financial` is used by no case category. It stays listed by `federal-high`, as configured.
+- The meanings, the courts that list each category, and the open decisions are in `docs/LAWS_COURTS_AND_JUSTICE_PLAN.md` ("Law category meanings and court jurisdiction").
+- Tests: `test/justice-filing.test.mjs` pins the full category-to-law-category table, so a change needs deliberate review.
+
+**Evidence.** `test/justice-filing.test.mjs`: catalog consistency; accepted filings (employment at NIC; commercial at the FCT High Court and the Federal High Court; tenancy through the customary court; federal courts for any state; filer in the court's state); rejected filings (unsupported categories, unknown category, other-state filer at state and local courts); a rejected filing changes nothing; the missing, valid, and invalid location cases; the reviewed mapping table; stored-world compatibility; seeded data and an unverified filing pass record validation.
 
 ### 11.8 Verification for the Task 1 and Task 2 pass
 

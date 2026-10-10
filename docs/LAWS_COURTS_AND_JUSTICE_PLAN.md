@@ -94,3 +94,50 @@ The server accepts `justice.action` commands over the existing authenticated Web
 npm run check                         # lint + 172 Node tests
 node --test services/world-api/test/justice.test.mjs   # focused Stage 12 suite (23 tests)
 ```
+
+---
+
+## Law category meanings and court jurisdiction (Stage 28 review)
+
+This section is the reference for the `law_categories`, `case_categories[].law_category`, and `seed_courts[].permitted_categories` fields in `game/data/justice/catalog.json`. It records what each law category means in the game, which seeded courts list it, and which case categories use it. The source of truth for the data is the catalog. This section explains the intended rules. It is a game design reference, not legal advice; the constitutional notes are secondary and should be checked by a lawyer before they are relied on.
+
+### How a filing is matched
+
+A court accepts a case when its `permitted_categories` lists the case's `law_category` **or** the case's `type` (`civil` or `criminal`). The type match is broad: a court that lists `civil` accepts every civil case type, whatever its law category. This is the current behaviour, kept for compatibility. See `docs/JUSTICE_COURT_ELIGIBILITY_DESIGN.md` for the known limitation and the proposed separate design.
+
+### Law categories
+
+| Law category | Label | Meaning in the game | Seeded courts that list it | Case categories that use it |
+|---|---|---|---|---|
+| `constitutional` | Constitutional and Foundational | Constitutional questions. | supreme, appeal-federal, federal-high | none |
+| `criminal` | Criminal Law | Criminal offences; cases of type `criminal`. | supreme, appeal-federal, federal-high, magistrate-fct, state-high-fct | criminal_misdemeanor, criminal_felony |
+| `civil` | Civil Law | General civil claims. | supreme, appeal-federal, federal-high, magistrate-fct, state-high-fct, customary-fct | civil_general, debt_recovery, compensation_claim |
+| `commercial` | Business and Commercial | Business disputes between traders and companies. | supreme, appeal-federal, federal-high, state-high-fct | contract_dispute, commercial_dispute |
+| `property` | Property and Tenancy | Land, buildings, and tenancies. | supreme, appeal-federal, magistrate-fct, state-high-fct, customary-fct | property_dispute, tenancy_dispute |
+| `employment` | Employment and Labour | Employment and labour claims. | supreme, appeal-federal, state-high-fct, nic | employment_claim |
+| `traffic` | Traffic and Transportation | Road traffic offences and transport claims. | magistrate-fct | none |
+| `environmental` | Environmental | Environmental matters. | none | none |
+| `administration` | Public Administration | Administrative and regulatory penalties, and challenges to administrative action. | none | regulatory_penalty |
+| `election` | Election-related | Election-related matters. | federal-high | none |
+| `financial` | Financial and Taxation | Taxation and banking matters. Not used by any case category today. | federal-high | none |
+| `education` | Education | Education matters. | none | none |
+| `safety` | Public Safety | Public safety matters. | none | none |
+| `other` | Other | Matters not covered above. | none | none |
+
+### Current mapping decisions
+
+- **`debt_recovery` → `civil`.** A general debt claim is a civil claim. The Federal High Court's financial jurisdiction covers banking and revenue matters (see below). The game has no separate banking or tax case category, so a debt claim is not treated as financial. Changing this mapping changed no seeded court's acceptance.
+- **`regulatory_penalty` → `administration`.** A regulatory penalty is an administrative sanction. The catalog label "Public Administration" matches it. No seeded court lists `administration`, so the mapping has no effect on which courts accept these cases today. Those cases are accepted only through their civil type (see the matching rule). Whether a court should list `administration` is an open decision (below).
+- **`financial`.** No case category maps to it. It is listed only by `federal-high`, as configured. It stays in the catalog, unused, until a banking or tax case category is designed.
+- **`contract_dispute`, `commercial_dispute` → `commercial`; `property_dispute`, `tenancy_dispute` → `property`; `employment_claim` → `employment`; criminal cases → `criminal`; `civil_general`, `compensation_claim` → `civil`.** These follow the catalog labels directly.
+
+### Constitutional notes (secondary sources; to be checked by a lawyer)
+
+Secondary commentary on the Constitution of Nigeria 1999 (section 251, Federal High Court) describes exclusive federal jurisdiction over revenue of the Federal Government, taxation of companies and persons subject to federal taxation, banking matters, and challenges to executive or administrative action of the Federal Government or its agencies. State high courts have general civil jurisdiction under section 272. This is why `financial` belongs to the federal high court in the seed configuration, and why an administrative penalty dispute is not a state-court matter when a federal agency is involved. The game does not model these distinctions yet.
+
+### Open decisions
+
+1. Whether `administration` should be listed by `federal-high` (its constitutional basis above). This would not change acceptance today, because regulatory penalties are also civil.
+2. Whether broad `civil` matching should be narrowed. The impact is listed in `docs/JUSTICE_COURT_ELIGIBILITY_DESIGN.md`.
+3. Whether a banking or tax case category should be added so that `financial` has a use.
+

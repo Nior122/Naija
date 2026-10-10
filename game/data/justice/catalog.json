@@ -31,7 +31,7 @@
   "case_categories": [
     { "id": "civil_general", "label": "General Civil Claim", "type": "civil", "law_category": "civil" },
     { "id": "contract_dispute", "label": "Contractual Dispute", "type": "civil", "law_category": "commercial" },
-    { "id": "debt_recovery", "label": "Debt Recovery", "type": "civil", "law_category": "financial" },
+    { "id": "debt_recovery", "label": "Debt Recovery", "type": "civil", "law_category": "civil" },
     { "id": "property_dispute", "label": "Property Dispute", "type": "civil", "law_category": "property" },
     { "id": "tenancy_dispute", "label": "Tenancy Dispute", "type": "civil", "law_category": "property" },
     { "id": "employment_claim", "label": "Employment Claim", "type": "civil", "law_category": "employment" },
