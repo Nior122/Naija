@@ -1102,6 +1102,7 @@ export class MultiplayerWorld {
     }
 
     // Committed. Merge without awaiting, and only if no live value that the creation relies on has changed.
+    this.creationFaultHook?.("after-save");
     this.capacityEpisodeOpen = false;
     const conflicts = mergeStateChanges(this.store.state, changes);
     if (conflicts.length > 0) {
@@ -1109,14 +1110,19 @@ export class MultiplayerWorld {
       // so the two agree again (this removes the identity from the saved world), then report the conflict.
       console.error("multiplayer identity merge conflict", conflicts.length);
       this.dirty = true;
+      let removedFromSave = false;
       try {
         await this.store.flush();
         this.lastPersistAt = this.now();
         this.dirty = false;
+        removedFromSave = true;
       } catch {
         console.error("multiplayer identity compensating save failed");
       }
       monitoring.recordIdentityCreation("failed");
+      // If the compensating save failed, the identity is still in the saved file: it is a real identity and uses the
+      // per-IP budget, like any other kept creation (R4). If the compensating save succeeded, it was removed.
+      if (!removedFromSave) this.recordIdentityCreated(context.remoteAddress, budgetNow);
       this.sendError(context, "identity_creation_conflict", "The world changed while the identity was being created. Try again.", requestId);
       return;
     }

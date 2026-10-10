@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
-import { rmSync } from "node:fs";
+import { readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import WebSocket from "ws";
 import { WorldStore } from "../dist/multiplayer/persistence.js";
@@ -340,6 +340,40 @@ test("R4 budget: disabled by default; with no budget configured, creations are n
       assert.equal((await createFrom(started, "127.0.0.1", `NoBudget${index}`)).reply.type, "identity.created");
     }
     assert.equal(countPlayers(backend), 12);
+  } finally {
+    await started.stop();
+  }
+});
+
+test("R4 budget: a merge conflict whose compensating save fails keeps the saved identity, which then uses the per-IP budget", async () => {
+  const backend = fileBackend();
+  let armed = true;
+  const started = await startCreationServer(backend, {
+    identityBudget: { ...BUDGET, perIpLimit: 1, globalLimit: 1000 },
+    creationFaultHook: (point) => {
+      if (!armed || point !== "after-save") return;
+      armed = false;
+      // The save has committed. A concurrent live change makes the merge conflict, and the next write (the
+      // compensating save) fails, so the saved file keeps the identity while the live world does not.
+      backend.store.state.courts["court:magistrate-fct"] = { court_id: "court:magistrate-fct", concurrent: true };
+      backend.store.failNextWrite();
+    },
+  });
+  try {
+    const conflicted = await createFrom(started, "127.0.0.1", "Conflicted");
+    assert.equal(conflicted.reply.type, "error");
+    assert.equal(conflicted.reply.code, "identity_creation_conflict");
+
+    // Premise of the test: the saved file still holds the identity, and the live world does not.
+    const durable = JSON.parse(readFileSync(backend.file, "utf8"));
+    assert.equal(Object.keys(durable.players).length, 1, "the compensating save failed, so the saved file keeps the identity");
+    assert.equal(countPlayers(backend), 0, "the live world does not hold the conflicted identity");
+
+    // The kept identity uses the per-IP budget of 1, so the same address is refused.
+    const next = await createFrom(started, "127.0.0.1", "Next");
+    assert.ok(isLimited(next.reply), "the kept identity consumes the per-IP budget");
+    // Another address is unaffected.
+    assert.equal((await createFrom(started, "127.0.0.2", "Other")).reply.type, "identity.created");
   } finally {
     await started.stop();
   }

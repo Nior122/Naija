@@ -7,7 +7,8 @@
 ## 1. What is limited
 
 - A **new identity** is a successful `identity.create` that creates a character. Recoveries are not limited: a request whose creation key already belongs to an identity recovers that identity and never uses the budget.
-- A request is **not** counted when it is refused for any other reason (invalid key, invalid profile, capacity, persistence failure, merge conflict). Only a committed identity uses a slot.
+- A request is **not** counted when it is refused for any other reason (invalid key, invalid profile, capacity, persistence failure). Only a committed identity uses a slot.
+- A merge conflict is not counted when the compensating save removes the identity from the saved file. If that compensating save also fails, the identity is still in the saved file, so it **is** counted (the saved identity is real).
 - A refused request changes nothing: no record, no token, no key reservation is kept.
 - Existing players are not limited. Session resume and play do not use the budget.
 
@@ -100,7 +101,19 @@ Until every row is answered from the deployment, keep `NAIJA_IDENTITY_BUDGET` di
 
 Each test runs against a temporary world file and never touches `data/world-state.json`. Shared-IP and proxy tests use loopback addresses 127.0.0.1–127.0.0.4 as distinct socket addresses (Linux routes all of 127.0.0.0/8 locally, and the client binds its local address).
 
-**Mutation check.** Removing the per-IP recording made 8 of the 13 engine tests fail, so the tests detect a broken budget. The trusted-proxy tests were run against the pre-change code: the proxy-trust test failed (the header was not used), and the refusal and metrics tests failed (no time field, no counters).
+**Mutation checks (run on the committed source, then restored).** Each mutation rebuilt the server and ran `client-address`, `trusted-proxy-budget` and `identity-budget`:
+
+| Mutation | Result |
+|---|---|
+| Remove per-IP recording | 8 of 13 engine tests fail |
+| Record the budget before the save | 9 tests fail, including the failed-save test |
+| Use the leftmost forwarded address instead of the first untrusted one from the right | 3 tests fail (spoofed leftmost entry, repeated header lines, trusted-proxy budget) |
+| Remove the socket-trust check before walking the header | 0 tests fail. This mutant is equivalent: the walk starts at the socket address, which is untrusted in that case, so the result is the socket. The check is a fast path, not a separate protection. |
+| Stop recording the identity after a conflict whose compensating save fails | 1 test fails (added in this change) |
+
+The equivalence was confirmed by reading the walk, not assumed. The header is inert for an untrusted socket by construction.
+
+Earlier results (before the proxy wiring): 8 of 13 engine tests failed when per-IP recording was removed. The trusted-proxy tests were run against the pre-change code: the proxy-trust test failed (the header was not used), and the refusal and metrics tests failed (no time field, no counters).
 
 ## 5. Privacy and data
 
