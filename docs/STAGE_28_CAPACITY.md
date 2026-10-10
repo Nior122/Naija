@@ -1,6 +1,6 @@
 # Stage 28 — Capacity (R5): diagnosis, measured results, and recommendation
 
-**Status:** diagnosis and measurements complete for the single-file store. **The 16 MiB limit is not raised.** The 10,000-identity figure is a planning target and is **not** a supported claim. No automatic pruning or deletion was added. The R4 identity budget (review section 5) is **not** implemented.
+**Status:** diagnosis and measurements complete for the single-file store. Decision 2 (compact JSON on save) and Decision 1 (notify once per capacity episode) are **implemented** (section 5). **The 16 MiB limit is not raised.** The 10,000-identity figure is a planning target and is **not** a supported claim. No automatic pruning or deletion was added. The R4 identity budget (review section 5) is **not** implemented.
 
 **Evidence:** raw JSON results are in `docs/evidence/stage28-capacity/`. They contain no creation keys, tokens, or player names. The server logs from the runs are not committed (they are verbose connection logs).
 
@@ -13,14 +13,15 @@
 ### 1.1 What limits the world
 
 - The whole world is one JSON document (`world-state.json` for the file backend; one `world_state` JSONB row for PostgreSQL). Every save serializes all records and writes them again.
-- The file backend serializes with `JSON.stringify(state, null, 2)`, which **pretty-prints**. The PostgreSQL backend writes the same single document, with the same 16 MiB limit (`MAX_SNAPSHOT_BYTES`).
+- The file backend used to serialize with `JSON.stringify(state, null, 2)` (**pretty-printed**). It now writes compact JSON, `JSON.stringify(state)`, with the same content and schema (section 5, item 2). The PostgreSQL backend already wrote compact JSON (`src/database/world-store.ts`, `JSON.stringify(state)`), with the same 16 MiB limit (`MAX_SNAPSHOT_BYTES`). Its ceiling was therefore not affected by this change.
 - Before this phase, a save over the limit failed at a point where the in-memory world had already been changed (R2). This is now refused before anything is written. The previous valid file is kept, and no record is removed.
-- A starter family adds about **23.5 KB** of pretty-printed JSON per identity (measured, section 3). The limit is 16,777,216 bytes. Identity records therefore fill the file after about 700 identities.
+- Before the compact change, a starter family added about **23.5 KB** of pretty-printed JSON per identity (measured, section 3). With compact JSON it adds about **15.8 KB** per identity (measured, section 5.1). The limit is 16,777,216 bytes. The file backend therefore reached the limit after about 700 identities before the change and about 1,050 after it.
 
 ### 1.2 Why the failure point varies (629 earlier, 705–713 now)
 
 - The earlier figure (629–653, review E8) came from the code before the R2 fix. Those runs were not saved in full, so I cannot fully explain the difference from the current 705–713. The likely contributors are the random sibling count in starter families (`Math.random` in `src/life/service.ts`), which changes each identity's size, and the orphan records that the old code kept after failed saves. **This is not verified.**
-- The current code gives three repeated default-cap runs: 705, 706, and 713 identities created, each followed by a refused save with `world_capacity_reached`.
+- The pre-change code gave three repeated default-cap runs: 705, 706, and 713 identities created, each followed by a refused save with `world_capacity_reached`.
+- With compact JSON (current code), three repeated default-cap runs gave 1,059, 1,069, and 1,047 identities created (section 5.1). The 629 figure is still not reproduced, and the cause of the 629 result remains undiagnosed.
 
 ### 1.3 Other costs that grow with the world
 
@@ -69,7 +70,7 @@ Shutdown succeeded in all three runs, and the file was kept at the last successf
 | real-300 (for composition) | 300 | 7,170,916 | 41.5 / 81.8 | — | — | 77.5 | — |
 | real-1000 | 1,000 | 23,574,464 (**over 16 MiB**) | 156.5 / 377.9 | 359.6 / 860.3 / 1,125.7 | 372.2 | 365.3 | 361.6 |
 
-Real-1000 shows what the production limit prevents: the file would exceed 16 MiB at about 700 identities.
+Real-1000 (pretty-printed, measured before the compact change) shows what the production limit prevents: the file would exceed 16 MiB at about 700 identities. With compact JSON the same limit is reached at about 1,050 identities (section 5.1).
 
 ### 3.3 No-op flush (LABELLED). Creation saves skipped; one real save timed at the end
 
@@ -94,33 +95,42 @@ Source: `docs/evidence/stage28-capacity/composition-300-identities.json`.
 
 These are arithmetic from the measured per-identity size. They are labelled as estimates.
 
-- **Pretty format, 5,000 identities:** about 117 MB (23.5 KB × 5,000). **10,000:** about 235 MB.
-- **Compact format (estimate):** the per-identity size is about 0.674 × 23.5 KB ≈ 15.8 KB. The 16 MiB limit would then hold about **1,050 identities**. This is an estimate, not a measured run.
+- **Pretty format, 5,000 identities:** about 117 MB (23.5 KB × 5,000). **10,000:** about 235 MB. (The pretty format is no longer written.)
+- **Compact format, 5,000 identities:** about 79 MB (15.8 KB × 5,000). **10,000:** about 158 MB. These are arithmetic from the measured marginal size and are **not measured**. A 5,000 or 10,000 identity save has not been run.
+- **Compact format at the limit:** measured. Three runs reached 1,047–1,069 identities (section 5.1). The earlier estimate of about 1,050 was close.
 - **Time to reach 5,000 or 10,000 identities** at the measured rate of about 2.5 creations per second is roughly 33 minutes and 67 minutes respectively. Creation time was not measured beyond about 1,500 identities, so the real figure may be longer.
 
 ## 4. Conclusion: what the architecture can and cannot do
 
-- **Safe today:** up to about 700 identities per world under the 16 MiB limit (measured 705–713 with real saves). Saves over the limit are refused cleanly, with no data loss.
+- **Safe today (file backend, compact JSON):** up to about 1,000 identities per world under the 16 MiB limit. Real saves reached 1,047–1,069 identities before the first refused save (section 5.1). Saves over the limit are refused cleanly, with no data loss. The 1,000 mark is close to the limit: one run was at 16,048,106 bytes at 1,000 identities.
+- **Previously:** up to about 700 identities (measured 705–713 with pretty JSON). That figure is superseded by the compact measurements.
 - **Not supported:** 2,500, 5,000, or 10,000 identities in one file-backed or PostgreSQL-backed world. The single-document design and the 16 MiB limit prevent it. The no-op-flush runs show that the process also gets slower as the world grows.
 - **Bottlenecks, in order of impact on the limit:**
-  1. The single pretty-printed document (formatting is about a third of the bytes).
+  1. The single document and its 16 MiB limit. (Formatting was about a third of the bytes; compact JSON removed it for the file backend.)
   2. The whole-world copy and diff on each creation (creation time).
   3. The whole-world save on each change (save and shutdown time).
 
-## 4.1 Open issue found during this phase (NOT fixed; needs a decision)
+## 4.1 Open issue: notification at the limit (Decision 1 implemented)
 
-When the world is at the limit, the in-memory world keeps changing from gameplay, but no save can succeed. Measured behaviour from the code (not yet load-tested with players):
+When the world is at the limit, the in-memory world keeps changing from gameplay, but no save can succeed. Before this change, each failed retry sent `world_capacity_reached` to every online player and wrote a log line, about once per second.
 
-- The tick runs every 50 ms. A dirty world retries its save about once per second (`lastPersistAt` moves only on success).
-- Each failed retry sends `world_capacity_reached` to **every** online player and writes one log line. So at the limit, every online player receives an error about once per second.
-- Changes made after the last successful save exist only in memory. A restart loses them. This is the same class of risk as any refused save, but at the limit it is continuous.
+**Decision 1 (approved by the user): notify once per capacity episode.** An episode starts at the first refused save and ends at the next successful save. Within an episode:
 
-Options for approval (none implemented): notify each player once per capacity episode and not every second; reject new gameplay writes at the limit with a clear message; and show the operator a single warning. The choice is a product and operations decision.
+- Online players receive `world_capacity_reached` once. A creation requester always receives its own refusal.
+- The log receives one line.
+- Retries are silent. Nothing is removed. The previous saved file is kept.
+
+Tests: `test/world-capacity-notify.test.mjs`. The creation-path test fails on the committed code (0 notices where 1 is expected). The periodic-retry test fails on the committed code (3 notices where 1 is expected in the first episode, from the retries). Both pass on the current code.
+
+Still open: the in-memory changes made after the last successful save exist only in memory, and a restart loses them. Notification does not change that. Rejecting new gameplay writes at the limit, and an operator-visible warning, are not implemented. They are product and operations decisions. The notice has not been tested with real players.
 
 ## 5. Recommendation (smallest safe improvements; NOT implemented, awaiting approval)
 
 1. **Keep the 16 MiB limit.** Do not raise it until items 2 and 3 are measured.
-2. **Compact JSON on save.** Same JSON content and no schema change. Expected to raise the ceiling to about 1,000 identities (estimate). It needs: a round-trip equality test on a copy of a saved world, a check that files written by the old code still load, and a size test at 300 and 1,000 identities. This is the smallest change with a measured benefit.
+2. **Compact JSON on save. IMPLEMENTED (Decision 2, approved by the user).** Same JSON content and no schema change; `src/multiplayer/persistence.ts` writes `JSON.stringify(state)`.
+   - Tests: `test/world-state-format.test.mjs` (a save reloads to an equal state; a pretty-printed file from the earlier format still loads to the same state; compact saves are smaller).
+   - Size measurements at 250, 500, 750, and 1,000 identities are in section 5.1 (checkpoints from the default-cap runs).
+   - **Not yet done:** a round-trip on a copy of the 284-file saved-data corpus. That corpus is **not present** in the current sandbox (`/home/user/data-backups` and `/home/user/data-investigation` are missing), so it was not run. Rollout should wait for that check.
 3. **Stop copying the whole world per creation.** Build the new records and diff only the touched subtrees. Measure creation time before and after. Medium effort.
 4. **For 5,000 to 10,000 identities:** move records out of the single document (one row per record, or per collection). This is a database schema redesign. It is **out of scope for this phase** and needs a separate approved plan, a migration review, and tests on a disposable database. The PostgreSQL store has the same single-document limit today.
 5. **R4 (identity creation budget)** remains open. It limits how fast the world can fill up and needs an operator decision.
@@ -134,3 +144,19 @@ Options for approval (none implemented): notify each player once per capacity ep
 - The 629 figure from earlier was not reproduced. The cause of the difference is unverified (section 1.2).
 - Random family sizes mean that per-identity size varies. The spread across three runs is 705–713.
 - `pg_dump` was not available and no backup or restore was tested in this phase.
+
+## 5.1 Compact-format measurements (after Decision 2)
+
+Source: `docs/evidence/stage28-capacity/default-cap-compact-run{1,2,3}.json`. Same probe, real saves, production 16 MiB limit, temporary directory, loopback. Each run stops at the first refused save.
+
+| Run | Identities created | Final file bytes | Marginal bytes per identity | Creation p50 / p95 (ms) | Save p50 / p95 (ms) | Shutdown (ms) | Max RSS (MB) |
+|---|---|---|---|---|---|---|---|
+| 1 | 1,059 | 16,774,334 | 15,840 | 219 / 466 | 85 / 171 | 166 | 385 |
+| 2 | 1,069 | 16,776,341 | 15,693 | 224 / 490 | 89 / 171 | 167 | 435 |
+| 3 | 1,047 | 16,775,869 | 16,023 | 219 / 470 | 84 / 177 | 158 | 395 |
+
+- Size checkpoints (file bytes): 250 identities 3.99–4.06 MB; 500 identities 7.84–8.06 MB; 750 identities 11.77–12.03 MB; 1,000 identities 15.71–16.05 MB.
+- Each run ended with `world_capacity_reached` and a clean shutdown (`shutdown_error: null`). The saved file stayed under the limit in every run.
+- Pretty-format runs, for comparison (section 1.2): 705, 706, and 713 identities.
+- These are single-process loopback runs in the sandbox. They are not production measurements.
+- A run at 2,500 identities or more was **not** done with real saves. Each creation rewrites the whole world, so such a run would take far longer than this phase allows. The earlier no-op-flush runs (section 3) skip the save and do not show what a real save costs at those sizes.

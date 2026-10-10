@@ -1,0 +1,77 @@
+{
+  "mode": "default-cap",
+  "label": "Real saves with the production 16 MiB limit; stops at the first refused save",
+  "requested_identities": 3000,
+  "created_identities": 1059,
+  "first_failure": {
+    "after_identities": 1059,
+    "outcome": "error",
+    "code": "world_capacity_reached"
+  },
+  "size_limit_bytes": 16777216,
+  "creation_latency_ms": {
+    "count": 1059,
+    "p50": 218.99,
+    "p95": 465.64,
+    "max": 703.21
+  },
+  "save_latency_ms": {
+    "count": 1060,
+    "p50": 85.32,
+    "p95": 170.96,
+    "max": 228.29
+  },
+  "creation_phase_seconds": 247.37,
+  "final_file_bytes": 16774334,
+  "bytes_per_identity_marginal": 15840,
+  "final_save": null,
+  "shutdown_ms": 166.26,
+  "shutdown_error": null,
+  "memory": [
+    {
+      "identities": 250,
+      "rss_mb": 194.26,
+      "heap_used_mb": 54.45
+    },
+    {
+      "identities": 500,
+      "rss_mb": 239.2,
+      "heap_used_mb": 45.69
+    },
+    {
+      "identities": 750,
+      "rss_mb": 336.73,
+      "heap_used_mb": 126.1
+    },
+    {
+      "identities": 1000,
+      "rss_mb": 315.41,
+      "heap_used_mb": 116.41
+    },
+    {
+      "identities": 1059,
+      "rss_mb": 384.8,
+      "heap_used_mb": 144.38
+    }
+  ],
+  "size_checkpoints": [
+    {
+      "identities": 250,
+      "file_bytes": 4055473
+    },
+    {
+      "identities": 500,
+      "file_bytes": 7982817
+    },
+    {
+      "identities": 750,
+      "file_bytes": 11859671
+    },
+    {
+      "identities": 1000,
+      "file_bytes": 15837984
+    }
+  ],
+  "node": "v22.22.3",
+  "finished_at": "2026-10-10T18:59:16.043Z"
+}

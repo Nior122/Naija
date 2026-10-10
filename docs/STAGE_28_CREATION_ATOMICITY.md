@@ -99,7 +99,7 @@ Players, households, and families are compared exactly. **People** are compared 
 ## 4. Capacity guard (summary; detail in `docs/STAGE_28_CAPACITY.md`)
 
 - Before a save, the serialized size is compared with the limit (16 MiB). Over the limit, the save is refused with `world_capacity_reached`, the previous file is kept, and no record is removed.
-- The engine maps this error to the requester (creation) and to every online player (periodic flush).
+- The engine maps this error to the requester (creation) and to every online player (periodic flush). The online notice is sent once per capacity episode, not on every retry (Decision 1; see `docs/STAGE_28_CAPACITY.md` section 4.1).
 
 ## 5. Verified in this phase
 
