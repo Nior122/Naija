@@ -89,7 +89,7 @@ This changes notifications only. It does not change what is stored or how saves 
 4. Recovery notice (G3): design a "saved again" signal, or document that clients must reconnect to re-learn save state.
 5. Keep the 629 investigation open. Locate the original world (if any) and its logs before drawing any conclusion.
 
-## 8. Test-run integrity anomalies (UNEXPLAINED, recorded this phase)
+## 8. Test-run integrity anomalies (cause partly identified; root cause UNEXPLAINED)
 
 A green full run has not always reported every test. Each case below exited 0 with no `not ok`, and the count fell below the expected number:
 
@@ -97,20 +97,32 @@ A green full run has not always reported every test. Each case below exited 0 wi
 |---|---|---|---|
 | Default `npm test`, first run of this phase (`/tmp/s28/final-default.log`) | 948 | 946 | 2 from `test/justice-filing.test.mjs` |
 | DB+TLS `npm test`, first run of this phase (`/tmp/s28/final-dbtls.log`) | 971 | 967 | 7 from `test/social.test.mjs` (`Hashtag System` and `Report System`) |
+| Per-file DB run, this phase (`/tmp/s28/perfile-db.tsv`) | 32 | 26 | 6 from `test/social.test.mjs` (run alone, with a database environment) |
 | Earlier default r5 (before this phase) | — | — | all `justice-filing` results |
 
-Reruns of the same code were complete: default 948/948 (`final-default-2.log`), DB+TLS 971/971 (`final-dbtls-2.log`), `social.test.mjs` alone 32/32, `justice-filing.test.mjs` alone 37/37. The cause is **unknown**. The full suite runs `node --test --test-force-exit test/*.test.mjs`. Without `--test-force-exit` the suite does not finish. It hung until the 300 s timeout (`default-noforce.log`, exit 124), so the flag is needed, but it is not shown to be the cause of the truncation.
+What is established:
 
-Consequence: exit 0 from the full suite does not prove every test ran. Use per-file counts, or a runner that fails when a file reports fewer results than expected, before relying on a full-suite pass. Suggested next step: capture the TAP stream per file with an explicit expected count, and check whether the omission depends on timing.
+- `test/social.test.mjs` contains no database code, and it loses its last describes (`Hashtag System`, `Report System`) in a fraction of runs. Run alone with `node --test --test-force-exit test/social.test.mjs` it was short in **7 of 60** runs. Run alone with `node --test test/social.test.mjs` (no `--test-force-exit`) it was short in **0 of 60**.
+- In the truncated output, the root suite prints `1..0`, and the summary reports 30 tests. The process then exits 0. The runner ended the root before the later describes ran. The file itself has no timers.
+- Without `--test-force-exit`, six files never finish: `businesses`, `economy`, `government`, `integration`, `isolation`, `properties`. They time out at 120 s, which suggests open handles left by those files. Their open handles are not yet identified.
+- Per file, with and without the flag, the counts of the other 56 files match. The flag is therefore not needed for those 56 files.
 
-## 9. Conflict-branch retry review (`4dabe0f`, UNVERIFIED)
+What is not established: why the runner ends the root early when the flag is set. Node v22.22.3 was used. Reruns of the full suite were complete (default 948/948, DB+TLS 971/971), so the omission is intermittent.
 
-Review of the conflict branch in `commitIdentity`: when the compensating save succeeds, the code is correct. When the conflict branch returns `identity_creation_conflict` and tells the player to try again, two things are not yet verified:
+Consequence: exit 0 from the full `npm test` run does not prove that every test ran. Use per-file counts. Suggested fix, not made: close the handles in the six hanging files, drop `--test-force-exit`, and assert that each file reports its expected count.
 
-- The conflict branch returns before `playerByCreationKeyHash` and `playerByTokenHash` are set (around `world-engine.ts` lines 1134–1135). A retry with the same creation key may therefore create a second identity.
-- The first identity can exist only in the saved file, and its token is never delivered.
+## 9. Conflict-branch retry (`4dabe0f`): reproduced, characterized, NOT fixed
 
-Expected effect, from reading the code and not from a test: live state does not contain the first identity, so the next successful save should remove it, and the budget may count it once more than it should. Nothing here was reproduced. Reproduction needs a forced merge conflict, a failing compensating flush (`creationFaultHook`), and a retry. Until then this is a risk to report, not a confirmed defect, and no fix has been made.
+Test: `test/identity-conflict-retry.test.mjs` (2 tests, characterization). Passed 3 of 3 consecutive runs and in the per-file run. The test pins what the code does now; a deliberate change is required when the behaviour is fixed.
+
+Results:
+
+- **Conflict with a failing compensating save:** the reply is `identity_creation_conflict`. The saved file holds the first identity, and the live world does not.
+- **Retry with the same key, no restart:** the retry is accepted as a **new** identity with a different player ID. The saved file afterwards holds only the retry's identity, so the first identity is not kept. The budget (limit 2 per IP) counted both creations, so a third creation from the same address is refused.
+- **Retry after a crash-restart** (the file copied at the moment of the conflict, before any shutdown write): the same key recovers the saved first identity, and the file holds one identity. So "try again" leads to two different outcomes, depending on whether the server restarted.
+- **Duplicates in the saved world:** none observed in either case. The first identity's token was never delivered in either case.
+
+Assessment: the gap is inconsistent retry behaviour and a budget over-count, not a duplicate in the saved world. Registering the creation key in the conflict branch alone would not fix it. The first identity is not in live state, and `recoverIdentity` requires it there, so the retry would still create a new identity. A fix needs a design decision, for example: keep the identity pending until the compensating save succeeds; merge it back into live state; or refuse the retry with a pending-state error until the outcome is resolved. Decision needed. No fix made.
 
 ## 10. Config change in this phase
 
