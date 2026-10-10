@@ -10,6 +10,7 @@ import { isEducationStudentRecord, normalizeEducationRecord, syncLegacyEducation
 import { loadLifeCatalog, normalizeWorldClock, isValidDate } from "../life/calendar.js";
 import { normalizeLifeWorldState } from "../life/service.js";
 import { initializeCareerWorldState } from "../careers/service.js";
+import { assertRecordsValid, validateElectionRecords, validateGovernmentRecords, validateJusticeRecords, validatePropertyRecords } from "./record-validation.js";
 import { initializeEconomyWorldState } from "../economy/service.js";
 import { initializeBusinessWorldState } from "../businesses/service.js";
 import { initializePropertyWorldState } from "../properties/service.js";
@@ -930,6 +931,12 @@ export function validateState(value: unknown, now: number): PersistentWorldState
   initializeTransportationWorldState(state);
   initializeNPCWorldState(state, { year: catalog.calendar.epoch_world_date.year, month: catalog.calendar.epoch_world_date.month, day: catalog.calendar.starting_world_day });
   initializeWorldEventState(state, new WorldEventCatalogService());
+  // Record-level checks for the property, government, election, and justice maps. They run on the
+  // completed state (after seeding), so invalid records are rejected rather than loaded silently.
+  assertRecordsValid(validatePropertyRecords(state));
+  assertRecordsValid(validateGovernmentRecords(state));
+  assertRecordsValid(validateElectionRecords(state));
+  assertRecordsValid(validateJusticeRecords(state));
   return state;
 }
 

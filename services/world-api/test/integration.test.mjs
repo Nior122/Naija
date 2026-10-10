@@ -12,9 +12,9 @@ import { join } from "node:path";
 
 // Each server gets its own state file. Without this, the server falls back to the live
 // services/world-api/data/world-state.json and every test run overwrites the real world.
-const withServer = async (fn) => {
+const withServer = async (fn, options = {}) => {
   const stateDirectory = mkdtempSync(join(tmpdir(), "naija-integration-"));
-  const server = createApiServer({ tickIntervalMs: 100, stateFile: join(stateDirectory, "world-state.json") });
+  const server = createApiServer({ tickIntervalMs: 100, ...options, stateFile: join(stateDirectory, "world-state.json") });
   await new Promise((resolve) => server.listen(0, resolve));
   const port = server.address().port;
   const baseUrl = `http://127.0.0.1:${port}`;
@@ -162,22 +162,85 @@ test("Integration: Metrics accumulate over requests", async () => {
   });
 });
 
+/**
+ * The health contract (src/monitoring.ts and src/app.ts):
+ * - overall status is "unhealthy" if any check fails, "degraded" if any check warns, otherwise "healthy";
+ * - HTTP 503 is returned only for "unhealthy"; "healthy" and "degraded" return HTTP 200.
+ * This assertion checks that contract and does not depend on how busy the host is.
+ */
+function assertHealthContract(httpStatus, body) {
+  const statuses = Object.values(body.checks).map((check) => check.status);
+  const expected = statuses.includes("fail") ? "unhealthy" : statuses.includes("warn") ? "degraded" : "healthy";
+  assert.equal(body.status, expected, "overall status must follow the individual check results");
+  assert.equal(httpStatus, body.status === "unhealthy" ? 503 : 200, "HTTP status must follow the overall status");
+}
+
+test("Integration: health contract helper rejects inconsistent responses", () => {
+  assert.throws(() => assertHealthContract(200, { status: "healthy", checks: { a: { status: "warn" } } }));
+  assert.throws(() => assertHealthContract(200, { status: "unhealthy", checks: { a: { status: "fail" } } }));
+  assert.throws(() => assertHealthContract(200, { status: "degraded", checks: { a: { status: "fail" } } }));
+  assert.doesNotThrow(() => assertHealthContract(200, { status: "degraded", checks: { a: { status: "warn" } } }));
+  assert.doesNotThrow(() => assertHealthContract(503, { status: "unhealthy", checks: { a: { status: "fail" } } }));
+});
+
 test("Integration: Server handles concurrent requests", async () => {
   await withServer(async ({ baseUrl }) => {
-    // Make 10 concurrent requests
-    const promises = Array(10).fill(null).map(() => 
-      fetch(`${baseUrl}/health`).then(r => r.json())
-    );
-    
-    const results = await Promise.all(promises);
-    
-    // All should succeed. The event-loop check is a single timing sample that reports "degraded"
-    // when the host is busy (for example, while other test files run in parallel), so accept
-    // healthy or degraded here. Only "unhealthy" means a real failure.
-    results.forEach(result => {
-      assert.ok(["healthy", "degraded"].includes(result.status), `unexpected status ${result.status}`);
+    // Ten concurrent requests. Each must succeed (HTTP 200), return a body that follows the health contract,
+    // and never report "unhealthy". Whether the host reports "degraded" depends on load (the event-loop and heap
+    // checks are single samples), so the test does not assert "healthy".
+    const responses = await Promise.all(Array(10).fill(null).map(() => fetch(`${baseUrl}/health`)));
+    const bodies = await Promise.all(responses.map((response) => response.json()));
+    responses.forEach((response, index) => {
+      assert.notEqual(bodies[index].status, "unhealthy", `request ${index} reported unhealthy`);
+      assert.ok(["healthy", "degraded"].includes(bodies[index].status), `request ${index} status ${bodies[index].status}`);
+      assertHealthContract(response.status, bodies[index]);
     });
   });
+});
+
+test("Integration: health reports unhealthy (HTTP 503) when the persistence dependency fails", async () => {
+  await withServer(async ({ baseUrl }) => {
+    const response = await fetch(`${baseUrl}/health`);
+    const body = await response.json();
+    assert.equal(body.checks.persistence.status, "fail");
+    assert.equal(body.status, "unhealthy");
+    assert.equal(response.status, 503);
+    assertHealthContract(response.status, body);
+  }, { persistenceHealth: async () => ({ status: "fail", message: "Database unreachable." }) });
+});
+
+test("Integration: health reports unhealthy (HTTP 503) when the persistence check throws", async () => {
+  await withServer(async ({ baseUrl }) => {
+    const response = await fetch(`${baseUrl}/health`);
+    const body = await response.json();
+    assert.equal(response.status, 503);
+    assert.equal(body.status, "unhealthy");
+    assert.equal(body.checks.persistence.status, "fail");
+    assert.equal(body.checks.persistence.message, "Persistence health check failed.", "no error details may be exposed");
+  }, { persistenceHealth: async () => { throw new Error("connect ECONNREFUSED with password=secret"); } });
+});
+
+test("Integration: a passing persistence check is reported and cannot by itself make the service unhealthy", async () => {
+  await withServer(async ({ baseUrl }) => {
+    const response = await fetch(`${baseUrl}/health`);
+    const body = await response.json();
+    assert.equal(body.checks.persistence.status, "pass");
+    assertHealthContract(response.status, body);
+    if (body.status === "unhealthy") {
+      const failing = Object.entries(body.checks).filter(([, check]) => check.status === "fail").map(([name]) => name);
+      assert.ok(failing.some((name) => name !== "persistence"), "unhealthy must come from a non-persistence check");
+    }
+  }, { persistenceHealth: async () => ({ status: "pass", message: "Database reachable." }) });
+});
+
+test("Integration: a persistence warning is reported and prevents a healthy status", async () => {
+  await withServer(async ({ baseUrl }) => {
+    const response = await fetch(`${baseUrl}/health`);
+    const body = await response.json();
+    assert.equal(body.checks.persistence.status, "warn");
+    assert.notEqual(body.status, "healthy", "a warning check must not produce a healthy status");
+    assertHealthContract(response.status, body);
+  }, { persistenceHealth: async () => ({ status: "warn", message: "Slow database response." }) });
 });
 
 test("Integration: Memory metrics are reasonable", async () => {
