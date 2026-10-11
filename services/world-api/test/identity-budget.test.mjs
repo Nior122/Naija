@@ -345,7 +345,7 @@ test("R4 budget: disabled by default; with no budget configured, creations are n
   }
 });
 
-test("R4 budget: a merge conflict whose compensating save fails keeps the saved identity, which then uses the per-IP budget", async () => {
+test("R4 budget: an unresolved merge conflict keeps the saved identity, which holds the per-IP budget until it is resolved", async () => {
   const backend = fileBackend();
   let armed = true;
   const started = await startCreationServer(backend, {
@@ -362,7 +362,8 @@ test("R4 budget: a merge conflict whose compensating save fails keeps the saved 
   try {
     const conflicted = await createFrom(started, "127.0.0.1", "Conflicted");
     assert.equal(conflicted.reply.type, "error");
-    assert.equal(conflicted.reply.code, "identity_creation_conflict");
+    // Unresolved (the compensating save failed): the key is refused until a save succeeds (see identity-conflict-retry).
+    assert.equal(conflicted.reply.code, "identity_creation_pending");
 
     // Premise of the test: the saved file still holds the identity, and the live world does not.
     const durable = JSON.parse(readFileSync(backend.file, "utf8"));

@@ -36,9 +36,9 @@ Baseline before the fix (file backend): 20 tests, 4 pass, 16 fail. PostgreSQL ba
 5. Computes the change set with `diffState(live, draft)`.
 6. Saves the **draft** as a candidate with `store.saveState(draft)`. The save runs the `before-save` hook.
 7. Only after the candidate save succeeds, merges the change set into the live world with `mergeStateChanges`. The merge is all-or-nothing. A change applies only if the live value still matches the base (for an add, only if the key is absent).
-8. If the merge conflicts, nothing is applied. The live world is saved again (a compensating `flush`), so the durable file matches the live world. The request receives `identity_creation_conflict`.
+8. If the merge conflicts, nothing is applied. The live world is saved again (a compensating `flush`). If that save succeeds, the saved file no longer holds the identity, and the request receives `identity_creation_conflict` (retryable, no identity, no budget). If that save fails, the identity may still be in the saved file: the key is **unresolved** and the request receives `identity_creation_pending`. See section 2.6 ("Same-key conflict").
 
-If the candidate save fails, the draft is discarded and the live world was never touched. The error is `persistence_failed` (or `world_capacity_reached` for a refused save).
+If the candidate save fails, the live world was never touched. The outcome of the failed save is unknown (the file may hold the identity), so the key is marked unresolved: the error is `persistence_failed`, and later requests with the key receive `identity_creation_pending` until a successful save of the live world resolves it. A failed save consumes no budget. A refused save for capacity returns `world_capacity_reached` and is not marked.
 
 **Measured property (change inventory):** a creation only **adds** records. In three sequential creations, no existing value was changed or removed (`test/identity-merge.test.mjs`, "change inventory"). This is why the merge conflict path is a guard and not a common case.
 
@@ -61,6 +61,19 @@ If the candidate save fails, the draft is discarded and the live world was never
 | `services/world-api/test/identity-rollback.test.mjs` | R2 tests (file, and PostgreSQL when enabled) |
 | `services/world-api/test/identity-merge.test.mjs` | Merge unit tests, conflict test, change inventory |
 | `services/world-api/test/identity-interruption.test.mjs` | Process kill before and after commit (file backend) |
+
+### 2.6 Same-key conflict (Stage 28 continuation; REFUSE UNTIL RESOLVED)
+
+The full analysis, the reproduction, the response table, the restart residual, and the test list are in
+`docs/STAGE_28_SAME_KEY_CONFLICT.md`. Summary:
+
+- A conflict is detected after the identity is saved to the file and before the live world takes it.
+- A conflict whose compensating save succeeds returns `identity_creation_conflict`, with no identity, no budget, and no token.
+- A conflict or a generic failure whose compensating save fails returns `identity_creation_pending`. The key is unresolved. The
+  identity holds one per-IP slot only for a conflict (a generic failure holds none).
+- A pending key is resolved only by a successful save of the live world. Such a save removes the unresolved identity from the
+  file. A new request first attempts that save; if it fails, the request is refused, and nothing is created.
+- A restart drops the pending map. The saved identity is then recovered by key through the existing recovery path.
 
 ### 2.5 Records a creation touches (measured by the change inventory)
 

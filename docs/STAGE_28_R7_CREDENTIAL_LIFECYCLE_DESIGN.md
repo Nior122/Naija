@@ -72,7 +72,7 @@ Each scenario lists the expected behaviour that must hold **before** any rotatio
 ## 5. Client-side requirements (for the client team)
 
 - Store the creation key in durable storage and validate the format (R9).
-- Handle `invalid_creation_key`, `identity_creation_in_progress`, `identity_creation_conflict`, `session_invalid`, `player_already_connected`, and `persistence_failed`.
+- Handle `invalid_creation_key`, `identity_creation_in_progress`, `identity_creation_conflict`, `identity_creation_pending` (new: the key is unresolved; retry later with the same key, and do not treat it as a new identity), `session_invalid`, `player_already_connected`, and `persistence_failed`.
 - On `identity.created`, replace the stored token. Never keep two tokens.
 - Do not treat a lost response as proof that the server did not commit. Retry with the same key, then use the newest token.
 - No client change is proposed in this phase. This list is a requirement for the client team to confirm.

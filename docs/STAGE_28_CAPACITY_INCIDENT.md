@@ -115,13 +115,15 @@ Verification after the fixes (single-process `npm test`, no flag):
 
 Still open: the root cause of the early exit under `--test-force-exit` in `social.test.mjs`. The flag is no longer used, so this does not block verification, but it has not been explained.
 
-## 9. Conflict-branch retry (`4dabe0f`): reproduced, characterized, NOT fixed
+## 9. Conflict-branch retry (`4dabe0f`): reproduced, characterized; fixed in the continuation (see `STAGE_28_SAME_KEY_CONFLICT.md`)
+
+Status update: the policy is now REFUSE UNTIL RESOLVED. The original characterization below is kept as the record of the pre-fix behaviour. Its "Conflict with a failing compensating save" reply is now `identity_creation_pending`, not `identity_creation_conflict`; the retry is refused until a successful save resolves the key.
 
 Test: `test/identity-conflict-retry.test.mjs` (2 tests, characterization). Passed 3 of 3 consecutive runs and in the per-file run. The test pins what the code does now; a deliberate change is required when the behaviour is fixed.
 
 Results:
 
-- **Conflict with a failing compensating save:** the reply is `identity_creation_conflict`. The saved file holds the first identity, and the live world does not.
+- **Conflict with a failing compensating save (before the fix):** the reply was `identity_creation_conflict`. The saved file held the first identity, and the live world did not. (After the fix: `identity_creation_pending`.)
 - **Retry with the same key, no restart:** the retry is accepted as a **new** identity with a different player ID. The saved file afterwards holds only the retry's identity, so the first identity is not kept. The budget (limit 2 per IP) counted both creations, so a third creation from the same address is refused.
 - **Retry after a crash-restart** (the file copied at the moment of the conflict, before any shutdown write): the same key recovers the saved first identity, and the file holds one identity. So "try again" leads to two different outcomes, depending on whether the server restarted.
 - **Duplicates in the saved world:** none observed in either case. The first identity's token was never delivered in either case.

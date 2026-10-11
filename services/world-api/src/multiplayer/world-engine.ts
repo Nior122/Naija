@@ -395,6 +395,10 @@ export interface IdentityBudgetOptions {
 
 const DEFAULT_MAX_TRACKED_ADDRESSES = 10_000;
 const IDENTITY_LIMITED_CODE = "identity_creation_limited";
+/** Stable code: the outcome of an earlier save with this creation key is unresolved. Documented in STAGE_28_CREATION_ATOMICITY.md. */
+const IDENTITY_PENDING_CODE = "identity_creation_pending";
+const IDENTITY_PENDING_MESSAGE =
+  "The identity for this key is not confirmed as saved yet. Requests with this key are refused until the world saves successfully.";
 
 /**
  * Why a new identity was refused by the R4 budget. A retry time is given only for the per-IP and global windows,
@@ -578,6 +582,14 @@ export class MultiplayerWorld {
   private readonly playerByCreationKeyHash = new Map<string, string>();
   /** Creation keys with a create request in flight (R1). In-memory only; a restart clears it. */
   private readonly creationKeyReservations = new Set<string>();
+  /**
+   * Creation keys whose identity outcome is unresolved (Stage 28, same-key conflict). The identity may be in the saved
+   * file while the live world does not hold it. Such a key is refused (identity_creation_pending) until a successful save
+   * of the live world removes that identity from the file. `slot` is the per-IP budget time held while unresolved, or
+   * null when no slot is held (a failed save consumes none). In memory only: a restart drops this map, and the saved
+   * identity is then recovered by key like any other saved identity.
+   */
+  private readonly pendingCreations = new Map<string, { address: string; slot: number | null }>();
   /** Serializes world changes and saves: a save never sees a creation that has not been committed. */
   private persistenceQueue: Promise<void> = Promise.resolve();
   private readonly pendingQuizzes = new Map<string, PendingQuiz>();
@@ -838,6 +850,58 @@ export class MultiplayerWorld {
     this.identityTimesByAddress.set(address, times);
   }
 
+  /** Gives back one per-IP slot taken by recordIdentityCreated, for an identity that was removed from the saved file. */
+  private releaseIdentityCreated(address: string, time: number): void {
+    const times = this.identityTimesByAddress.get(address);
+    if (!times) return;
+    const index = times.indexOf(time);
+    if (index === -1) return;
+    times.splice(index, 1);
+    if (times.length === 0) this.identityTimesByAddress.delete(address);
+  }
+
+  /**
+   * Marks a creation key as unresolved. `holdBudget` is true when the identity save itself committed (the conflict
+   * case), so the identity may be in the saved file and holds one per-IP slot until it is resolved. It is false for a
+   * failed save, which consumes no budget. Either way the next save of the live world is requested.
+   */
+  private markCreationPending(creationKeyHash: string, address: string, now: number, holdBudget: boolean): void {
+    const previous = this.pendingCreations.get(creationKeyHash);
+    if (previous?.slot != null) this.releaseIdentityCreated(previous.address, previous.slot);
+    const slot = holdBudget && this.identityBudget !== null ? now : null;
+    if (slot !== null) this.recordIdentityCreated(address, slot);
+    this.pendingCreations.set(creationKeyHash, { address, slot });
+    this.dirty = true;
+  }
+
+  /**
+   * Resolves every unresolved creation: a successful save writes the live world, which holds none of those identities,
+   * so they are no longer in the file. Their held budget slots are given back. Called on every successful save.
+   */
+  private resolvePendingCreations(): void {
+    for (const pending of this.pendingCreations.values()) {
+      if (pending.slot !== null) this.releaseIdentityCreated(pending.address, pending.slot);
+    }
+    this.pendingCreations.clear();
+  }
+
+  /**
+   * Saves the live world, outside the persistence queue (the caller is already inside it). Returns false if the save
+   * failed; the saved file is then unchanged by this call.
+   */
+  private async saveLiveWorld(): Promise<boolean> {
+    try {
+      await this.store.flush();
+    } catch {
+      this.failedSaveAttemptsSinceSuccess += 1;
+      return false;
+    }
+    this.lastPersistAt = this.now();
+    this.dirty = false;
+    this.noteSaveSucceeded();
+    return true;
+  }
+
   /**
    * The refusal sent to the client. It names no limit, address, player or secret. retry_after_seconds is present only
    * when the time is computed from a window (see IdentityBudgetRefusal).
@@ -1020,6 +1084,12 @@ export class MultiplayerWorld {
     requestId?: string,
   ): Promise<void> {
     if (context.socket.readyState !== WebSocket.OPEN) return;
+    // An earlier save with this key is unresolved. Resolve it first, by saving the live world (which removes that
+    // identity from the file). If that save fails, refuse: this is not a new identity and no record is written.
+    if (this.pendingCreations.has(creationKeyHash) && !(await this.saveLiveWorld())) {
+      this.sendError(context, IDENTITY_PENDING_CODE, IDENTITY_PENDING_MESSAGE, requestId);
+      return;
+    }
     const existingPlayerId = this.playerByCreationKeyHash.get(creationKeyHash);
     const existingPlayer = existingPlayerId ? this.store.state.players[existingPlayerId] : undefined;
     if (existingPlayerId && existingPlayer) {
@@ -1104,7 +1174,15 @@ export class MultiplayerWorld {
       } else {
         console.error("multiplayer identity persistence failed");
         monitoring.recordIdentityCreation("failed");
-        this.sendError(context, "persistence_failed", "The new identity could not be saved.", requestId);
+        // The outcome of a failed save is unknown: the file may hold the identity. Keep the key unresolved until a save
+        // succeeds. A failed save consumes no budget.
+        this.markCreationPending(creationKeyHash, context.remoteAddress, budgetNow, false);
+        this.sendError(
+          context,
+          "persistence_failed",
+          "The new identity could not be confirmed as saved. Requests with this key are refused until saving works again.",
+          requestId,
+        );
       }
       return;
     }
@@ -1118,20 +1196,18 @@ export class MultiplayerWorld {
       // so the two agree again (this removes the identity from the saved world), then report the conflict.
       console.error("multiplayer identity merge conflict", conflicts.length);
       this.dirty = true;
-      let removedFromSave = false;
-      try {
-        await this.store.flush();
-        this.lastPersistAt = this.now();
-        this.dirty = false;
-        removedFromSave = true;
-      } catch {
-        console.error("multiplayer identity compensating save failed");
-      }
+      const removedFromSave = await this.saveLiveWorld();
+      if (!removedFromSave) console.error("multiplayer identity compensating save failed");
       monitoring.recordIdentityCreation("failed");
-      // If the compensating save failed, the identity is still in the saved file: it is a real identity and uses the
-      // per-IP budget, like any other kept creation (R4). If the compensating save succeeded, it was removed.
-      if (!removedFromSave) this.recordIdentityCreated(context.remoteAddress, budgetNow);
-      this.sendError(context, "identity_creation_conflict", "The world changed while the identity was being created. Try again.", requestId);
+      if (removedFromSave) {
+        // The identity is gone from the file too: nothing was created, and nothing is charged. Retrying is allowed.
+        this.sendError(context, "identity_creation_conflict", "The world changed while the identity was being created. Try again.", requestId);
+      } else {
+        // The identity may still be in the saved file. It stays unresolved: this key is refused until a save succeeds,
+        // and the identity holds one per-IP slot until then (R4). It is not returned to the player.
+        this.markCreationPending(creationKeyHash, context.remoteAddress, budgetNow, true);
+        this.sendError(context, IDENTITY_PENDING_CODE, IDENTITY_PENDING_MESSAGE, requestId);
+      }
       return;
     }
     monitoring.recordIdentityCreation("accepted");
@@ -4890,6 +4966,7 @@ export class MultiplayerWorld {
    * It does not claim anything about changes that were not part of that save (G3).
    */
   private noteSaveSucceeded(): void {
+    this.resolvePendingCreations();
     this.capacityEpisodeOpen = false;
     this.persistenceEpisodeOpen = false;
     const failedAttempts = this.failedSaveAttemptsSinceSuccess;
