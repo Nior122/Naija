@@ -1,4 +1,5 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { describeSessionPolicy, evaluateSessionPolicy, isSessionRevoked } from "./session-policy.js";
 import type { IncomingMessage } from "node:http";
 import { WebSocket, type RawData } from "ws";
 import { monitoring } from "../monitoring.js";
@@ -729,7 +730,8 @@ export class MultiplayerWorld {
     this.lastTickAt = this.now();
     this.lastPersistAt = this.lastTickAt;
     for (const player of Object.values(this.store.state.players)) {
-      this.playerByTokenHash.set(player.tokenHash, player.playerId);
+      // A revoked session (logout) is not indexed, so its token is refused after a restart too.
+      if (!isSessionRevoked(player.session)) this.playerByTokenHash.set(player.tokenHash, player.playerId);
       this.playerByCreationKeyHash.set(player.creationKeyHash, player.playerId);
     }
   }
@@ -1060,6 +1062,10 @@ export class MultiplayerWorld {
       await this.resumeSession(context, message, requestId);
       return;
     }
+    if (message.type === "session.logout") {
+      await this.logout(context, requestId);
+      return;
+    }
     const player = this.playerFor(context);
     if (!player) {
       if (message.type === "movement.input") {
@@ -1088,6 +1094,7 @@ export class MultiplayerWorld {
       }
     }
     player.lastSeen = new Date(now).toISOString();
+    if (player.session !== undefined) player.session.lastActivityAt = player.lastSeen;
     switch (message.type) {
       case "movement.input": this.handleMovement(context, message, requestId); return;
       case "world.travel": await this.travel(context, player, message, requestId); return;
@@ -1220,6 +1227,7 @@ export class MultiplayerWorld {
     const player: PersistentPlayer = {
       playerId, tokenHash, creationKeyHash, recentRequestIds: [],
       createdAt: timestamp, lastSeen: timestamp, character,
+      session: { issuedAt: timestamp, lastActivityAt: timestamp },
     };
     draft.players[playerId] = player;
     this.creationFaultHook?.("player-inserted");
@@ -1396,7 +1404,7 @@ export class MultiplayerWorld {
     const tokenHash = createHash("sha256").update(token).digest("hex");
     const playerId = this.playerByTokenHash.get(tokenHash);
     const player = playerId ? this.store.state.players[playerId] : undefined;
-    if (playerId === undefined || !player) {
+    if (playerId === undefined || !player || isSessionRevoked(player.session)) {
       console.warn("multiplayer session rejected", "session_invalid");
       this.sendError(context, "session_invalid", "The saved session was not recognized.", requestId);
       return;
@@ -1418,10 +1426,13 @@ export class MultiplayerWorld {
     processJusticeWorldDate(this.store.state, this.store.state.worldClock.world_date, this.now());
     processCareerWorldMinute(this.store.state, this.store.state.worldClock.world_date,
       this.store.state.worldClock.minute_of_day, this.now(), this.careerCatalog);
+    // Log-only (D-06): record whether this session would exceed the limits. Nothing is refused for it.
+    console.info(describeSessionPolicy(evaluateSessionPolicy(player.session, player.lastSeen, this.now())), playerId);
     context.playerId = playerId;
     this.online.set(playerId, context);
     const timestamp = new Date(this.now()).toISOString();
     player.lastSeen = timestamp;
+    if (player.session !== undefined) player.session.lastActivityAt = timestamp;
     player.character.updated_at = timestamp;
     this.dirty = true;
     this.send(context, appendOptionalRequestId({
@@ -1432,6 +1443,63 @@ export class MultiplayerWorld {
     this.broadcastPresence({ type: "presence.joined", player: this.toPresence(player, "connected") });
     console.info("multiplayer player connected", playerId);
     await this.flushDirty();
+  }
+
+  /**
+   * Logout (D-06 groundwork). Revokes the caller's session token and detaches the socket. The revocation is saved
+   * before the player is told, and it is undone if the save fails, so a rejected logout changes nothing. The identity,
+   * its character, and its world records are not changed. A revoked identity cannot resume until a verified
+   * re-authentication path exists; that path is not implemented (D-05), so logout is not yet offered by the client.
+   */
+  private async logout(context: ConnectionContext, requestId?: string): Promise<void> {
+    const playerId = context.playerId;
+    const player = playerId === null ? undefined : this.store.state.players[playerId];
+    if (playerId === null || !player) {
+      this.sendError(context, "not_authenticated", "Connect with a valid identity first.", requestId);
+      return;
+    }
+    const timestamp = new Date(this.now()).toISOString();
+    const previousSession = player.session === undefined ? undefined : structuredClone(player.session);
+    player.session = { ...(player.session ?? {}), lastActivityAt: timestamp, revokedAt: timestamp };
+    const tokenHash = player.tokenHash;
+    const wasIndexed = this.playerByTokenHash.get(tokenHash) === playerId;
+    if (wasIndexed) this.playerByTokenHash.delete(tokenHash);
+    const failure = await this.saveSessionChange();
+    if (failure !== null) {
+      // The revocation is not durable, so the session stays valid. Undo the in-memory change.
+      if (previousSession === undefined) delete player.session;
+      else player.session = previousSession;
+      if (wasIndexed) this.playerByTokenHash.set(tokenHash, playerId);
+      this.sendError(context, failure.code, failure.message, requestId);
+      return;
+    }
+    if (this.online.get(playerId) === context) this.online.delete(playerId);
+    this.pendingQuizzes.delete(playerId);
+    context.playerId = null;
+    this.broadcastPresence({ type: "presence.left", player: this.toPresence(player, "disconnected") });
+    console.info("multiplayer session revoked by logout", playerId);
+    this.send(context, appendOptionalRequestId({ type: "session.logged_out" }, requestId));
+  }
+
+  /** Saves the live world and reports the outcome, so the caller can undo an in-memory change when the save fails. */
+  private async saveSessionChange(): Promise<{ code: string; message: string } | null> {
+    try {
+      await this.serialize(() => this.store.flush());
+      this.lastPersistAt = this.now();
+      this.noteSaveSucceeded();
+      return null;
+    } catch (error) {
+      this.failedSaveAttemptsSinceSuccess += 1;
+      if (error instanceof WorldStateCapacityError) {
+        if (this.enterCapacityEpisode()) {
+          this.openFailureNotice();
+          console.error("multiplayer world state is over its size limit; saves are refused and the previous file is kept");
+        }
+        return { code: "world_capacity_reached", message: "The world data limit has been reached. The logout was not saved, so the session is still active." };
+      }
+      console.error("multiplayer logout could not be saved");
+      return { code: "persistence_failed", message: "The logout could not be saved, so the session is still active. Try again." };
+    }
   }
 
   private handleMovement(context: ConnectionContext, message: Record<string, unknown>, requestId?: string): void {

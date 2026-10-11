@@ -94,7 +94,9 @@ const activeAppointments = (backend, characterId) => Object.values(backend.store
 
 /** Every field the world state holds, minus the engine's pre-dispatch lastSeen timestamp. */
 function fingerprint(state) {
-  return JSON.stringify(state, (key, value) => (key === "lastSeen" ? undefined : value));
+  // lastSeen and session.lastActivityAt are transient activity markers (in memory, not a world-state change).
+  // Everything else, including session.revokedAt and session.issuedAt, is compared.
+  return JSON.stringify(state, (key, value) => (key === "lastSeen" || key === "lastActivityAt" ? undefined : value));
 }
 
 const CIVIC_KEY = /^(government|political|party|election|candidate|campaign|debate|ballot|voter)/;

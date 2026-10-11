@@ -53,6 +53,7 @@ import {
   type PersistentWorldState,
   type Point2D,
 } from "./types.js";
+import { isSessionMetadata } from "./session-policy.js";
 
 /** The size limit for one saved world. A save over it is refused and the previous file is kept. */
 export const WORLD_STATE_LIMIT_BYTES = 16 * 1024 * 1024;
@@ -136,7 +137,8 @@ function isPersistentPlayerBase(value: unknown, playerId: string): value is Reco
     Array.isArray(value.recentRequestIds) && value.recentRequestIds.length <= 256 &&
     value.recentRequestIds.every((requestId) => typeof requestId === "string" && requestId.length <= 80) &&
     typeof value.createdAt === "string" && typeof value.lastSeen === "string" &&
-    isCharacterBase(value.character) && value.character.player_id === playerId;
+    isCharacterBase(value.character) && value.character.player_id === playerId &&
+    (value.session === undefined || isSessionMetadata(value.session));
 }
 
 function isFamilyPerson(value: unknown, key: string): boolean {

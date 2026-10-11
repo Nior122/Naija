@@ -28,6 +28,7 @@ import type {
   RelationshipRecord,
   CharacterLifeFields,
 } from "../life/types.js";
+import type { SessionMetadata } from "./session-policy.js";
 
 export const WORLD_ID = "nigeria-main" as const;
 export const MAP_WIDTH = 1600;
@@ -117,6 +118,8 @@ export interface PersistentPlayer {
   createdAt: string;
   lastSeen: string;
   character: CharacterRecord;
+  /** Optional session metadata (D-06 log-only groundwork). Absent on records created before it existed. */
+  session?: SessionMetadata;
 }
 
 export interface PersistentWorldState extends PersistentCareerMaps, PersistentEconomyMaps, PersistentBusinessMaps, PersistentPropertyMaps, PersistentGovernmentMaps, PersistentElectionMaps, PersistentJusticeMaps, PersistentPoliceMaps, PersistentMilitaryMaps, PersistentCrimeMaps, PersistentCultureMaps, PersistentEntertainmentMaps, PersistentSocialMaps, PersistentTransportationMaps, PersistentNPCMaps, PersistentWorldEventMaps {
