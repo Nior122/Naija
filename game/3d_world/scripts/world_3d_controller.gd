@@ -152,8 +152,18 @@ func _create_sample_building(position: Vector3, building_type: String, building_
 	emit_signal("building_loaded", building_name)
 
 func change_region(new_region_id: String) -> void:
-	"""Change to a different region"""
+	"""Change to a different region. Only a region that resolves to a visual profile is accepted.
+	Anything else is refused with a warning, and the current region is kept."""
 	if new_region_id == region_id:
+		return
+
+	# Validate against the authoritative visual lookup before any state changes.
+	var has_profile := false
+	if environment_config != null:
+		has_profile = not environment_config.resolve_region_profile(new_region_id).is_empty()
+	if not has_profile:
+		push_warning("[World3D] Refusing region '%s': it has no visual profile; keeping %s"
+				% [new_region_id, region_id])
 		return
 	
 	print("[World3D] Changing region from ", region_id, " to ", new_region_id)
@@ -229,9 +239,13 @@ func set_shared_state(state: Dictionary) -> void:
 	if state.is_empty():
 		return
 	
-	# Restore region
-	if state.has("region_id") and state.region_id != region_id:
-		change_region(state.region_id)
+	# Restore region. change_region() validates it. A missing or empty region keeps the current
+	# region, which is the documented default when the character has no located region.
+	var handed_region: Variant = state.get("region_id", "")
+	if handed_region is String and handed_region != "":
+		change_region(handed_region)
+	else:
+		print("[World3D] No located region handed over; keeping ", region_id)
 	
 	# Restore time of day
 	if state.has("time_of_day") and time_of_day:

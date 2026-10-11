@@ -120,11 +120,28 @@ func _restore_3d_state() -> void:
 	"""Restore state to 3D scene after loading"""
 	print("[SceneSwitcher] Restoring 3D state")
 	
+	# The 3D controller reads the region from top-level "region_id". It validates the value
+	# itself. An empty value means the character has no located region.
 	if mode_3d_instance and mode_3d_instance.has_method("set_shared_state"):
 		mode_3d_instance.set_shared_state({
 			"character": shared_character_data,
-			"world": shared_world_state
+			"world": shared_world_state,
+			"region_id": region_id_from_character(shared_character_data)
 		})
+
+static func region_id_from_character(character_data: Dictionary) -> String:
+	"""Return the canonical state ID (ng:state:<code>) of the character's located position.
+
+	The 2D client keeps its position in character.geographic_location, and the state_id there is
+	the same ID the 3D visual profiles use. A missing or malformed value returns "" rather than a
+	guessed region."""
+	var location: Variant = character_data.get("geographic_location", {})
+	if not location is Dictionary:
+		return ""
+	var state_id: Variant = location.get("state_id", "")
+	if state_id is String:
+		return state_id
+	return ""
 
 func get_current_mode() -> String:
 	"""Get the current game mode"""

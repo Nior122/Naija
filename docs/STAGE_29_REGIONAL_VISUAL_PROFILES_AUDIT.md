@@ -93,6 +93,9 @@ Fixing this needs a 2D-to-state mapping, for example from `processed/akure-south
 change to shared-state behaviour, not only to visuals, so it is **not** included in Stage 29 without a decision
 (Section 9, D3).
 
+**Status after the F5 slice (Section 15):** the code fix is implemented and statically checked. Runtime is NOT RUN
+and visual is NOT DONE, so F5 is not closed.
+
 **F6. Two region namespaces in the 2D client.** The 2D sample uses `ng:region:ondo:akure-south-core`, which is a
 settlement-level region. The 3D and visual code use state-level `ng:state:<code>`. Only the sample's `state_id`
 connects them. `prototype_game.gd` line 530 compares the settlement ID directly.
@@ -564,3 +567,134 @@ The status text in Section 10 before this update is preserved here in full:
   It is not a hard reset, and nothing was discarded.
 - Recovery copy of the five files, verified by patch reproduction from `803fbdf`:
   `/home/user/stage29-recovery/recaptured-vs-803fbdf-20261011-074208/`.
+
+
+## 15. F5: 2D-to-3D regional handoff (code implemented; runtime NOT RUN)
+
+**Status.** The code fix is implemented in the working tree. Static and Node checks pass. Godot 4.7.2 was not available,
+so the headless test has NOT run, the in-game transition has NOT been exercised, and visual validation is NOT DONE.
+F5 is not closed until those are run. Evidence labels: *static* (source reading and `gdparse`/`gdlint`),
+*automated* (Node test with exit code), *runtime* (Godot executed: **none**), *visual* (rendered output: **none**).
+
+### 15.1 Verified root cause (static)
+
+1. **The 3D payload had no region.** `scene_switcher.gd` `_restore_3d_state()` passed `{character, world}`. The 3D
+   controller's `set_shared_state()` reads a top-level `region_id`. The key never arrived, so `change_region()` was
+   never called from a handoff. *Static.*
+2. **The 2D client could not export its character.** `prototype_game.gd` `get_shared_state()` called
+   `character.to_dict()` and `clock.to_dict()`. `set_shared_state()` called `character.from_dict()` and
+   `clock.from_dict()`. `CharacterState` and `WorldClock` define only `to_dictionary()` and `load_dictionary()`.
+   No commit in the history defines `to_dict` or `from_dict` (`git log -S`). The character dictionary is the only
+   carrier of `geographic_location`, so it was never produced. *Static.* Not verified: whether Godot rejects these calls
+   when the file is parsed (typed `CharacterState` and `WorldClock` bases) or only when they run.
+3. **Initialisation order.** `switch_to_3d()` calls `add_child()` before `_restore_3d_state()`. `EnvironmentConfig._ready`
+   and `WorldController._ready` therefore apply the default `ng:state:on` first. The restore is the only point at which
+   a located region can replace it. *Static.*
+4. **The source of the region.** `character.geographic_location` is set by `geographic_region_preview.gd` from the
+   processed sample. Its `state_id` is `ng:state:on`, a catalog ID. It is set only while Map data is on and the
+   player is outdoors (`prototype_game.gd`, `_on_player_travelled`), and it is cleared on leaving town
+   (`_change_location`). Otherwise it is `{}`. *Static.*
+
+### 15.2 Handoff contract
+
+- **A. Source of truth:** `character.geographic_location.state_id` in the 2D character state. No second region store
+  was added. The geographic `region_id` (`ng:region:…`) is not used, because it is the settlement namespace (F6).
+- **B. Format:** canonical `ng:state:<code>`, the same IDs as the catalog and the Phase C visual tables. The sample's
+  `state_id` is a catalog state with a resolvable profile (checked by a static test).
+- **C. Mechanism:** the existing `set_shared_state` payload, using the top-level `region_id` key that the 3D controller
+  already defines. No autoload, no new signal, no new state object.
+- **D. Order:** the default is applied in `_ready`. The handoff runs synchronously inside `switch_to_3d()`, before
+  the next rendered frame (*static* reasoning). A valid region replaces the default. A valid region equal to the
+  default does nothing.
+- **E. Invalid or missing region:**
+  - Valid and resolvable: applied.
+  - Key missing, empty string, or no located position: keep the documented default `ng:state:on` and print a notice.
+    **Owner decision needed (Section 15.7).**
+  - Non-string value: treated as missing.
+  - Correct format but no visual resolution (`ng:state:zz`, the retired `ng:state:od`, `not-a-region`): refused with a
+    warning. The current region and its visuals are kept.
+  - No `environment_config` (before ready): refused with a warning. No caller does this.
+
+### 15.3 Implementation (production code)
+
+- `game/scripts/prototype_game.gd`: `get_shared_state()` uses `to_dictionary()` for the character and the clock.
+  `set_shared_state()` restores the clock first with `load_dictionary()`, then the character with
+  `load_dictionary(data, clock.calendar_date())`. This is the order the save and online-session paths use. A `clock != null`
+  guard was added to the character branch.
+- `game/3d_world/scripts/scene_switcher.gd`: `_restore_3d_state()` adds `region_id`. A new `static func
+  region_id_from_character()` returns the `state_id`, or `""` if it is missing or malformed.
+- `game/3d_world/scripts/world_3d_controller.gd`: `change_region()` validates the region with
+  `environment_config.resolve_region_profile()` before any state changes. A refusal warns and returns.
+  `set_shared_state()` no longer writes `region_id` directly. A missing or empty region keeps the current one.
+
+Not changed: `environment_config.gd`, the catalog, the profile data, the presets, the 32-region mapping, the scenes,
+`time_of_day.gd` (F13b), the save format, the identity or session code, and the world-api.
+
+**Behaviour change on the return path (3D to 2D).** Previously the 2D `set_shared_state()` failed at its first
+`from_dict()` call and restored nothing. It now restores the clock, character, position, location, playing state,
+online mode, and career profile captured on the way out. This is the intended contract, but it is **not
+runtime-verified**.
+
+### 15.4 Tests
+
+| Check | Kind | Result |
+|---|---|---|
+| `services/world-api/test/regional-handoff.test.mjs` (new, 9 checks) | static, automated | **9/9 pass** on the fix. Run against `HEAD`'s game files: **6 of 9 fail**, which shows it detects the defect. |
+| `game/tests/regional_handoff.gd` (new, headless SceneTree) | runtime | **NOT RUN.** Covers: `region_id_from_character` cases; the switcher payload through a stub receiver; a valid handoff; refused regions keep the located region; a missing region uses the default; a repeated transition does not carry a region. |
+| `regional-visual-profiles.test.mjs` | automated | 17/17 pass, exit 0 |
+| `regional-registry.test.mjs` | automated | 15/15 pass, exit 0 |
+| `geography.test.mjs` | automated | 7/7 pass, exit 0 |
+| Full Node suite (`npm test`, includes build and `tsc`) | automated | 1074 total, 1037 pass, 0 fail, 37 skipped, exit 0. The previous baseline was 1065, plus the 9 new checks. |
+| `gdparse` on the four changed GDScript files | static | exit 0 each |
+| `gdlint` on the three changed production scripts | static | same lint messages as `HEAD`, checked per file. The controller has its recorded 38 baseline messages. |
+| `gdlint` on `regional_handoff.gd` | static | no problems, exit 0 |
+| `npm run lint` (ESLint, TypeScript service) | static | 51 errors, exit 1. This is the existing baseline, and no TypeScript changed. |
+| `git diff --check` | static | exit 0 |
+
+### 15.5 What is verified and what is not
+
+- **Verified by static inspection:** the root-cause chain in 15.1; the key mismatch; the nonexistent method names
+  (their absence from every commit); the sample `state_id` in the catalog; the initialisation order.
+- **Verified by automated static test:** the method-name cross-check (every `character.` and `clock.` call in the 2D
+  client exists on its class); the switcher and controller wiring; the catalog link. Result: 9/9.
+- **Verified at runtime:** none. **NOT RUN.** Godot 4.7.2 is not installed, and no binary is on the path.
+- **Not verified:**
+  - whether the original 2D shared-state calls failed at parse time or at call time;
+  - whether the scene and the 2D client load headless without errors;
+  - whether `from_dict` and `to_dictionary` round-trip without loss in play;
+  - the 3D-to-2D return path;
+  - the in-game transition (F3 with Map data on, outdoors, then back);
+  - visual output: **NOT DONE**.
+
+### 15.6 Visible effect in the current data
+
+Every located position in the current 2D sample resolves to `ng:state:on`, which is also the default. So this fix
+changes no visible region in the current content. Its effect appears when a different state is located, which the
+sample does not yet provide. The handoff is correct, but no visible change is claimed.
+
+### 15.7 Owner decision needed: the unlocated default
+
+The unlocated case is the common one. Map data is off unless the player turns it on outdoors. The default `ng:state:on`
+is kept because the controller documents it (`# Ondo State (Akure South)`), and the only geographic sample is in Ondo.
+Idera Quarter is described as fictional, so Ondo is not a real location for it. A fail-visible alternative would stop
+the transition, which is a gameplay regression. Please confirm this default, or choose another.
+
+### 15.8 Adjacent defects found and not fixed
+
+- **A. Multiplayer client not attached in 3D.** `world_3d_controller.gd` `_ready` looks for the client on
+  `get_parent()`, which is `Mode3D`, not the switcher. Static: the client is never attached. Separate slice.
+- **B. Unreachable restore branches.** The switcher never supplies `time_of_day` or `player_state`, so those branches
+  in the 3D `set_shared_state()` are unreachable. Separate slice.
+- **C. F13b unchanged.** `time_of_day.gd` lookups and ambient ownership are not touched. This fix does not write to
+  the ambient properties beyond the existing Phase C profile application.
+- **D. Client-supplied location.** `geographic_location` is held by the client and is not checked by the server (the
+  justice design, L3). The 3D region is presentation-only and must not be used for server decisions.
+- **E. Shared-state methods never ran.** No commit defines the methods they call, and the repository records the Stage 1
+  Godot runtime as unverified. The 2D client's runtime behaviour is therefore unverified in this sandbox.
+
+### 15.9 Remaining status
+
+- F5: code implemented; automated static checks pass; **runtime acceptance PENDING**. Required next: run
+  `game/tests/regional_handoff.gd` in Godot 4.7.2, then an in-game check (Map data on outdoors, F3 to 3D, F3 back).
+- F9, F10, F11, F13b, and the README gap: unchanged, still OPEN.
+- Stage 29: OPEN. Stage 28: OPEN. Production: NOT READY.

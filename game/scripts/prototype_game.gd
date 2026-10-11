@@ -1223,9 +1223,11 @@ func get_shared_state() -> Dictionary:
 	character.position = player.position
 	character.current_location = world.location_id
 	
+	# CharacterState and WorldClock serialise with to_dictionary(). The same dictionary is what
+	# the save service writes, and it carries geographic_location, the 2D source of the region.
 	return {
-		"character": character.to_dict(),
-		"clock": clock.to_dict(),
+		"character": character.to_dictionary(),
+		"clock": clock.to_dictionary(),
 		"player_position": player.position,
 		"player_location": world.location_id,
 		"playing": playing,
@@ -1239,13 +1241,14 @@ func set_shared_state(state: Dictionary) -> void:
 	if state.is_empty():
 		return
 	
-	# Restore character state
-	if state.has("character") and character != null:
-		character.from_dict(state.character)
-	
-	# Restore clock
+	# Restore clock first. The character load uses the clock's calendar date, as the save and
+	# online-session paths do.
 	if state.has("clock") and clock != null:
-		clock.from_dict(state.clock)
+		clock.load_dictionary(state.clock)
+
+	# Restore character state
+	if state.has("character") and character != null and clock != null:
+		character.load_dictionary(state.character, clock.calendar_date())
 	
 	# Restore player position and location
 	if state.has("player_position"):
