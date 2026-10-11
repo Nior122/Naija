@@ -163,7 +163,41 @@ old process's in-flight saves before the new process loads (see the comment on `
 tests fail (15, 17, 18, 19, 20). That run was on the compiled output and was reverted afterwards. The save-failure tests
 therefore check the gate, and do not pass by chance.
 
-### 5.4 Known condition: memory is ahead of storage until a save succeeds
+### 5.4 Schema migrations under concurrency (found in CI, fixed in this stage)
+
+The first CI runs of this branch's PostgreSQL job failed: run `38170980020` (on `42bc518`, a docs-only commit after the
+Stage 31 run that passed on `683879f`) and run `38178737160` (on `a0cbc15`). The sandbox cannot reach the CI log
+storage, so the failing test was not read from the log. Reproduction explains the failure:
+
+- CI runs `npm test` with `node --test`, which runs test files in parallel. The default parallelism follows the CPU count.
+  The CI runner has more CPUs than this sandbox (2), so more files run at once there. With the CI default of three, files
+  run together. Each file migrates the database when it starts. CI always starts from an empty database.
+- `MigrationManager.applyMigration` read the version outside its transaction and then ran the DDL with no lock. Two
+  files that started together both ran `CREATE EXTENSION IF NOT EXISTS` and `CREATE TABLE IF NOT EXISTS`, and one of
+  them failed with a unique violation (`pg_extension_name_index`, or `pg_type_typname_nsp_index`). Whether it failed
+  depended on timing, which is why the same code passed one run and failed the next. This is consistent with the CI results. It is not proven from the CI
+  log itself, which the sandbox cannot read.
+- Reproduced locally on a fresh database with three parallel files: 10 failures, all with the error
+  `duplicate key value violates unique constraint "pg_extension_name_index"`, before the fix.
+
+**The fix** (`src/database/migrations.ts`). A transaction-scoped PostgreSQL advisory lock (`pg_advisory_xact_lock`,
+one fixed key) is taken before the migration table is created and before each migration. The version is read again
+under the lock, so a migration applied by another connection is skipped, not run twice. `migrate()` counts only the
+migrations it applied. The lock is released by the commit or rollback that ends each migration. No schema change.
+
+**Regression test.** `test/migration-concurrency.test.mjs` (live only): four connections migrate three fresh databases at
+once, and each run must apply exactly two migrations and record versions 1 and 2 once. A second test checks that a
+stale `applyMigration` call is skipped. With the lock removed from the compiled code, the parallel test fails in 3 of 3
+runs, with the duplicate `pg_type` error from the same race. With the lock in place, it passes.
+
+**Results after the fix.** Full suite on a fresh PostgreSQL database, with three test files in parallel (the CI
+default, from the runner's CPU count): three runs, each 1261 tests, 1257 pass, 0 fail, 4 skipped, exit 0. The same suite
+through `npm test` on a fresh database: 1261, 1257, 0, 4, exit 0.
+
+Limits. The file backend has no migrations and is unaffected. The lock serialises migrations only. It does not change
+how world-state saves are fenced, which is section 5.1.
+
+### 5.5 Known condition: memory is ahead of storage until a save succeeds
 
 Between a failed save and the next successful one, memory holds the payment, and other reads in that process can show
 it. The payer is not told it is confirmed, and no client is told the payment is final. If the process crashes in that
@@ -189,7 +223,8 @@ so no concurrent change is lost. It is not removed by this stage.
 
 ## 7. Tests and results
 
-New file `services/world-api/test/government-treasury-payments.test.mjs` (29 tests with PostgreSQL, 21 without). Part A
+New file `services/world-api/test/government-treasury-payments.test.mjs` (29 tests with PostgreSQL, 21 without). New file
+`services/world-api/test/migration-concurrency.test.mjs` (2 live tests, section 5.4). Part A
 (tests 1 to 14) runs in memory and does not depend on a backend. Part B (tests 15 to 29) runs over the socket. Its file
 variants run always. Its PostgreSQL variants run only when `DATABASE_URL` is set and PostgreSQL is allowed.
 
@@ -211,21 +246,25 @@ Updated tests (each comment explains the change):
 | Run | Total | Pass | Fail | Skip | Notes |
 |---|---|---|---|---|---|
 | Stage 31 (`npm test`, file backend), as recorded in the Stage 31 doc | 1123 | 1085 | 0 | 38 | Baseline for the file backend. |
-| Stage 32 `npm test`, file backend (no `DATABASE_URL`) | 1144 | 1106 | 0 | 38 | `npm test` runs `npm run build` first; exit 0. +21 new tests. |
+| Stage 32 `npm test`, file backend (no `DATABASE_URL`), final | 1146 | 1106 | 0 | 40 | `npm test` runs `npm run build` first; exit 0. +21 Stage 32 tests, +2 migration tests (live only, so skipped here). |
 | PostgreSQL baseline, commit `42bc518` (earlier local run) | 1230 | 1226 | 0 | 4 | Recorded before any Stage 32 change. |
-| Stage 32 `npm test`, PostgreSQL (`DATABASE_URL` and `NAIJA_ALLOW_DB_TESTS=true`, disposable local PostgreSQL) | 1259 | 1255 | 0 | 4 | Exit 0. +29 new tests, including 8 PostgreSQL-only. The 4 skips are the same as the baseline. |
+| Stage 32 `npm test`, PostgreSQL, fresh database, final (`DATABASE_URL`, `NAIJA_ALLOW_DB_TESTS=true`, disposable local PostgreSQL 18.4) | 1261 | 1257 | 0 | 4 | Exit 0. The 4 skips are the same as the baseline. |
+| Same PostgreSQL suite, fresh database, three files in parallel (`--test-concurrency=3`, the CI default on a 4-CPU runner), three runs | 1261 each | 1257 each | 0 | 4 | Before the migration fix, the first run of this shape had 10 failures (section 5.4). |
 | New file, file-backend run | 21 | 21 | 0 | 0 | |
 | New file, PostgreSQL run | 29 | 29 | 0 | 0 | 8 of these run only against PostgreSQL. |
 | Mutation: reply sent before the save | 21 | 16 | 5 | 0 | Section 5.3. Reverted. |
-| `npm run lint` (root, eslint on `services/world-api/src`) | - | - | - | - | Exit 0. |
+| `npm run lint` (root, eslint on `services/world-api/src`) | - | - | - | - | Exit 0, after the migration fix. |
 | Typecheck and build (`tsc --project tsconfig.json`, run by `npm run build` and `npm test`) | - | - | - | - | Exit 0. |
 
-Migration tests: not applicable. No schema change, and no migration was run.
+Migration tests: `test/migration-concurrency.test.mjs` (2 live tests, section 5.4). No schema change.
 
-CI results are recorded in the final report, after the push.
+CI for the Stage 32 code commit `a0cbc15` failed in the live PostgreSQL job, for the migration race in section 5.4. The
+fix is in a later commit on this branch. CI results for that commit are recorded in the final report.
 
 ## 8. Known defects and residual risks
 
+- **Migration race (fixed, section 5.4).** Schema migrations are now serialised with an advisory lock. The regression
+  test is live only, so it runs in CI and on any machine with a database, and is skipped without one.
 - **Single-writer file backend.** Exactly-once funding and the no-lost-update guarantee depend on one server process per
   file. PostgreSQL enforces this across processes. The file backend does not.
 - **Memory ahead of storage** (section 5.4). A crash in that window loses the payment in full, and the payer was never
