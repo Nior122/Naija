@@ -1,7 +1,10 @@
 extends SceneTree
 
 # Deterministic self-test of the save-slot recovery guard (tests/support/save_slot_guard.gd).
-# It uses ONLY a test-only slot path (user://naija-guard-selftest-slot.json), never the player's save.
+# It uses ONLY a test-only slot path, never the player's save. The slot name includes this process id
+# (user://naija-guard-selftest-slot-<pid>.json), so two concurrent instances never share a slot file. The shared
+# protocol files (lock, manifest, backup) are still shared, so a run that is refused at start stops at once and
+# changes nothing (see _start_expected).
 # It does not use timing: "crashes" are simulated by abandoning a guard instance after begin()/observe(), and
 # the recorded pid of the abandoned run is rewritten to a process that has already exited, so the guard can prove
 # that no run is still active. Refuses to start if any protocol file already exists (it never deletes another
@@ -9,7 +12,8 @@ extends SceneTree
 #   godot --headless --path game --script res://tests/save_guard_headless.gd
 
 const GuardScript = preload("res://tests/support/save_slot_guard.gd")
-const SLOT: String = "user://naija-guard-selftest-slot.json"
+var SLOT: String = ""  # Set in _initialize: per-process test-only slot path.
+var _lost_start: bool = false  # True once a start that must succeed is refused. The run then stops.
 const ORIGINAL: String = "original save A"
 const CHANGED: String = "changed save B"
 const UNKNOWN: String = "unrecognised save C"
@@ -22,6 +26,7 @@ var _skips: int = 0
 
 
 func _initialize() -> void:
+	SLOT = "user://naija-guard-selftest-slot-%d.json" % OS.get_process_id()
 	call_deferred("_run")
 
 
@@ -30,16 +35,22 @@ func _run() -> void:
 		print("FAIL: protocol or self-test slot files already exist; nothing was changed.")
 		quit(1)
 		return
-	_s01_existing_save_is_backed_up_and_restored()
-	_s02_originally_absent_save_is_handled()
-	_s03_ambiguous_state_refused_without_change()
-	_s04_observed_interrupted_change_is_recovered()
-	_s05_backup_byte_mismatch_refused_and_kept()
-	_s06_restore_failure_keeps_material_then_recovers()
-	_s07_concurrent_start_refused_without_change()
-	_s08_refusal_before_start_changes_nothing()
-	_s09_stale_lock_without_manifest_is_removed()
-	_s10_repeated_finish_and_recovery_are_stable()
+	var scenarios: Array[Callable] = [
+		_s01_existing_save_is_backed_up_and_restored,
+		_s02_originally_absent_save_is_handled,
+		_s03_ambiguous_state_refused_without_change,
+		_s04_observed_interrupted_change_is_recovered,
+		_s05_backup_byte_mismatch_refused_and_kept,
+		_s06_restore_failure_keeps_material_then_recovers,
+		_s07_concurrent_start_refused_without_change,
+		_s08_refusal_before_start_changes_nothing,
+		_s09_stale_lock_without_manifest_is_removed,
+		_s10_repeated_finish_and_recovery_are_stable,
+	]
+	for scenario in scenarios:
+		scenario.call()
+		if _lost_start:
+			break
 	_finish_run()
 
 
@@ -48,8 +59,8 @@ func _run() -> void:
 func _s01_existing_save_is_backed_up_and_restored() -> void:
 	_write(SLOT, ORIGINAL)
 	var guard := GuardScript.new()
-	var started := guard.begin(TEST_NAME, SLOT)
-	_check(started, "begin starts a run when an existing save is present")
+	if not _start_expected(guard, "begin starts a run when an existing save is present"):
+		return
 	_check(_read(SLOT) == ORIGINAL, "begin does not change the save")
 	_check(_read(GuardScript.BACKUP_PATH) == ORIGINAL, "the backup equals the original before the save is changed")
 	_check(guard.original_existed(), "the guard records that the original save existed")
@@ -66,7 +77,8 @@ func _s01_existing_save_is_backed_up_and_restored() -> void:
 func _s02_originally_absent_save_is_handled() -> void:
 	_remove(SLOT)
 	var guard := GuardScript.new()
-	_check(guard.begin(TEST_NAME, SLOT), "begin starts a run when no save exists")
+	if not _start_expected(guard, "begin starts a run when no save exists"):
+		return
 	_check(not guard.original_existed(), "the guard records that no original save existed")
 	_check(not _exists(GuardScript.BACKUP_PATH), "no backup is written when no save existed")
 	_write(SLOT, CREATED)
@@ -78,7 +90,8 @@ func _s02_originally_absent_save_is_handled() -> void:
 func _s03_ambiguous_state_refused_without_change() -> void:
 	_write(SLOT, ORIGINAL)
 	var first := GuardScript.new()
-	_check(first.begin(TEST_NAME, SLOT), "an interrupted run can be started for the ambiguity case")
+	if not _start_expected(first, "an interrupted run can be started for the ambiguity case"):
+		return
 	_write(SLOT, UNKNOWN)  # Not observed by the run: the guard cannot prove where this write came from.
 	_make_pid_dead()
 	var second := GuardScript.new()
@@ -92,7 +105,8 @@ func _s03_ambiguous_state_refused_without_change() -> void:
 	# Resolution for the test: the reviewer restores the original save, which is then a known state.
 	_write(SLOT, ORIGINAL)
 	var recovery := GuardScript.new()
-	_check(recovery.begin(TEST_NAME, SLOT), "recovery proceeds once the save matches the recorded original")
+	if not _start_expected(recovery, "recovery proceeds once the save matches the recorded original"):
+		return
 	_check(recovery.recovered_previous_run, "the interrupted run is reported as recovered")
 	_check(recovery.finish(), "the recovered run finishes cleanly")
 	_check(not _protocol_present(), "no protocol files remain after the recovered run")
@@ -102,12 +116,14 @@ func _s03_ambiguous_state_refused_without_change() -> void:
 func _s04_observed_interrupted_change_is_recovered() -> void:
 	_write(SLOT, ORIGINAL)
 	var interrupted := GuardScript.new()
-	_check(interrupted.begin(TEST_NAME, SLOT), "a run starts before the simulated interruption")
+	if not _start_expected(interrupted, "a run starts before the simulated interruption"):
+		return
 	_write(SLOT, CHANGED)
 	_check(interrupted.observe(), "the change is recorded as observed before the interruption")
 	_make_pid_dead()
 	var recovery := GuardScript.new()
-	_check(recovery.begin(TEST_NAME, SLOT), "an interrupted run with an observed change is recovered")
+	if not _start_expected(recovery, "an interrupted run with an observed change is recovered"):
+		return
 	_check(recovery.recovered_previous_run, "the recovery is reported")
 	_check(_read(SLOT) == ORIGINAL, "recovery restores the original bytes")
 	_check(recovery.finish(), "the new run started by the recovery finishes cleanly")
@@ -118,7 +134,8 @@ func _s04_observed_interrupted_change_is_recovered() -> void:
 func _s05_backup_byte_mismatch_refused_and_kept() -> void:
 	_write(SLOT, ORIGINAL)
 	var interrupted := GuardScript.new()
-	_check(interrupted.begin(TEST_NAME, SLOT), "a run starts for the byte-mismatch case")
+	if not _start_expected(interrupted, "a run starts for the byte-mismatch case"):
+		return
 	_write(SLOT, CHANGED)
 	_check(interrupted.observe(), "the change is observed before the interruption")
 	_write(GuardScript.BACKUP_PATH, "tampered backup")
@@ -131,7 +148,8 @@ func _s05_backup_byte_mismatch_refused_and_kept() -> void:
 	# Resolution for the test: the reviewer puts back the correct backup.
 	_write(GuardScript.BACKUP_PATH, ORIGINAL)
 	var recovery := GuardScript.new()
-	_check(recovery.begin(TEST_NAME, SLOT), "recovery proceeds once the backup matches the original")
+	if not _start_expected(recovery, "recovery proceeds once the backup matches the original"):
+		return
 	_check(recovery.finish(), "the recovered run finishes cleanly")
 	_check(_read(SLOT) == ORIGINAL and not _protocol_present(), "the original is restored and no protocol files remain")
 	_remove(SLOT)
@@ -143,7 +161,8 @@ func _s06_restore_failure_keeps_material_then_recovers() -> void:
 		return
 	_write(SLOT, ORIGINAL)
 	var interrupted := GuardScript.new()
-	_check(interrupted.begin(TEST_NAME, SLOT), "a run starts for the restore-failure case")
+	if not _start_expected(interrupted, "a run starts for the restore-failure case"):
+		return
 	_write(SLOT, CHANGED)
 	_check(interrupted.observe(), "the change is observed before the interruption")
 	_make_pid_dead()
@@ -156,7 +175,8 @@ func _s06_restore_failure_keeps_material_then_recovers() -> void:
 	_check(_read(GuardScript.BACKUP_PATH) == ORIGINAL, "a failed restore keeps the backup")
 	_check(_exists(GuardScript.MANIFEST_PATH) and _lock_present(), "a failed restore keeps the manifest and lock")
 	var retry := GuardScript.new()
-	_check(retry.begin(TEST_NAME, SLOT), "a repeated recovery succeeds once the save is writable")
+	if not _start_expected(retry, "a repeated recovery succeeds once the save is writable"):
+		return
 	_check(_read(SLOT) == ORIGINAL, "the repeated recovery restores the original bytes")
 	_check(retry.finish(), "the retried run finishes cleanly")
 	_check(not _protocol_present(), "no protocol files remain after the retried recovery")
@@ -166,7 +186,8 @@ func _s06_restore_failure_keeps_material_then_recovers() -> void:
 func _s07_concurrent_start_refused_without_change() -> void:
 	_write(SLOT, ORIGINAL)
 	var first := GuardScript.new()
-	_check(first.begin(TEST_NAME, SLOT), "the first run takes the lock")
+	if not _start_expected(first, "the first run takes the lock"):
+		return
 	var second := GuardScript.new()
 	_check(not second.begin(TEST_NAME, SLOT), "a second run is refused while the lock is held")
 	_check(_read(SLOT) == ORIGINAL, "the refused second run does not change the save")
@@ -211,7 +232,8 @@ func _s09_stale_lock_without_manifest_is_removed() -> void:
 		{"run_id": "stale-run", "pid": _dead_pid(), "test": "stale", "time": 0}))
 	_write(SLOT, ORIGINAL)
 	var guard := GuardScript.new()
-	_check(guard.begin(TEST_NAME, SLOT), "a stale lock whose owner has exited is removed and the run starts")
+	if not _start_expected(guard, "a stale lock whose owner has exited is removed and the run starts"):
+		return
 	_check(guard.recovered_previous_run, "the stale lock is reported as recovered")
 	_check(_read(SLOT) == ORIGINAL, "removing a stale lock does not change the save")
 	_check(guard.finish(), "the run after the stale lock finishes cleanly")
@@ -222,7 +244,8 @@ func _s09_stale_lock_without_manifest_is_removed() -> void:
 func _s10_repeated_finish_and_recovery_are_stable() -> void:
 	_write(SLOT, ORIGINAL)
 	var guard := GuardScript.new()
-	_check(guard.begin(TEST_NAME, SLOT), "a run starts for the repeated-attempt case")
+	if not _start_expected(guard, "a run starts for the repeated-attempt case"):
+		return
 	_check(guard.finish(), "the first finish restores the save")
 	_check(guard.finish(), "a repeated finish succeeds without changing anything")
 	_check(_read(SLOT) == ORIGINAL and not _protocol_present(), "repeated finish leaves a clean, restored state")
@@ -237,6 +260,13 @@ func _skip(reason: String) -> void:
 
 
 func _finish_run() -> void:
+	if _lost_start:
+		# Another run owns the protocol files. Remove only this run's own slot file, then report BLOCKED.
+		if _exists(SLOT):
+			_remove(SLOT)
+		print("BLOCKED: another save-guard run holds the protocol; this run was refused at start and changed nothing.")
+		quit(1)
+		return
 	if _protocol_present():
 		_failures.append("protocol files were left behind; they are kept for review")
 	elif _exists(SLOT):
@@ -249,6 +279,15 @@ func _finish_run() -> void:
 			push_error("Save-guard check failed: %s" % failure)
 		print("FAIL: %d of %d save-guard checks" % [_failures.size(), _checks])
 		quit(1)
+
+
+## A start that must succeed. A refusal is a failed check and stops the run before any further change.
+func _start_expected(guard: RefCounted, description: String) -> bool:
+	var started: bool = guard.begin(TEST_NAME, SLOT)
+	_check(started, description)
+	if not started:
+		_lost_start = true
+	return started
 
 
 func _check(condition: bool, description: String) -> void:
