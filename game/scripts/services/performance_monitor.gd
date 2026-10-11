@@ -9,11 +9,9 @@ var fps: float = 0.0
 var frame_time_ms: float = 0.0
 var process_time_ms: float = 0.0
 var physics_time_ms: float = 0.0
-var idle_time_ms: float = 0.0
 
-# Memory metrics (approximate)
+# Memory metrics. Only static memory is measured: Godot 4.7.2 has no dynamic-memory monitor.
 var static_memory_mb: float = 0.0
-var dynamic_memory_mb: float = 0.0
 var message_queue_max: int = 0
 
 # Network metrics
@@ -62,15 +60,12 @@ func _process(delta: float) -> void:
 func _update_metrics() -> void:
 	"""Update all metrics"""
 	# Godot performance metrics
-	process_time_ms = Performance.get_monitor(Performance.TIME_FPS) * 1000.0
+	# TIME_PROCESS is the frame processing time in seconds; convert to milliseconds.
+	process_time_ms = Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0
 	physics_time_ms = Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0
-	idle_time_ms = Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0
 	
 	# Memory metrics (Godot provides these in bytes, convert to MB)
 	static_memory_mb = Performance.get_monitor(Performance.MEMORY_STATIC) / 1048576.0
-	# MEMORY_DYNAMIC does not exist in Godot 4.7.2 and has no equivalent monitor. Held at 0.0 (not measured) so
-	# total_memory_mb equals static memory and is not double-counted. Do not read this field as a measurement.
-	dynamic_memory_mb = 0.0
 	message_queue_max = Performance.get_monitor(Performance.OBJECT_RESOURCE_COUNT)
 	
 	# Scene metrics
@@ -82,7 +77,7 @@ func _update_metrics() -> void:
 	if fps_history.size() > max_history:
 		fps_history.pop_front()
 	
-	memory_history.append(static_memory_mb + dynamic_memory_mb)
+	memory_history.append(static_memory_mb)
 	if memory_history.size() > max_history:
 		memory_history.pop_front()
 	
@@ -104,9 +99,8 @@ func _check_performance() -> void:
 		emit_signal("performance_warning", "Low FPS: %.1f" % fps)
 	
 	# High memory usage warning (over 512 MB)
-	var total_memory = static_memory_mb + dynamic_memory_mb
-	if total_memory > 512.0:
-		emit_signal("performance_warning", "High memory usage: %.1f MB" % total_memory)
+	if static_memory_mb > 512.0:
+		emit_signal("performance_warning", "High memory usage: %.1f MB" % static_memory_mb)
 	
 	# Too many objects warning
 	if object_count > 10000:
@@ -119,10 +113,8 @@ func get_metrics() -> Dictionary:
 		"frame_time_ms": frame_time_ms,
 		"process_time_ms": process_time_ms,
 		"physics_time_ms": physics_time_ms,
-		"idle_time_ms": idle_time_ms,
 		"static_memory_mb": static_memory_mb,
-		"dynamic_memory_mb": dynamic_memory_mb,
-		"total_memory_mb": static_memory_mb + dynamic_memory_mb,
+		"total_memory_mb": static_memory_mb,
 		"object_count": object_count,
 		"node_count": node_count,
 		"network_bytes_sent": network_bytes_sent,
@@ -175,11 +167,7 @@ func get_performance_report() -> String:
 	var report = "=== Performance Report ===\n"
 	report += "FPS: %.1f (avg: %.1f)\n" % [metrics.fps, metrics.avg_fps]
 	report += "Frame Time: %.2f ms\n" % metrics.frame_time_ms
-	report += "Memory: %.1f MB (static: %.1f, dynamic: %.1f)\n" % [
-		metrics.total_memory_mb,
-		metrics.static_memory_mb,
-		metrics.dynamic_memory_mb
-	]
+	report += "Memory: %.1f MB (static)\n" % metrics.static_memory_mb
 	report += "Objects: %d | Nodes: %d\n" % [metrics.object_count, metrics.node_count]
 	report += "Network: Sent %d bytes (%d msgs), Received %d bytes (%d msgs)\n" % [
 		metrics.network_bytes_sent,
