@@ -31,7 +31,7 @@ func _ready() -> void:
 		target_node = get_parent().get_parent() as Node3D
 	
 	# Set up initial camera position
-	_update_camera_position()
+	_update_camera_position(get_process_delta_time())
 
 func _unhandled_input(event: InputEvent) -> void:
 	"""Handle input for camera control"""
@@ -60,9 +60,9 @@ func _process(delta: float) -> void:
 	current_pitch = lerp(current_pitch, target_pitch, follow_speed * delta)
 	
 	# Update camera position
-	_update_camera_position()
+	_update_camera_position(delta)
 
-func _update_camera_position() -> void:
+func _update_camera_position(delta: float) -> void:
 	"""Update camera position based on target and angles"""
 	if not target_node:
 		return
@@ -111,7 +111,7 @@ func _update_camera_position() -> void:
 func set_target(target: Node3D) -> void:
 	"""Set a new target for the camera to follow"""
 	target_node = target
-	_update_camera_position()
+	_update_camera_position(get_process_delta_time())
 
 func set_yaw(yaw: float) -> void:
 	"""Set the camera yaw angle"""

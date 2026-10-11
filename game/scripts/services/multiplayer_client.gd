@@ -219,9 +219,9 @@ func _handle_packet(text: String) -> void:
 			_send_message({"type": "session.resume", "sessionToken": _session_token})
 		"session.logged_out":
 			# The server has revoked this session. Forget the token and stop reconnecting. The issued flag is kept, so
-		# identity.create is not sent with the saved key on a later connection.
-		_clear_saved_token()
-		disconnect_from_world()
+			# identity.create is not sent with the saved key on a later connection.
+			_clear_saved_token()
+			disconnect_from_world()
 		"session.ready":
 			_reconnect_delay = 1.0
 			var character: Variant = message.get("character", {})

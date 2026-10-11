@@ -632,8 +632,9 @@ func _load_life_history(value: Variant, target: Array[Dictionary]) -> void:
 		var event_date: Variant = event.get("date", event.get("world_date", {}))
 		event["date"] = event_date.duplicate(true) if event_date is Dictionary else {}
 		event["summary"] = str(event.get("summary", event.get("type", "Life event")))
-		if not event.has("age") and event.get("data", {}) is Dictionary and event.data.has("age"):
-			event["age"] = int(event.data.age)
+		var event_data: Variant = event.get("data", {})
+		if not event.has("age") and event_data is Dictionary and event_data.has("age"):
+			event["age"] = int(event_data["age"])
 		target.append(event)
 
 

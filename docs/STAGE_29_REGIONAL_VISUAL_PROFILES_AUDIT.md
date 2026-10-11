@@ -717,6 +717,7 @@ owner decision.
 
 - Stage 29: OPEN. Stage 28: OPEN. Production: NOT READY.
 - Runtime acceptance for F5: NOT MET. The in-game check has not been attempted.
+- Update (2026-10-11): the compile blockers in 16.6 are fixed, and the headless handoff and visual tests pass on the custom build. See section 17. The return path in 16.3 remains blocked.
 
 ### 16.2 Repository state at the start of the review
 
@@ -885,3 +886,152 @@ validation.
 - F5 BLOCKED. The next action is an owner decision: approve a separate slice to make the 12 failing scripts and the
   `world_3d.tscn` ordering load on Godot 4.7.2. Then rerun `regional_handoff.gd`. The return-path options in 16.3 need a
   separate decision.
+
+## 17. Godot 4.7.2 compatibility repair (2026-10-11)
+
+Scope: the owner's compatibility mission. It fixes the 12 scripts and the `world_3d.tscn` load failure recorded in 16.6.
+It does not implement the 3D-to-2D return restore (16.3), and it adds no features, dependencies, autoloads, or data
+changes.
+
+### 17.1 Result
+
+**COMPATIBILITY_REPAIR_PASSED_RUNTIME_CHECKS_PENDING_VISUAL_VALIDATION.**
+
+- All 37 `.gd` files pass `--check-only` (before: 25 of 37; 12 failed).
+- `3d_world/scenes/world_3d.tscn` loads.
+- `tests/regional_handoff.gd` PASS 41 of 41, exit 0. `tests/regional_visual_profiles.gd` PASS 43 of 43, exit 0. Both
+  on the custom engine build in 17.2.
+- The 3D-to-2D return restore is **not fixed** (17.5). It is blocked on an owner decision.
+- In-game F5 play and visual validation have **not** been run. They are pending.
+- Stage 29 OPEN. Stage 28 OPEN. Production NOT READY. F13b, F9, F10, F11, and the README gap keep their status.
+
+### 17.2 Engine provenance (verified this session)
+
+- Binaries: `/tmp/godot-build/src/bin/godot.linuxbsd.template_debug.x86_64` and `godot.linuxbsd.editor.x86_64`.
+- `--version` on both: `4.7.2.stable.custom_build.ed1daf0bf`, exit 0.
+- Source: official tag `4.7.2-stable`, commit `ed1daf0bf001b61586d9930840f2f1394092c079`, built locally (16.6).
+- **This is a custom build, not the official 4.7.2 release binary.** No official-release verification is claimed.
+
+### 17.3 Failure table (reproduced in the repository before any edit)
+
+`--check-only --script` on each file. Engine line numbers refer to the pre-edit files.
+
+| File | Actual error (engine) | Category | Runtime impact | Fix applied |
+|---|---|---|---|---|
+| `3d_world/scripts/camera_3d_controller.gd:106` | `Identifier "delta" not declared in the current scope` | Scope (Stage 23 code) | Script does not parse. Blocks `world_3d.tscn` and the handoff test. | `_update_camera_position(delta: float)`. `_process` passes `delta`. `_ready` and `set_target` pass `get_process_delta_time()` (17.7). |
+| `scripts/services/multiplayer_client.gd:220` | `Expected indented block after match pattern block` | Syntax (indentation) | Does not parse. Blocks `prototype_game`, `session_policy`, `persistence_notice`. | Indented the `session.logged_out` arm body under its pattern. |
+| `scripts/ui/prototype_ui.gd:335` | `Expected indented block after "if" block` | Syntax (indentation) | Does not parse. Blocks `prototype_game` and the 2D scene. | Indented `append` and `break` into the `if` body. Intent: break after the first matching member. |
+| `scripts/domain/education_service.gd:558, 1273, 1295, 1694` | `Too many arguments for "get()" call. Expected at most 1 but received 2.` | API (`Object.get` takes one argument) | Does not parse. Blocks education and the tertiary and family-support paths. | Direct property read: `character.academic_scores`, `character.education_record`, `character.household`. `CharacterState` declares all three as `Dictionary` vars. |
+| `scripts/domain/education_service.gd:1091` | Variant inference treated as error | Typing (warning as error) | Does not parse. | `var result_status: Variant`. |
+| `scripts/domain/school_service.gd:41` | `Cannot infer the type of "configured_subject"` | Typing | Does not parse. Blocks the school service. | `: Variant`. |
+| `scripts/ui/career_panel.gd:625` | Variant inference treated as error | Typing | Does not parse. | `var today: Variant`. |
+| `scripts/prototype_game.gd:98, 292` | Variant inference (`remote_nearest`, `restored_notice`). Latent: shown only after the preloads resolve. | Typing | Does not parse. | `: Variant` on both. |
+| `scripts/services/performance_monitor.gd:66, 67, 71` | `Cannot find member "TIME_PHYSICS"`, `"TIME_IDLE"`, `"MEMORY_DYNAMIC"` in `Performance` | Removed or renamed engine constants | Does not parse. | `TIME_PHYSICS` to `TIME_PHYSICS_PROCESS`. `TIME_IDLE` to `TIME_PROCESS`. `MEMORY_DYNAMIC`: no equivalent, held at `0.0` (17.6). |
+| `3d_world/scenes/world_3d.tscn:23` | `Invalid parameter` (sub-resource referenced before it is defined) | Scene format ordering | Scene does not load. Blocks the handoff test. | Moved the four `[sub_resource]` blocks above the nodes. Removed one trailing blank line. |
+| `scripts/domain/character_state.gd:635` | `Invalid access to property or key 'data'` (dot access to a missing key) | Runtime strictness, not a load error | Raises during life-history restore for entries without `data`. Found by `domain_smoke`. | Read through a guarded `event_data` variable. `event.get("data", {}) is Dictionary` is true when the key is absent, so the old guard did not protect the dot access. |
+
+Cascade only (no separate fix): `3d_world/scripts/scene_switcher.gd` (preloads `prototype_ui.gd` and `multiplayer_client.gd`),
+`scripts/prototype_game.gd` (preloads, lines 14 and 15), `tests/persistence_notice.gd`, `tests/session_policy.gd`, and
+`tests/regional_handoff.gd` (camera and scene).
+
+### 17.4 Root cause
+
+The affected scripts do not conform to the Godot 4.7.2 parser. The failures are strict indentation, `Object.get` with two
+arguments, Variant-to-typed inference treated as an error, and engine constants that no longer exist. `gdparse` and
+`gdlint` in sections 14 and 15 accepted these files (16.6), so they were not engine checks. I did not establish when
+each line was introduced. Git history for those lines was not part of this repair.
+
+### 17.5 Return path (3D to 2D): decision is NOT to implement the restore (blocker)
+
+**Confirmed lifecycle (engine, read-only probe outside the repository, exit 0):**
+
+- After `add_child()` of `scenes/prototype.tscn`: `character == null`, `clock == null`.
+- `set_shared_state({"character": {...}, "world": {}})` leaves both `null`. `playing` is unchanged.
+- The skip was silent. It now logs one warning (`[PrototypeGame] Shared character state not restored...`), with no change
+  in behavior.
+
+**Code path.** `_ready()` builds the world, player, multiplayer client, and UI, then calls
+`ui.show_character_creation(...)` (`prototype_game.gd` 77). `character` and `clock` are created only in `_start_new_game`
+(193–194), in the load and continue paths (227–231), and at 498–500. `scene_switcher.gd` `_restore_2d_state` (113–117)
+passes only `character` and `world`. It never sends a `clock` key, so the clock branch of `set_shared_state` cannot run.
+
+**Why it is not a narrow fix.** Every option changes a lifecycle or flow decision:
+
+1. Create the character and clock inside `set_shared_state`. The creation modal still opens over restored state, which the
+   mission forbids.
+2. Keep the 2D instance alive while in 3D. This changes the switcher lifecycle.
+3. Restore from the saved game on return. Unsaved progress is lost.
+4. Define a clock handoff. The switcher does not carry clock data today.
+
+The owner decides between these. Stage 29 cannot close until this is decided.
+
+### 17.6 MEMORY_DYNAMIC and the performance monitor
+
+- No exact 4.7.2 replacement exists. `MEMORY_STATIC` measures a different quantity, so it was not used as a substitute.
+- `dynamic_memory_mb` is held at `0.0` and commented as not measured. `total_memory_mb` therefore equals static memory,
+  with no double count. The report line `dynamic: 0.0` is **not a measurement**. The owner may remove the field.
+- **Pre-existing defect, not fixed:** `process_time_ms` is computed as `TIME_FPS * 1000`. `TIME_FPS` is frames per second,
+  not a frame time, so the value is wrong. Correcting it means choosing the intended metric (for example `TIME_PROCESS`).
+  That is an owner decision. It was observed by reading the code, not measured in the UI.
+
+### 17.7 Camera `delta`
+
+- `_update_camera_position` takes `delta` as a parameter. The engine's own callback value is used, with no global and no
+  suppression.
+- `_process` passes its `delta`. `_ready` and `set_target` pass `get_process_delta_time()`. In those calls the last frame's
+  delta can be `0`, so the lerp does not move the camera until the next `_process` frame. `look_at` still runs.
+- Camera motion is not validated at runtime. The handoff test loads the world without script errors.
+
+### 17.8 Evidence (class in brackets)
+
+| Check | Command and exit | Result |
+|---|---|---|
+| Engine identity | `--version` on both binaries, exit 0 each | `4.7.2.stable.custom_build.ed1daf0bf` [engine] |
+| Script parse, before | `--check-only` on 37 files | 12 failing, 25 passing [GDScript parse] |
+| Script parse, after | `--check-only` on 37 files (repository) | 37 of 37 pass, exit 0 [GDScript parse] |
+| `regional_handoff.gd` | `--headless --path game --script`, exit 0 | PASS 41 of 41, 0 SCRIPT ERROR [GDScript runtime, custom build] |
+| `regional_visual_profiles.gd` | same, exit 0 | PASS 43 of 43, 0 SCRIPT ERROR [GDScript runtime, custom build] |
+| Main project load | `--headless --path game --quit`, exit 0 | 0 SCRIPT ERROR [GDScript load] |
+| `player_movement.gd` | exit 0 | PASS 4 [GDScript runtime] |
+| `persistence_notice.gd` | exit 0 | PASS 11 [GDScript runtime] |
+| `session_policy.gd` | exit 0 | All checks passed [GDScript runtime] |
+| `domain_smoke.gd` | exit 1 | FAIL 4 of 92 (same 4 in 3 consecutive runs) [GDScript runtime, residual] |
+| `save_restart.gd` | `-- write` exit 0, `-- read` exit 1 | Read fails: academic result; attendance and inventory [GDScript runtime, residual] |
+| Probe: performance monitor, life-history guard, save round trip | probe outside the repository, exit 0 | 11 of 11 PASS [GDScript runtime, probe] |
+| Probe: return-path lifecycle | probe outside the repository, exit 0 | Confirmed 17.5 [GDScript runtime, probe] |
+| `npm test` | exit 0 | 1074 total, 1037 pass, 0 fail, 37 skipped [Node, static] |
+| `npm run lint` | exit 1 | 51 errors, the existing baseline. Scope is `services/world-api/src`, which this change does not touch [static] |
+| `git diff --check` | exit 0 | Clean [static] |
+
+Not run: in-game F5 play, the 2D scene during play, and visual inspection. These remain pending.
+
+The earlier copy-only note of "domain_smoke 4 of 91" was **not reproduced**. Three repository runs all reported 4 of 92.
+
+### 17.9 Residual findings (not fixed in this repair)
+
+- **`domain_smoke.gd` (4 of 92):** the morning timetable starts with Mathematics; a completed subject is repeated the same
+  day; save and load does not restore academic data; save and load does not restore the authoritative DOB or life stage.
+  These are logic failures in the education and life services, not compatibility failures. They need an owner decision.
+- **`save_restart.gd --read` (exit 1):** academic result and attendance and inventory checks fail. Same area.
+- **Load path overwrites supplied life history.** `load_dictionary` (`character_state.gd` 345) calls
+  `_household_from_life_profile()`, which re-initializes life data when no valid `date_of_birth` is present. The
+  supplied `life_history` is then replaced with generated `character_created` and `family_created` entries. Observed in a
+  probe with no DOB. It is related to the DOB failure above.
+- **`process_time_ms` uses `TIME_FPS * 1000`** (17.6).
+- **`world_3d.tscn` header** `load_steps=6` does not match 5 external and 4 sub-resources. Godot tolerates this. Not changed.
+- **Return path** (17.5).
+
+### 17.10 Scope protection
+
+Not touched: region catalog, the five presets, the 32-region mapping, save formats, auth and session, Stage 28 persistence,
+Stage 30 justice-case access, `time_of_day.gd` (F13b), and time-of-day lighting ownership. `update-environment-profiles.js`
+was not run. No world-data generator was run. No dependency, autoload, or repository test file was added. The region
+fallback (`ng:state:on`) and invalid-region rejection are unchanged. The handoff log confirms both.
+
+### 17.11 Status
+
+- F5 compile blockers (16.6): **cleared** in the repository.
+- F5 headless runtime tests on the custom build: **passed** (41 of 41, 43 of 43).
+- F5 in-game and visual validation: **pending**.
+- 3D-to-2D return restore (16.3): **BLOCKED on an owner decision** (17.5).
+- Stage 29 OPEN. Stage 28 OPEN. Production NOT READY.

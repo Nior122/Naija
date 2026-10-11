@@ -6,6 +6,35 @@
 [ext_resource type="Script" path="res://3d_world/scripts/time_of_day.gd" id="4_time"]
 [ext_resource type="Script" path="res://3d_world/scripts/environment_config.gd" id="5_env"]
 
+[sub_resource type="Environment" id="Environment_3denv"]
+background_mode = 1
+background_color = Color(0.5, 0.7, 0.9, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.6, 0.65, 0.75, 1)
+ambient_light_energy = 0.4
+tonemap_mode = 2
+tonemap_exposure = 1.0
+ssao_enabled = true
+ssao_radius = 2.0
+glow_enabled = true
+glow_intensity = 0.3
+fog_enabled = true
+fog_light_color = Color(0.7, 0.75, 0.8, 1)
+fog_density = 0.001
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_ground"]
+size = Vector2(100, 100)
+subdivide_width = 10
+subdivide_depth = 10
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_ground"]
+albedo_color = Color(0.4, 0.35, 0.25, 1)
+roughness = 0.9
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_player"]
+radius = 0.3
+height = 1.8
+
 [node name="World3D" type="Node3D"]
 script = ExtResource("1_controller")
 
@@ -52,32 +81,3 @@ script = ExtResource("2_camera")
 
 [node name="TimeOfDay" type="Node" parent="."]
 script = ExtResource("4_time")
-
-[sub_resource type="Environment" id="Environment_3denv"]
-background_mode = 1
-background_color = Color(0.5, 0.7, 0.9, 1)
-ambient_light_source = 2
-ambient_light_color = Color(0.6, 0.65, 0.75, 1)
-ambient_light_energy = 0.4
-tonemap_mode = 2
-tonemap_exposure = 1.0
-ssao_enabled = true
-ssao_radius = 2.0
-glow_enabled = true
-glow_intensity = 0.3
-fog_enabled = true
-fog_light_color = Color(0.7, 0.75, 0.8, 1)
-fog_density = 0.001
-
-[sub_resource type="PlaneMesh" id="PlaneMesh_ground"]
-size = Vector2(100, 100)
-subdivide_width = 10
-subdivide_depth = 10
-
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_ground"]
-albedo_color = Color(0.4, 0.35, 0.25, 1)
-roughness = 0.9
-
-[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_player"]
-radius = 0.3
-height = 1.8

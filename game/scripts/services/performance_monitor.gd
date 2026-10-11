@@ -63,12 +63,14 @@ func _update_metrics() -> void:
 	"""Update all metrics"""
 	# Godot performance metrics
 	process_time_ms = Performance.get_monitor(Performance.TIME_FPS) * 1000.0
-	physics_time_ms = Performance.get_monitor(Performance.TIME_PHYSICS) * 1000.0
-	idle_time_ms = Performance.get_monitor(Performance.TIME_IDLE) * 1000.0
+	physics_time_ms = Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0
+	idle_time_ms = Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0
 	
 	# Memory metrics (Godot provides these in bytes, convert to MB)
 	static_memory_mb = Performance.get_monitor(Performance.MEMORY_STATIC) / 1048576.0
-	dynamic_memory_mb = Performance.get_monitor(Performance.MEMORY_DYNAMIC) / 1048576.0
+	# MEMORY_DYNAMIC does not exist in Godot 4.7.2 and has no equivalent monitor. Held at 0.0 (not measured) so
+	# total_memory_mb equals static memory and is not double-counted. Do not read this field as a measurement.
+	dynamic_memory_mb = 0.0
 	message_queue_max = Performance.get_monitor(Performance.OBJECT_RESOURCE_COUNT)
 	
 	# Scene metrics

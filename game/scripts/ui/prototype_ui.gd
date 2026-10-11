@@ -333,8 +333,8 @@ func show_profile(character: CharacterState) -> void:
 							== str(participant_id)
 						)
 					):
-					resolved_names.append(str(member.get("name", "Family member")))
-					break
+						resolved_names.append(str(member.get("name", "Family member")))
+						break
 			participant_names = resolved_names
 		var relationship_line := "%s  ·  %s" % [relationship_type, status.capitalize()]
 		var relationship_stage := str(relationship.get("stage", "")).replace("_", " ")

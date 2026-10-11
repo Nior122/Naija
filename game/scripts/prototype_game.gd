@@ -95,7 +95,7 @@ func _process(delta: float) -> void:
 				)
 		var online_nearest := world.nearest_interactable(player.position)
 		world.set_focused_entity(online_nearest)
-		var remote_nearest := _nearest_remote_player()
+		var remote_nearest: Variant = _nearest_remote_player()
 		if (
 			is_instance_valid(remote_nearest)
 			and player.position.distance_to(remote_nearest.position) < 82.0
@@ -289,7 +289,7 @@ func _on_online_message(message: Dictionary) -> void:
 			ui.notify("%s: %s" % [sender, chat_text])
 		"persistence.restored":
 			# Once per outage (server-side); see MultiplayerClientScript.persistence_notice. Never claims recovery.
-			var restored_notice := MultiplayerClientScript.persistence_notice(message)
+			var restored_notice: Variant = MultiplayerClientScript.persistence_notice(message)
 			if not restored_notice.is_empty():
 				ui.notify(restored_notice)
 		"player.interaction":
@@ -1249,6 +1249,10 @@ func set_shared_state(state: Dictionary) -> void:
 	# Restore character state
 	if state.has("character") and character != null and clock != null:
 		character.load_dictionary(state.character, clock.calendar_date())
+	elif state.has("character"):
+		# Return path (3D to 2D): character and clock do not exist yet, so the restore is skipped.
+		# Logged, not silent. Restoring it is an owner decision (audit section 17.5).
+		push_warning("[PrototypeGame] Shared character state not restored: no character or clock exists yet.")
 	
 	# Restore player position and location
 	if state.has("player_position"):

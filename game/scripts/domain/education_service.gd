@@ -555,7 +555,7 @@ static func record_result(
 		}
 	)
 	sync_legacy_character(character)
-	return int(character.get("academic_scores", {}).get(subject_name, roundi(score)))
+	return int(character.academic_scores.get(subject_name, roundi(score)))
 
 
 static func close_current_term(character: Object, day: int) -> Dictionary:
@@ -1088,7 +1088,7 @@ static func answer_final_exam(
 			break
 	if registration_index >= 0:
 		record.final_exam_registrations[registration_index].status = "in_progress"
-	var result_status := _publish_final_exam_results(record, registration_id, day, data)
+	var result_status: Variant = _publish_final_exam_results(record, registration_id, day, data)
 	sync_legacy_character(character)
 	return {
 		"ok": true,
@@ -1270,7 +1270,7 @@ static func respond_to_offer(
 
 
 static func begin_tertiary_course(character: Object) -> Dictionary:
-	var record: Dictionary = character.get("education_record", {})
+	var record: Dictionary = character.education_record
 	var enrollment: Variant = record.get("tertiary_enrollment", null)
 	if not enrollment is Dictionary or str(enrollment.get("status", "")) == "completed":
 		return {}
@@ -1292,7 +1292,7 @@ static func begin_tertiary_course(character: Object) -> Dictionary:
 static func record_tertiary_answer(
 	character: Object, course_id: String, answer_index: int, day: int
 ) -> Dictionary:
-	var record: Dictionary = character.get("education_record", {})
+	var record: Dictionary = character.education_record
 	var enrollment: Variant = record.get("tertiary_enrollment", null)
 	var data := catalog()
 	if not enrollment is Dictionary or str(enrollment.get("status", "")) == "completed":
@@ -1691,7 +1691,7 @@ static func request_family_support(character: Object, day: int, location: String
 			"education_family_support_location_required",
 			"Speak with your family at home about study costs."
 		)
-	var guardians: Variant = character.get("household", {}).get("guardians", [])
+	var guardians: Variant = character.household.get("guardians", [])
 	if (
 		not guardians is Array
 		or guardians.size() < int(data.get("family_support", {}).get("minimum_guardians", 1))
