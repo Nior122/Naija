@@ -45,17 +45,19 @@ func switch_to_2d() -> void:
 	if current_mode == "3d" and mode_3d_instance:
 		_save_3d_state()
 	
-	# Unload 3D scene
+	# Unload 3D scene. The 3D world is released; the 2D session is not touched here.
 	if mode_3d_instance:
 		mode_3d_instance.queue_free()
 		mode_3d_instance = null
 	
-	# Load 2D scene
-	if not mode_2d_instance:
+	if mode_2d_instance:
+		# Resume the retained 2D session. Its character, clock, and unsaved progress are the live
+		# objects it kept while suspended, so nothing is handed back or reloaded.
+		mode_2d_instance.resume_session()
+	else:
+		# First start only: create the 2D session and restore any shared state.
 		mode_2d_instance = mode_2d_scene.instantiate()
 		$Mode2D.add_child(mode_2d_instance)
-		
-		# Restore shared state
 		_restore_2d_state()
 	
 	current_mode = "2d"
@@ -70,10 +72,10 @@ func switch_to_3d() -> void:
 	if current_mode == "2d" and mode_2d_instance:
 		_save_2d_state()
 	
-	# Unload 2D scene
+	# Suspend the 2D session instead of freeing it. The instance keeps its character, clock, and
+	# unsaved progress, and it is resumed by switch_to_2d().
 	if mode_2d_instance:
-		mode_2d_instance.queue_free()
-		mode_2d_instance = null
+		mode_2d_instance.suspend_session()
 	
 	# Load 3D scene
 	if not mode_3d_instance:

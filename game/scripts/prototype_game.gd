@@ -33,6 +33,8 @@ var _time_accumulator: float = 0.0
 var _seconds_per_game_minute: float = 0.65
 var _active_subject: String = ""
 var _active_question: Dictionary = {}
+# True while the scene switcher has this session suspended for the 3D world (see suspend_session).
+var _suspended: bool = false
 
 
 func _ready() -> void:
@@ -78,7 +80,9 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
-	if not playing:
+	# A suspended session does not advance the clock, move, or autosave. process_mode also stops
+	# this callback; the flag keeps the rule explicit.
+	if not playing or _suspended:
 		return
 	if character != null and not character.can_take_active_action():
 		player.movement_enabled = false
@@ -171,6 +175,7 @@ func _block_deceased_action() -> bool:
 func _unhandled_input(event: InputEvent) -> void:
 	if (
 		not playing
+		or _suspended
 		or ui.is_modal_open()
 		or character == null
 		or not character.can_take_active_action()
@@ -1249,9 +1254,8 @@ func set_shared_state(state: Dictionary) -> void:
 	# Restore character state
 	if state.has("character") and character != null and clock != null:
 		character.load_dictionary(state.character, clock.calendar_date())
-	elif state.has("character"):
-		# Return path (3D to 2D): character and clock do not exist yet, so the restore is skipped.
-		# Logged, not silent. Restoring it is an owner decision (audit section 17.5).
+	elif _has_pending_character(state):
+		# The character or clock does not exist yet, so the restore cannot run. Logged, not silent.
 		push_warning("[PrototypeGame] Shared character state not restored: no character or clock exists yet.")
 	
 	# Restore player position and location
@@ -1271,6 +1275,47 @@ func set_shared_state(state: Dictionary) -> void:
 	# Restore career profile
 	if state.has("career_profile"):
 		_online_career_profile = state.career_profile
+
+
+func _has_pending_character(state: Dictionary) -> bool:
+	var value: Variant = state.get("character", {})
+	return value is Dictionary and not (value as Dictionary).is_empty()
+
+
+func suspend_session() -> void:
+	"""Suspend this session while the 3D world is active. The instance and all its state are kept.
+
+	Called by the scene switcher instead of freeing this node. The subtree stops processing, so the
+	clock, movement, autosave, and interaction input do not run. The node is hidden, including the
+	UI layer, which is a CanvasLayer and does not inherit visibility from this node. The multiplayer
+	client keeps processing so an online socket is still polled. Nothing here changes game state."""
+	if _suspended:
+		return
+	_suspended = true
+	process_mode = Node.PROCESS_MODE_DISABLED
+	visible = false
+	if is_instance_valid(ui):
+		ui.visible = false
+	if is_instance_valid(multiplayer_client):
+		multiplayer_client.process_mode = Node.PROCESS_MODE_ALWAYS
+
+
+func resume_session() -> void:
+	"""Resume the session that suspend_session() kept. Does not re-run initialisation, does not reopen
+	character creation, and does not reload character or clock state."""
+	if not _suspended:
+		return
+	_suspended = false
+	process_mode = Node.PROCESS_MODE_INHERIT
+	visible = true
+	if is_instance_valid(ui):
+		ui.visible = true
+	if is_instance_valid(multiplayer_client):
+		multiplayer_client.process_mode = Node.PROCESS_MODE_INHERIT
+
+
+func is_suspended() -> bool:
+	return _suspended
 
 
 func get_multiplayer_client() -> Node:
