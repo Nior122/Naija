@@ -1933,6 +1933,10 @@ Not exercised in this task: rendered UI, physical keyboard or mouse input, a liv
 
 Not changed, per scope: `time_of_day.gd` (TOD-1), regional catalogs and generators, `ng:state:fc`, Stage 28 auth and persistence, Stage 30 access, the modal-blocking implementation, dependencies, lint rules.
 
+> Note (2026-10-11, section 25): the TSCN-1 entry in the table above is superseded. The `world_3d.tscn` header is
+> now `load_steps=10`, which matches its 5 external and 4 sub-resources plus one, and the status is FIXED_VERIFIED
+> (cosmetic). See 25.10.
+
 ### 24.7 Open items (not fixed)
 
 - **Academic fixture (TEST-FX-2, OPEN).** `domain_smoke` ("Save/load restores academic data") and `save_restart --read` ("academic result", "attendance and inventory") write the legacy `academic_scores` field and attendance directly. Production never writes those fields. On load they are rebuilt from the education record (`sync_legacy_character`, `legacy_academic_scores`). A gameplay probe showed the production path keeps the data: recording a Mathematics result moved the score 72 to 84, with one attendance record, and both survived a save and load. The test needs a decision on whether to write through the education record API. It was not changed, to avoid choosing its contract.
@@ -1943,6 +1947,8 @@ Not changed, per scope: `time_of_day.gd` (TOD-1), regional catalogs and generato
 - Not run: `ui_flow` with rendered UI, physical input, and any live backend.
 
 ### 24.8 Consolidated issue register (current)
+
+> Superseded by section 25.12 (2026-10-11). The statuses below are those at the section 24 verification. Kept for history.
 
 | ID | Component | Finding | Severity | Status | Evidence | Blocks release |
 |---|---|---|---|---|---|---|
@@ -1989,3 +1995,327 @@ Not changed, per scope: `time_of_day.gd` (TOD-1), regional catalogs and generato
 ### 24.10 Single most important blocker
 
 No rendered UI or physical input has been exercised on this machine: there is no display server and no GPU. Stage 29 cannot close without that evidence, and the lesson and control changes in this task are not visually confirmed.
+
+## 25. Save-test recovery, input and Load verification, and reconciliation (2026-10-11)
+
+### 25.1 Result
+
+- Repository: history verified and not rewritten. Work is committed on `arena/00cdea0e-naija` only, as a fast-forward (25.2).
+- Engine: a custom build of Godot 4.7.2-stable from the tag source, not the official binary. Headless only. There is no display server and no GPU, so rendered output, real key presses, mouse input and window close are BLOCKED (25.3).
+- Save-writing tests: `return_path`, `ui_flow_headless`, `load_confirmation_headless`, `domain_smoke` and `save_restart` write through the recovery guard in `game/tests/support/save_slot_guard.gd` (25.4). Failure-injection matrix in scratch: 41 of 41 on the final guard (runs f4a, f4b, f4c, f5a). Real-save runs on the final guard: t10, t11, t12 and t13, consistent.
+- Two guard defects were found in this round and fixed (25.5): a race in stale-file cleanup that could make two concurrent runs both refuse, and a refusal message missing the "nothing was changed" statement. One comment that described the cleanup wrongly was also corrected.
+- Input: F3 kept for the world switch, with no binding change (25.8). A configured-binding check was added: 23 of 23 checks pass. `ui_accept` and `jump` both use Space. That is an open design question, not a test failure.
+- Continue and in-game Load: verified headless (25.9). Rendered and physical-key checks remain BLOCKED.
+- TSCN-1 (`world_3d.tscn` `load_steps`): FIXED_VERIFIED, cosmetic only (25.10).
+- Stage 29: OPEN. Stage 28: OPEN. Production: NOT READY.
+
+### 25.2 Repository state
+
+- Start: HEAD `a627aa4`, equal to `origin/arena/00cdea0e-naija`. Local `main` = `44483b4` = `origin/main`.
+- `origin/arena/f48b6f8e-naija` (`02dd67c`) has unrelated history. It is preserved and was not merged.
+- Recovery backup outside the repository: `/tmp/naija-recovery-backup-20261011142806/` (may not persist between sessions).
+- Changes in this round, committed in four groups (25.12 lists the files): guard and save tests; input check; scene header; this audit.
+- No save, backup or lock file was created in the repository. Every save-writing run used a scratch copy under `/tmp/naija-scratch` with its own `HOME` and `XDG_DATA_HOME`. No real user save was reachable from the sandbox.
+- Ignored artifact `services/world-api/dist/` existed before this round. It is not staged.
+
+### 25.3 Engine and display (executed, with limits)
+
+- Binary: `/tmp/godot-src/src/bin/godot.linuxbsd.editor.x86_64`, built with SCons from the `4.7.2-stable` tag source (source commit `ed1daf0`). It reports `4.7.2.stable.custom_build.ed1daf0bf`. sha256 `b7052e20…`. A scratch-only pkg-config shim was used for the build.
+- Not verified: the official signed release binary and its checksum. The release-assets host is not on the sandbox allow-list. Every result in this section is a custom-build result.
+- Headless only (`--headless`). There is no display server and no GPU. Rendered output, real keyboard and mouse input, and the window-close path are BLOCKED.
+- "Simulated input" in `ui_flow_headless` and `load_confirmation_headless` means events injected through the engine. It does not mean physical key presses.
+
+### 25.4 Save-test recovery protocol (design and limits)
+
+Applies to `return_path`, `ui_flow_headless`, `load_confirmation_headless`, `domain_smoke` and `save_restart`. The tests that write the save slot call the guard. The production save code is not changed.
+
+Files, all in `user://`:
+
+- Lock: `naija-save-test.lock.d/owner.json` (run id, pid, test name). The lock directory is created with `make_dir`, which only one caller can succeed at.
+- Manifest: `naija-save-test-recovery.json` (schema 1). It holds the run id, the slot path, whether a save existed, the original hash, the last observed hash, and the state.
+- Backup: `naija-save-test-backup.bin`. A byte copy of the original save, written and read back equal before the slot is touched.
+
+States, in order: `locked` (lock and manifest written, slot not touched), `backed_up` (backup verified, the test may change the slot), `restoring` (the backup is authoritative from here), `restored` (the slot verified equal to the original, or absent if none existed). Removal order: backup, then manifest, then lock.
+
+Invariants:
+
+1. The slot is changed only in state `backed_up`, and only after the backup has been read back and matched.
+2. The original bytes are written back and read back before any protocol file is removed. A mismatch keeps the backup.
+3. A save that did not exist before the run is removed on recovery only when the manifest proves the test created it (K2).
+4. A refusal happens before any change. Every refusal message says so, or says that the save was not changed.
+
+Refusal at start (nothing changed): legacy artifacts from an earlier version; a backup with no manifest (provenance unknown); a manifest that refers to another slot; an unknown state; an unreadable or inconsistent manifest; a manifest whose pid is alive or cannot be checked; a lock whose owner record is unreadable; a lock held by a live pid; an unreadable save.
+
+Recovery at start (only when provable): a stale lock whose owner is dead is removed. A manifest in `backed_up` or `restoring` with a matching backup restores the original, verifies it, and removes the protocol files.
+
+Limits: a hard kill is recovered only when the manifest proves the state. Unprovable states refuse and need a human to review them. The guard protects test saves only. The sandbox cannot reach real user data, so none was touched.
+
+### 25.5 Failure-injection matrix (scratch only)
+
+Method: `/tmp/naija-harness/s29/s29_fi.py`, 41 cases, each in its own scratch copy with its own `HOME` and `XDG_DATA_HOME`. Expectations are written in the harness before each case runs. A refusal counts as PASS only when its expected message is present. Fault injection uses a test-only subclass (`faulty_guard.gd`) and is not committed. The mutation and fault-injection harness stays in `/tmp/naija-harness/s29`.
+
+Runs and results:
+
+| Run | Guard state | Result |
+|---|---|---|
+| r1 | first version (`669cf6f3b305`) | 40 of 41. K2 expectation listed a backup, but the guard writes a backup only when the original save exists. The expectation was corrected to match the code. |
+| r2 | first version | 40 of 41. C1 (two concurrent starts): both runs refused in trial 1. This is GUARD-RACE-1 below. |
+| r3 | first version | 41 of 41 |
+| r4 | first version | 40 of 41. C1 refusal message wording checked against an older, stricter check. Both runs behaved correctly: one holder in every trial. |
+| r5 to r8 | `841857e007b2` (before the ordering fix) | 41 of 41 each |
+| f3a, f3c | after the ordering fix, before the message fix | 41 of 41 each |
+| f3b | after the ordering fix, before the message fix | 40 of 41. C1 trial 2: the losing run's message did not say "nothing was changed". This is C1-MSG-1 below. |
+| f4a, f4b, f4c | with the message fix (before the comment correction) | 41 of 41 each |
+| f5a | final file (`0bfbf7d580c2`, after the comment correction) | 41 of 41 |
+
+GUARD-RACE-1 (found in r2, fixed in this round):
+
+- Observed: r2, C1 trial 1. Both concurrent runs refused, with the save unchanged and no protocol files left.
+- Cause: the first version removed leftover `owner.json.tmp` and `manifest.json.tmp` files without checking the lock. A second starter could therefore delete a live holder's temporary file during its write. The holder's rename then failed and it refused, so neither run proceeded.
+- Reproduced with the first version: 3 of 40 trials under CPU load. Both runs refused, with messages such as "Could not write the lock owner. Nothing was changed." and "Could not record the backed-up state." Under the same load, the current version gave 60 of 60 trials with exactly one holder.
+- Fix: the owner temporary file is no longer removed. The manifest temporary file is removed only when no lock is held. The check order also changed: the temporary file is checked first, then the lock. A holder creates its lock before any temporary file, so a temporary file seen first implies the lock is seen second. Before this change, the `841857` version had a narrow window in which this could still happen. That window was reasoned from the code, not observed. The version with the fix passed 120 of 120 concurrent trials in the earlier run on `841857` (not on the final file).
+
+C1-MSG-1 (found in f3b, fixed in this round):
+
+- Observed: a losing run was refused with "Refusing to run: another save test (pid N) holds the lock." This path returns before any change, but the message did not say so.
+- Fix: the message now ends with "Nothing was changed." The C1 check is unchanged. It requires one holder, and every refusal that reports a lock refusal with "Nothing was changed".
+
+Note on the C1 check: its wording was changed after r2 and r4. The behaviour recorded in those runs is listed above. The current wording is the one used in f3b through f5a.
+
+Matrix table (final run f4a, 41 cases; expected and actual values from the harness):
+
+| Case | Injected condition | Expected | Actual | Result |
+|---|---|---|---|---|
+| N1_orig_no_change | Pre-existing save, test makes no change. Save byte-identical, protocol files removed. | rc=0, begin=ok, finish=ok, save=original, protocol=none, recovered=no | rc=0, begin=ok, finish=ok, save=original, protocol=none, recovered=no | PASS |
+| N2_orig_test_write | Pre-existing save; test overwrites it. Original restored byte for byte. | rc=0, begin=ok, finish=ok, save=original, protocol=none, recovered=no | rc=0, begin=ok, finish=ok, save=original, protocol=none, recovered=no | PASS |
+| N3_none_test_write | No save at start; test creates one. The created save is removed, protocol files removed. | rc=0, begin=ok, finish=ok, save=changed (ABSENT), protocol=none, recovered=no | rc=0, begin=ok, finish=ok, save=changed (ABSENT), protocol=none, recovered=no | PASS |
+| N4_none_no_write | No save at start and none written. Nothing left behind. | rc=0, begin=ok, finish=ok, save=changed (ABSENT), protocol=none, recovered=no | rc=0, begin=ok, finish=ok, save=changed (ABSENT), protocol=none, recovered=no | PASS |
+| N5_orig_test_delete | Test deletes the pre-existing save and observes the deletion. Original restored. | rc=0, begin=ok, finish=ok, save=original, protocol=none, recovered=no | rc=0, begin=ok, finish=ok, save=original, protocol=none, recovered=no | PASS |
+| N6_empty_original | A zero-byte save counts as existing (not absent) and is restored as zero bytes. | rc=0, begin=ok, finish=ok, save=changed (EMPTY), protocol=none, recovered=no | rc=0, begin=ok, finish=ok, save=changed (e3b0c442), protocol=none, recovered=no | PASS |
+| N7_three_clean_runs | Three consecutive clean runs on the same data dir. Each restores the original; no residue between runs. | rc=0, begin=ok, finish=ok, save=original, protocol=none, recovered=no | rc=0, begin=ok, finish=ok, save=original, protocol=none, recovered=no | PASS |
+| F1_backup_creation_fail | Backup write fails. Save untouched; the test does not start; protocol files removed. | rc=3, begin=refused, finish=refused, save=original, protocol=none, recovered=no | rc=3, begin=refused, finish=refused, save=original, protocol=none, recovered=no | PASS |
+| F2_backup_readback_mismatch | Backup reads back different bytes. Save untouched; the bad backup is removed because the save was never changed. | rc=3, begin=refused, finish=refused, save=original, protocol=none, recovered=no | rc=3, begin=refused, finish=refused, save=original, protocol=none, recovered=no | PASS |
+| F3_restore_write_fail_after_test_write | Test save written, then the restore write fails. Backup and manifest kept. The next run restores the original. | rc=4, begin=refused, finish=refused, save=changed (TEST), protocol=['naija-save-test.lock.d', 'naija-save-test-recovery.json', 'naija-save-test-backup.bin'], recovered=no | rc=4, begin=ok, finish=refused, save=changed (94ae336c), protocol=['naija-save-test.lock.d', 'naija-save-test-recovery.json', 'naija-save-test-backup.bin'], recovered=no | PASS |
+| F4_restore_byte_mismatch | Restore writes wrong bytes; the read-back check fails. Backup kept. The next run restores the original. | rc=4, begin=refused, finish=refused, save=changed (WRONG), protocol=['naija-save-test.lock.d', 'naija-save-test-recovery.json', 'naija-save-test-backup.bin'], recovered=no | rc=4, begin=ok, finish=refused, save=changed (e2247e2d), protocol=['naija-save-test.lock.d', 'naija-save-test-recovery.json', 'naija-save-test-backup.bin'], recovered=no | PASS |
+| K1_kill_after_test_write | SIGKILL after the test write. Next run restores the original; a third run finds nothing to recover. | rc=-9, begin=refused, finish=refused, save=changed (TEST), protocol=['naija-save-test.lock.d', 'naija-save-test-recovery.json', 'naija-save-test-backup.bin'], recovered=no | rc=-9, begin=ok, finish=refused, save=changed (94ae336c), protocol=['naija-save-test.lock.d', 'naija-save-test-recovery.json', 'naija-save-test-backup.bin'], recovered=no | PASS |
+| K2_kill_after_test_write_no_save | SIGKILL after the test created a save that did not exist before. Next run removes it (proven test-created). | rc=-9, begin=refused, finish=refused, save=changed (TEST), protocol=['naija-save-test.lock.d', 'naija-save-test-recovery.json'], recovered=no | rc=-9, begin=ok, finish=refused, save=changed (94ae336c), protocol=['naija-save-test.lock.d', 'naija-save-test-recovery.json'], recovered=no | PASS |
+| K3_kill_during_restore_write | SIGKILL just before the restore write. Save still the test content; next run restores. | rc=-9, begin=refused, finish=refused, save=changed (TEST), protocol=['naija-save-test.lock.d', 'naija-save-test-recovery.json', 'naija-save-test-backup.bin'], recovered=no | rc=-9, begin=ok, finish=refused, save=changed (94ae336c), protocol=['naija-save-test.lock.d', 'naija-save-test-recovery.json', 'naija-save-test-backup.bin'], recovered=no | PASS |
+| K4_kill_after_restore_before_cleanup | SIGKILL after the verified restore and the 'restored' record, before cleanup. Next run only finishes cleanup. | rc=-9, begin=refused, finish=refused, save=original, protocol=['naija-save-test.lock.d', 'naija-save-test-recovery.json', 'naija-save-test-backup.bin'], recovered=no | rc=-9, begin=ok, finish=refused, save=original, protocol=['naija-save-test.lock.d', 'naija-save-test-recovery.json', 'naija-save-test-backup.bin'], recovered=no | PASS |
+| K5_kill_after_begin_orig | SIGKILL after backup verified, before any test write. Next run recovers without change. | rc=-9, begin=refused, finish=refused, save=original, protocol=['naija-save-test.lock.d', 'naija-save-test-recovery.json', 'naija-save-test-backup.bin'], recovered=no | rc=-9, begin=ok, finish=refused, save=original, protocol=['naija-save-test.lock.d', 'naija-save-test-recovery.json', 'naija-save-test-backup.bin'], recovered=no | PASS |
+| K6_kill_after_begin_no_save | SIGKILL after the manifest was written, no save existed. Next run recovers without creating or removing anything. | rc=-9, begin=refused, finish=refused, save=changed (ABSENT), protocol=['naija-save-test.lock.d', 'naija-save-test-recovery.json'], recovered=no | rc=-9, begin=ok, finish=refused, save=changed (ABSENT), protocol=['naija-save-test.lock.d', 'naija-save-test-recovery.json'], recovered=no | PASS |
+| K7_kill_during_recovery | Recovery itself is killed during its restore write. A further run completes the recovery. | rc=-9, begin=refused, finish=refused, save=changed (TEST), protocol=['naija-save-test.lock.d', 'naija-save-test-recovery.json', 'naija-save-test-backup.bin'], recovered=no | rc=-9, begin=ok, finish=refused, save=changed (94ae336c), protocol=['naija-save-test.lock.d', 'naija-save-test-recovery.json', 'naija-save-test-backup.bin'], recovered=no | PASS |
+| K8_kill_during_recovery_cleanup | Recovery is killed after its restore, before cleanup. A further run finishes the cleanup. | rc=-9, begin=refused, finish=refused, save=changed (TEST), protocol=['naija-save-test.lock.d', 'naija-save-test-recovery.json', 'naija-save-test-backup.bin'], recovered=no | rc=-9, begin=ok, finish=refused, save=changed (94ae336c), protocol=['naija-save-test.lock.d', 'naija-save-test-recovery.json', 'naija-save-test-backup.bin'], recovered=no | PASS |
+| L1_stale_lock_only | Lock with a dead owner and no manifest. Removed; the save is untouched. | rc=0, begin=ok, finish=ok, save=original, protocol=none, recovered=yes | rc=0, begin=ok, finish=ok, save=original, protocol=none, recovered=yes | PASS |
+| L2_partial_backup_locked_state | Dead run stopped while writing its backup (state locked). The slot is provably the original; the partial backup is removed. | rc=0, begin=ok, finish=ok, save=original, protocol=none, recovered=yes | rc=0, begin=ok, finish=ok, save=original, protocol=none, recovered=yes | PASS |
+| L3_legacy_artifact | Pre-protocol backup present. Refused; the legacy file is kept for human review. | rc=3, begin=refused, finish=refused, save=original, protocol=none, recovered=no | rc=3, begin=refused, finish=refused, save=original, protocol=none, recovered=no | PASS |
+| L4_backup_without_manifest | Backup with no manifest: provenance unknown. Refused; backup kept. | rc=3, begin=refused, finish=refused, save=original, protocol=['naija-save-test-backup.bin'], recovered=no | rc=3, begin=refused, finish=refused, save=original, protocol=['naija-save-test-backup.bin'], recovered=no | PASS |
+| L5_manifest_without_lock | Manifest with no lock. Refused; nothing changed. | rc=3, begin=refused, finish=refused, save=changed (TEST), protocol=['naija-save-test-recovery.json', 'naija-save-test-backup.bin'], recovered=no | rc=3, begin=refused, finish=refused, save=changed (94ae336c), protocol=['naija-save-test-recovery.json', 'naija-save-test-backup.bin'], recovered=no | PASS |
+| L6_lock_run_id_mismatch | Lock belongs to a different run id than the manifest. Refused; all files kept. | rc=3, begin=refused, finish=refused, save=changed (TEST), protocol=['naija-save-test.lock.d', 'naija-save-test-recovery.json', 'naija-save-test-backup.bin'], recovered=no | rc=3, begin=refused, finish=refused, save=changed (94ae336c), protocol=['naija-save-test.lock.d', 'naija-save-test-recovery.json', 'naija-save-test-backup.bin'], recovered=no | PASS |
+| L7_manifest_other_slot_path | Manifest names a different save path. Refused. | rc=3, begin=refused, finish=refused, save=changed (TEST), protocol=['naija-save-test.lock.d', 'naija-save-test-recovery.json', 'naija-save-test-backup.bin'], recovered=no | rc=3, begin=refused, finish=refused, save=changed (94ae336c), protocol=['naija-save-test.lock.d', 'naija-save-test-recovery.json', 'naija-save-test-backup.bin'], recovered=no | PASS |
+| L8_unknown_schema | Manifest schema 2 is unknown. Refused. | rc=3, begin=refused, finish=refused, save=changed (TEST), protocol=['naija-save-test.lock.d', 'naija-save-test-recovery.json', 'naija-save-test-backup.bin'], recovered=no | rc=3, begin=refused, finish=refused, save=changed (94ae336c), protocol=['naija-save-test.lock.d', 'naija-save-test-recovery.json', 'naija-save-test-backup.bin'], recovered=no | PASS |
+| L9_invalid_json_manifest | Manifest is not valid JSON. Refused. | rc=3, begin=refused, finish=refused, save=changed (TEST), protocol=['naija-save-test.lock.d', 'naija-save-test-recovery.json', 'naija-save-test-backup.bin'], recovered=no | rc=3, begin=refused, finish=refused, save=changed (94ae336c), protocol=['naija-save-test.lock.d', 'naija-save-test-recovery.json', 'naija-save-test-backup.bin'], recovered=no | PASS |
+| L10_incomplete_manifest | Manifest is missing save_existed (incomplete metadata). Refused. | rc=3, begin=refused, finish=refused, save=changed (TEST), protocol=['naija-save-test.lock.d', 'naija-save-test-recovery.json', 'naija-save-test-backup.bin'], recovered=no | rc=3, begin=refused, finish=refused, save=changed (94ae336c), protocol=['naija-save-test.lock.d', 'naija-save-test-recovery.json', 'naija-save-test-backup.bin'], recovered=no | PASS |
+| L11_lock_dir_without_owner | Lock directory with no owner file. Refused (may be a run starting now); nothing removed. | rc=3, begin=refused, finish=refused, save=original, protocol=['naija-save-test.lock.d'], recovered=no | rc=3, begin=refused, finish=refused, save=original, protocol=['naija-save-test.lock.d'], recovered=no | PASS |
+| L12_live_lock_holder | Lock owned by a live process. Refused; lock kept. | rc=3, begin=refused, finish=refused, save=original, protocol=['naija-save-test.lock.d'], recovered=no | rc=3, begin=refused, finish=refused, save=original, protocol=['naija-save-test.lock.d'], recovered=no | PASS |
+| L13_unknown_content_backed_up | Save holds content this run never recorded. Refused; that content and the backup are kept. | rc=3, begin=refused, finish=refused, save=changed (UNEXPECT), protocol=['naija-save-test.lock.d', 'naija-save-test-recovery.json', 'naija-save-test-backup.bin'], recovered=no | rc=3, begin=refused, finish=refused, save=changed (f0927891), protocol=['naija-save-test.lock.d', 'naija-save-test-recovery.json', 'naija-save-test-backup.bin'], recovered=no | PASS |
+| L14_unknown_file_where_none_expected | No save existed at start, but an unknown file is at the path. Not deleted; refused. | rc=3, begin=refused, finish=refused, save=changed (UNEXPECT), protocol=['naija-save-test.lock.d', 'naija-save-test-recovery.json'], recovered=no | rc=3, begin=refused, finish=refused, save=changed (f0927891), protocol=['naija-save-test.lock.d', 'naija-save-test-recovery.json'], recovered=no | PASS |
+| L15_backup_mismatch_backed_up | Backup does not match the recorded hash. Refused; backup kept. | rc=3, begin=refused, finish=refused, save=original, protocol=['naija-save-test.lock.d', 'naija-save-test-recovery.json', 'naija-save-test-backup.bin'], recovered=no | rc=3, begin=refused, finish=refused, save=original, protocol=['naija-save-test.lock.d', 'naija-save-test-recovery.json', 'naija-save-test-backup.bin'], recovered=no | PASS |
+| L16_restoring_without_backup | Restore was recorded but the backup is gone. Refused; the test save is kept. | rc=3, begin=refused, finish=refused, save=changed (TEST), protocol=['naija-save-test.lock.d', 'naija-save-test-recovery.json'], recovered=no | rc=3, begin=refused, finish=refused, save=changed (94ae336c), protocol=['naija-save-test.lock.d', 'naija-save-test-recovery.json'], recovered=no | PASS |
+| L17_manifest_from_live_pid | Manifest names a live process. Refused rather than treated as dead. | rc=3, begin=refused, finish=refused, save=changed (TEST), protocol=['naija-save-test.lock.d', 'naija-save-test-recovery.json', 'naija-save-test-backup.bin'], recovered=no | rc=3, begin=refused, finish=refused, save=changed (94ae336c), protocol=['naija-save-test.lock.d', 'naija-save-test-recovery.json', 'naija-save-test-backup.bin'], recovered=no | PASS |
+| L18_manifest_pid_unprovable | Pid 1 cannot be shown dead (no permission to signal it, or it is alive). Refused. | rc=3, begin=refused, finish=refused, save=changed (TEST), protocol=['naija-save-test.lock.d', 'naija-save-test-recovery.json', 'naija-save-test-backup.bin'], recovered=no | rc=3, begin=refused, finish=refused, save=changed (94ae336c), protocol=['naija-save-test.lock.d', 'naija-save-test-recovery.json', 'naija-save-test-backup.bin'], recovered=no | PASS |
+| L19_stray_temp_file | A temp file from an interrupted atomic write is not authoritative. It is removed; the run proceeds. | rc=0, begin=ok, finish=ok, save=original, protocol=none, recovered=no | rc=0, begin=ok, finish=ok, save=original, protocol=none, recovered=no | PASS |
+| L20_restored_state_but_slot_wrong | Manifest says restored, but the slot is not the original. Refused. | rc=3, begin=refused, finish=refused, save=changed (TEST), protocol=['naija-save-test.lock.d', 'naija-save-test-recovery.json', 'naija-save-test-backup.bin'], recovered=no | rc=3, begin=refused, finish=refused, save=changed (94ae336c), protocol=['naija-save-test.lock.d', 'naija-save-test-recovery.json', 'naija-save-test-backup.bin'], recovered=no | PASS |
+| L21_unreadable_save | Save exists but cannot be read. Refused before any change. | rc=3, begin=refused, finish=refused, save=none, protocol=none, recovered=no | rc=3, begin=refused, finish=refused, save=changed (UNREADAB), protocol=none, recovered=no | PASS |
+| C1_two_runs_overlap | Two drivers start at once on the same data dir. The first holds the lock for 1.5 s; the second must refuse. Repeated 3 times. | per trial: exactly one driver begins, the other is refused with a lock refusal that says nothing was changed; save=original; protocol=none | t1: begun=1 refused=1 save=original protocol=none; t2: begun=1 refused=1 save=original protocol=none; t3: begun=1 refused=1 save=original protocol=none | PASS |
+
+### 25.6 Earlier cases from the older harness (`fi.py`), re-run on the final guard
+
+The older harness (`/tmp/naija-harness/fi_cases.py`) was written for the protocol before the guard migration. Its FI-04 and FI-07/09/11 cases were re-run in fresh scratch copies. Run tag `final3`, with a copy of the final `game/` folder. Its FI-06 and FI-09 steps were re-run. Its FI-10/11 step cannot run, as explained below.
+
+| Old case | Re-run result | Classification |
+|---|---|---|
+| FI-04 backup read-back mismatch | NOT TESTED in the old harness, because there is no production fault hook | Covered in scratch by s29 F2: a test-only subclass, through the production read-back check. PASS in f4a, f4b, f4c, f5a. |
+| FI-06 original save mode 0400 (not writable) | Exit 1. Save unchanged. No backup, no marker. The run's own check fails, because the injected read-only save cannot be written. | Safety holds. The old expectation "backup kept" is superseded. The restore was verified identical, so the protocol files are removed, as in s29 F2. |
+| FI-07 refusal after the FI-06 residue | No residue was produced. return_path exits 1 on its own check. ui_flow and load_confirmation exit 0. Save unchanged in all three. | Superseded as written. The refusal intent was re-tested with a manufactured residue (below). |
+| Refusal intent, manufactured residue | Backup file present, no manifest, no lock. All three tests exit 1 with "a backup exists without a recovery manifest". Save and backup unchanged. | PASS (`residual_refusal.py`, final3). |
+| FI-09 leftover legacy no-save marker | Exit 1 in all three tests, "legacy test artifacts" refusal. Marker and save unchanged. | PASS |
+| FI-10/11 SIGKILL, then refusal | The step cannot run, because the mutation anchor is absent after the migration. | Superseded. The design now recovers provable kill states: s29 K1 and K2 PASS. Refusal remains for unprovable states: s29 L4, L11 and L18 PASS. |
+| FI-08 restore writes wrong bytes | Not re-run in the old harness | Equivalent s29 F4: PASS in f4a, f4b, f4c, f5a. |
+| FI-13 watchdog, FI-14 runtime error | Not re-run in this round | No s29 equivalent. Verified before the guard migration only. Status in 25.12 is FIXED_UNVERIFIED on the current code. |
+
+### 25.7 Real save-writing runs (scratch, final tree)
+
+Runs t10, t11, t12 and t13, each with a fresh tag. t13 ran on the final file, after the last comment change. Earlier runs t7 to t9 are consistent with them.
+
+| Test (suite) | Result in each run (t10 to t13) |
+|---|---|
+| return_path a, b, c (seeded) | exit 0, 47 checks, 0 script errors, save unchanged |
+| return_path d (no save) | exit 0, 47 checks, 0 script errors |
+| ui_flow a, b, c (seeded) | exit 0, 57 checks, 0 script errors, save unchanged |
+| ui_flow d (no save) | exit 0, 57 checks, 0 script errors |
+| load_confirmation a (seeded) | exit 0, 104 checks, 0 script errors, save unchanged |
+| load_confirmation b (no save) | exit 0, 104 checks, 0 script errors |
+| domain_smoke | exit 1 in every run, 1 failing check: "Save/load restores academic data". The total was 92 or 93 checks in t10 to t12 (TEST-11). This is the academic fixture issue, TEST-FX-2. |
+| save_restart write | exit 0 |
+| save_restart read | exit 1, two errors: "academic result" and "attendance and inventory". Same cause as TEST-FX-2. |
+
+- UI-flow determinism: three consecutive equivalent runs (t10, t11, t12), and a fourth (t13). Exit 0, 57 checks each, no script errors, no autosave messages in the logs checked (ui_flow a and return_path a, t10 to t12), and no protocol file left behind.
+- In-game Load confirmation: exit 0 in each of the four runs.
+- Save touched: scratch only. The seeded runs restored the original bytes.
+
+### 25.8 Input bindings and the world-switch key
+
+Check: `game/tests/input_bindings_headless.gd` (new). It checks:
+
+1. The configured key for `toggle_3d_mode` (F3), `jump` (Space) and `toggle_first_person` (V), read from `project.godot` and from the InputMap.
+2. Every literal action name used in `game/**/*.gd` resolves to the InputMap, either from `project.godot` or from a `_bind_action("name", ...)` call.
+3. No key conflicts among the non-`ui_` actions in `project.godot`.
+
+Result: PASS, 23 of 23 checks. 10 action names are referenced: 4 are defined in `project.godot`, and 6 are bound in code by `_bind_action` in `scripts/prototype_game.gd` (`_setup_input_actions`, lines 574 to 580: the four move actions, `run` and `interact`). These are not defects.
+
+Mutation checks (scratch only): removing the `jump` binding gives exit 1 with 2 of 22 checks failing. Changing F3 to another key (physical 4194337) gives exit 1 with 1 of 23 failing.
+
+Decision on F3 versus F11 (from evidence only):
+
+- `c50356d` (Stage 24) bound `toggle_3d_mode` to F11 (physical 4194342).
+- `cd1703c` (2026-10-11) standardised the key on F3 (physical 4194334). That commit states that no other runtime action uses F3 or F11, and that no F11 alias is kept.
+- The documents refer to F3: `ADVANCED_3D_WORLD_ARCHITECTURE.md:40,74`; `STAGE_24_MULTIPLAYER_INTEGRATION_PLAN.md:30,32,51,72`; `STAGE_25_PLATFORM_AUDIT.md:119,185,193`; `scene_switcher.gd:33`.
+- Decision: keep F3, with no binding change. This task has no requirement to change it. The conflict check and the configured-binding check are both kept.
+- Not verified: a physical F3 press. The `ui_flow` steps 5 and 6 use an injected F3 event. This is BLOCKED by the lack of a display.
+
+Action references (re-checked on the final tree):
+
+- `jump`: `game/3d_world/scripts/character_3d.gd:48` (`Input.is_action_just_pressed("jump")`), defined in `project.godot` line 32.
+- `toggle_first_person`: `game/3d_world/scripts/camera_3d_controller.gd:46`, defined in `project.godot` line 36.
+- The check header notes that `jump` and `toggle_first_person` are defaults the owner has not yet confirmed.
+
+Open design question (not a test failure, no change made): `ui_accept` uses Space, the same key as `jump`. The intended behaviour is not established, so no binding was changed. The owner needs to decide.
+
+### 25.9 Continue and in-game Load
+
+Continue (start screen), `ui_flow_headless` steps 1 and 9:
+
+- With no save, there is no "Continue saved life" button.
+- With a save, the button is offered. Pressing it starts play with the saved character, restores the saved money, and does not open character creation.
+
+In-game Load (save menu), `load_confirmation_headless`, sections A to H, 104 checks, all PASS:
+
+- A: the configured key, read from project settings and from the InputMap before the scene starts.
+- B: start a new life, save known values, then add unsaved values.
+- C: F11 does nothing. F3 switches to 3D and back. (Injected events, not physical keys.)
+- D: Cancel leaves everything unchanged.
+- E: repeated Load and Cancel cycles add nothing.
+- F: Confirm replaces the session with the saved copy.
+- G: failed loads leave the active session intact and usable.
+- H: save-service validation. A missing character key, a missing clock key and a non-object character are each rejected without returning a character.
+
+The confirmation dialog ("Load and discard progress" / "Cancel", from `cd1703c`) is kept.
+
+Not verified: the rendered dialog, real key presses, and mouse clicks on the modal. All BLOCKED by the lack of a display.
+
+### 25.10 Defects and changes in this round
+
+| ID | Change | Evidence |
+|---|---|---|
+| TSCN-1 | `game/3d_world/scenes/world_3d.tscn` line 1: `load_steps=6` changed to `load_steps=10`. The count is 5 external resources, 4 sub-resources and 1 (the scene itself). | Probe `tscn_probe.gd` (scratch) with the custom build: loads and instantiates with 6 children, before and after. Regression run g5 and g6: PASS. The header change has no behaviour effect. FIXED_VERIFIED (cosmetic). The earlier NOT AN ISSUE entry in 24.6 and 24.8 is superseded. |
+| GUARD-RACE-1 | Stale-file cleanup in `save_slot_guard.gd`: owner temporary file no longer removed; manifest temporary file removed only when no lock is held; the temporary file is checked before the lock. | 25.5. Old version 3 of 40 stressed failures; current version 60 of 60 stressed trials with one holder. |
+| C1-MSG-1 | Losing run's refusal message now ends with "Nothing was changed." | f3b failure, then f4a, f4b, f4c, f5a: 41 of 41. |
+| Guard comment | Header comment corrected: a leftover manifest temporary file is removed only when no lock is held, and is never read. | Comment only. Matrix f5a, regression g6 and real run t13 ran on the final file. |
+| INPUT-1 | New test `game/tests/input_bindings_headless.gd`. | 23 of 23. Mutation checks in scratch: exit 1 each. |
+| ACT-1 | `jump` and `toggle_first_person` are defined in `project.godot`. No change. | 25.8 references re-checked. |
+| TEST-6, TEST-7 | No change. Not reproduced, and no failure occurred. No test-local control was added. | 28 real return_path runs (t7 to t13), all exit 0 with 47 checks. 16 of them (t10 to t13) after the last behavioural change to the guard. |
+| TEST-10 | No change. Status lowered to FIXED_UNVERIFIED on the current code, because its evidence predates the guard migration. | 25.6. |
+
+### 25.11 Regression (final tree)
+
+Node (on the final tree, rerun at the end of this round):
+
+- `npm test`: 1074 tests, 1037 pass, 0 fail, 37 skipped, 0 todo. Exit 0. Baseline 1074 / 1037 / 0 / 37 unchanged.
+- `npm run lint`: 29 problems (29 errors, 0 warnings). Exit 1. Same as the baseline after the previous mission: no change this round.
+- `git diff --check`: clean.
+
+Godot (run g6, final guard and final files, fresh scratch copy):
+
+| Suite | Result |
+|---|---|
+| player_movement | PASS 4 checks, exit 0 |
+| performance_metrics | PASS 11 checks, exit 0 |
+| regional_handoff | PASS 41 checks, exit 0 |
+| regional_visual_profiles | PASS 43 checks, exit 0 |
+| persistence_notice | PASS 11 checks, exit 0 |
+| session_policy | "all checks passed", exit 0 |
+| input_bindings_headless | PASS 23 checks, exit 0 |
+| world_3d.tscn probe | PASS, 6 children, exit 0 |
+| main scene quit | exit 0, 0 script errors |
+| check-only sweep | 43 `.gd` files, 0 failures |
+
+Save-writing suites: the matrix (f5a, 41 of 41), real runs t10 to t13, and the old-harness and residual checks in 25.6 and 25.7.
+
+### 25.12 Consolidated issue register (current; supersedes 24.8)
+
+| ID | Component | Finding | Severity | Status | Evidence | Blocks release |
+|---|---|---|---|---|---|---|
+| REC-1 | Git | Local branch not at recovered commit; no upstream | High | FIXED_VERIFIED | 23.2 | No |
+| ENV-1 | Engine | No official Godot binary reachable | High | FIXED_VERIFIED (custom build; official binary not verified) | 25.3 | Label as custom |
+| ENV-2 | Display | No display server or GPU | High | BLOCKED | 25.3 | Yes, for Stage 29 close |
+| TEST-1 | return_path restore | Backup deleted if the original write fails | High | FIXED_VERIFIED | s29 F3, F1, K3 | No |
+| TEST-2 | backup read-back | Backup not read back and compared | High | FIXED_VERIFIED (guard) | s29 F2 (scratch fault injection through the production check) | No |
+| TEST-3 | restore compare | Restore not compared to the original bytes | High | FIXED_VERIFIED | s29 F4 | No |
+| TEST-4 | no-save case | No marker for the no-save case | Medium | FIXED_VERIFIED (manifest replaces the marker) | s29 N3, N4, K2 | No |
+| TEST-5 | save-slot refusal | Refusal did not cover other tests' files | Medium | FIXED_VERIFIED | s29 L-cases; residual refusal in all three tests; FI-09a to c | No |
+| TEST-6 | return_path clock | Autosave and clock advance during the test | Medium | OPEN | 25.10; not reproduced in 28 runs | No |
+| TEST-7 | return_path timing | `resume_step <= 1` depends on frame delta | Medium | OPEN | 25.10; not reproduced | No |
+| TEST-8 | return_path timing | `moved > 1.0` depends on physics stepping | Low | OPEN | 25.10; not reproduced | No |
+| TEST-9 | hard kill | Recovery material left by a kill | Medium | KNOWN_LIMITATION (updated) | s29 K1 to K8 PASS: provable states recover. L4, L11, L18 PASS: unprovable states refuse. | No |
+| TEST-10 | runtime error, watchdog | Restore depends on the watchdog | Low | FIXED_UNVERIFIED (current code) | Verified before the guard migration only (FI-13, FI-14) | No |
+| TEST-11 | domain_smoke | Check total varies by run (92 or 93) | Low | OPEN | 25.7 | No |
+| GUARD-RACE-1 | save_slot_guard | Stale-file cleanup could remove a live holder's temporary file, so both runs refuse | Medium | FIXED_VERIFIED | 25.5 | No |
+| C1-MSG-1 | save_slot_guard | Losing run's refusal did not say "nothing was changed" | Low | FIXED_VERIFIED | 25.5 | No |
+| UI-DET-1 | ui_flow determinism | Three consecutive equivalent runs required | Medium | VERIFIED (t10 to t12, plus t13) | 25.7 | No |
+| SAVE-1 | UI-flow and load-confirmation | Unreadable save backed up as empty and overwritten | High (data loss) | FIXED_VERIFIED (guard L21; FI-03b/c before migration) | 25.4, 25.6 | No |
+| SAVE-2 | Restore read of backup | Unreadable backup restored as empty | Medium | FIXED_UNVERIFIED | Code and guard L15, L16 only | No |
+| SAVE-DOB-1 | Save load, DOB | Float fields broke equality | Medium | FIXED_VERIFIED | domain_smoke DOB check | No |
+| SCHED-1 | Education schedule | Weekday lists never matched | High (gameplay) | FIXED_VERIFIED (engine) | Probe; domain_smoke timetable checks pass | Rendered UI not verified |
+| TEST-FX-1 | domain_smoke timetable | Wrong clock time and subject name in fixture | Medium | FIXED_VERIFIED | domain_smoke | No |
+| TEST-FX-2 | Academic fixture (domain_smoke, save_restart) | Writes a legacy field directly | Medium | OPEN (test decision, owner) | 25.7; production path verified | Yes, for those two suites |
+| KEY-1 | World-switch key | F3 or F11 | Low | DECIDED: F3 kept (cd1703c). Physical key not verified. | 25.8 | Yes, for Stage 29 rendered validation |
+| KEY-2 | Input | `ui_accept` and `jump` both use Space | Low | OPEN (design, owner) | 25.8 | No |
+| INPUT-1 | Input bindings | Configured keys and action references | Low | VERIFIED (23 of 23) | 25.8 | No |
+| ACT-1 | Input actions | `jump` and `toggle_first_person` defined | Low | FIXED_VERIFIED (input map) | 25.8 | No |
+| CONT-1 | Continue (start screen) | Continue loads the save | Medium | VERIFIED headless | 25.9 (ui_flow step 9) | Rendered not verified |
+| LOAD-1 | In-game Load | Confirmation, cancel, confirm, failure safety, validation | High | VERIFIED headless | 25.9 (sections A to H) | Rendered not verified |
+| TSCN-1 | world_3d.tscn | `load_steps` header | Low | FIXED_VERIFIED (cosmetic) | 25.10 | No |
+| TOD-1 | time_of_day lighting | Lookup misses light and environment | Medium | OPEN (design) | 23.8 | No (inert today) |
+| F9 | Kaduna climate | `semi-arid` vs `tropical` | Low | OPEN (excluded data) | 23.9 | No |
+| GEN-1 | Generators | `ng:state:fc` vs `ng:fct:abuja` | Low | OPEN (excluded) | 23.9 | No |
+| GEO-1 | Audit history | FC row may be stale | Low | NOT_VERIFIED | 23.9 | No |
+| LINT-1 | Lint | 51 errors at the start of the mission | Low | PARTIALLY FIXED (29 open, unchanged) | 25.11 | No |
+| SMOKE-1 | domain_smoke | One failing check | Medium | OPEN (TEST-FX-2) | 25.7 | Yes, until TEST-FX-2 |
+| SR-1 | save_restart read | Two errors, same cause as TEST-FX-2 | Medium | OPEN (TEST-FX-2) | 25.7 | Yes, until TEST-FX-2 |
+| SEC-1 | Secrets | Placeholder Postgres URLs only | Info | VERIFIED NOT AN ISSUE (static) | 23.10 | No |
+
+### 25.13 Readiness by claim (section G)
+
+- Repository recovery: RECOVERY_COMPLETE (23.2). No history was rewritten in this round.
+- Save safety: VERIFIED IN SCRATCH on this custom build, for the refusal and restore paths in 25.5 and 25.6. Not verified against the official binary. The guard protects test saves only.
+- Core engine stability: every non-save suite passes. `domain_smoke` and `save_restart` fail on the academic fixture issue (TEST-FX-2). This is not a full playthrough.
+- Continue and in-game Load: VERIFIED headless (25.9). Not verified with rendered UI or physical keys.
+- Input: keys defined and configured; F3 kept; not physically verified. The `ui_accept` / `jump` overlap is an open design question.
+- Stage 29: OPEN. It closes only with rendered validation, which has not been possible.
+- Stage 28: OPEN. It closes only with the production criteria. Not re-audited here.
+- Production: NOT READY.
+
+### 25.14 Single most important blocker, and decisions needed
+
+- Blocker: no display server and no GPU on this machine. Rendered UI, physical keys and the modal dialog cannot be verified here. Stage 29 cannot close without that evidence.
+- Blocker for two suites: the academic fixture check (TEST-FX-2) fails in `domain_smoke` and `save_restart`. The production path is verified, but the fixture writes a legacy field directly. Owner decision needed on how the fixture should be built.
+- Decisions needed from the owner: `ui_accept` and `jump` both on Space (KEY-2); whether the `jump` and `toggle_first_person` defaults are confirmed (25.8).
+
+### 25.15 Not tested, and limits
+
+- Physical keys, rendered UI, mouse input and window close: BLOCKED (no display).
+- Official Godot release binary: not verified. All results are from the custom build.
+- FI-13 and FI-14 (watchdog, runtime error) were not re-run in this round, and they have no s29 equivalent. The status is FIXED_UNVERIFIED on the current code.
+- The matrix and fault-injection harness, and the mutation harness, are scratch-only and are not committed.
+- Real user data: not reachable from this sandbox. Not touched.
+- Production save code is not changed by this round. Hard-kill and read-only cases apply to test saves only.
