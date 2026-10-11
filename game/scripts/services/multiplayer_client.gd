@@ -18,6 +18,9 @@ var _socket: WebSocketPeer
 var _profile: Dictionary = {}
 var _session_token: String = ""
 var _creation_key: String = ""
+# True once this device has been given an identity for its creation key (or has held a session for it). Once true,
+# identity.create is never sent automatically with the saved key again (D-06).
+var _identity_issued: bool = false
 var _status: String = "offline"
 var _should_reconnect: bool = false
 var _connection_pending: bool = false
@@ -79,6 +82,11 @@ func send_movement(direction: Vector2, running: bool) -> void:
 			"running": running,
 		}
 	)
+
+
+## Asks the server to revoke this session. The token is forgotten only when the server confirms with session.logged_out.
+func request_logout() -> bool:
+	return send_command("session.logout")
 
 
 func send_command(message_type: String, values: Dictionary = {}) -> bool:
@@ -170,6 +178,9 @@ func _server_url() -> String:
 func _send_create_identity() -> void:
 	if _fallback_create_sent:
 		return
+	if not may_send_create_identity(_identity_issued):
+		_set_status("saved session unavailable")
+		return
 	_fallback_create_sent = true
 	_send_message(
 		{
@@ -203,8 +214,14 @@ func _handle_packet(text: String) -> void:
 			if _session_token.is_empty():
 				error_received.emit("session_invalid", "The server did not return a session token.")
 				return
+			_identity_issued = true
 			_save_local_session()
 			_send_message({"type": "session.resume", "sessionToken": _session_token})
+		"session.logged_out":
+			# The server has revoked this session. Forget the token and stop reconnecting. The issued flag is kept, so
+		# identity.create is not sent with the saved key on a later connection.
+		_clear_saved_token()
+		disconnect_from_world()
 		"session.ready":
 			_reconnect_delay = 1.0
 			var character: Variant = message.get("character", {})
@@ -224,6 +241,8 @@ func _handle_packet(text: String) -> void:
 				# D-06: an invalid saved session is cleared, but the saved creation key is NOT used to create an
 				# identity again. Key-only recovery is refused by the server, so repeating identity.create could only
 				# fail or, in older servers, re-issue a session without proof of ownership. The player is told once.
+				# An identity existed for this key, so automatic creation stays blocked after a relaunch as well.
+				_identity_issued = true
 				_clear_saved_token()
 			error_received.emit(code, description)
 		"_":
@@ -273,6 +292,7 @@ func _load_local_session() -> void:
 	if config.load(_session_config_path()) == OK:
 		_session_token = str(config.get_value("multiplayer", "session_token", ""))
 		_creation_key = str(config.get_value("multiplayer", "creation_key", ""))
+		_identity_issued = bool(config.get_value("multiplayer", "identity_issued", false)) or not _session_token.is_empty()
 	if _creation_key.length() < 32:
 		var crypto := Crypto.new()
 		_creation_key = crypto.generate_random_bytes(32).hex_encode()
@@ -283,6 +303,7 @@ func _save_local_session() -> void:
 	var config := ConfigFile.new()
 	config.set_value("multiplayer", "session_token", _session_token)
 	config.set_value("multiplayer", "creation_key", _creation_key)
+	config.set_value("multiplayer", "identity_issued", _identity_issued)
 	var save_error := config.save(_session_config_path())
 	if save_error != OK:
 		push_warning(
@@ -299,6 +320,11 @@ func _clear_saved_token() -> void:
 ## once per outage, after the first successful save, to players who were online during the failure. It says only that a
 ## save succeeded: it never says that changes made during the outage were recovered. Older servers never send it, and
 ## older clients ignore it, so nothing else depends on it.
+## D-06: identity.create may be sent automatically only for a key that has never been issued an identity.
+static func may_send_create_identity(identity_issued: bool) -> bool:
+	return not identity_issued
+
+
 static func persistence_notice(message: Dictionary) -> String:
 	if str(message.get("type", "")) != "persistence.restored":
 		return ""
