@@ -901,7 +901,7 @@ changes.
 - `3d_world/scenes/world_3d.tscn` loads.
 - `tests/regional_handoff.gd` PASS 41 of 41, exit 0. `tests/regional_visual_profiles.gd` PASS 43 of 43, exit 0. Both
   on the custom engine build in 17.2.
-- The 3D-to-2D return restore is **not fixed** (17.5). It is blocked on an owner decision.
+- The 3D-to-2D return restore was **not fixed in this repair** (17.5). Section 18 fixes it.
 - In-game F5 play and visual validation have **not** been run. They are pending.
 - Stage 29 OPEN. Stage 28 OPEN. Production NOT READY. F13b, F9, F10, F11, and the README gap keep their status.
 
@@ -941,7 +941,7 @@ arguments, Variant-to-typed inference treated as an error, and engine constants 
 `gdlint` in sections 14 and 15 accepted these files (16.6), so they were not engine checks. I did not establish when
 each line was introduced. Git history for those lines was not part of this repair.
 
-### 17.5 Return path (3D to 2D): decision is NOT to implement the restore (blocker)
+### 17.5 Return path (3D to 2D): decision was NOT to implement the restore (blocker; superseded by section 18)
 
 **Confirmed lifecycle (engine, read-only probe outside the repository, exit 0):**
 
@@ -970,9 +970,8 @@ The owner decides between these. Stage 29 cannot close until this is decided.
 - No exact 4.7.2 replacement exists. `MEMORY_STATIC` measures a different quantity, so it was not used as a substitute.
 - `dynamic_memory_mb` is held at `0.0` and commented as not measured. `total_memory_mb` therefore equals static memory,
   with no double count. The report line `dynamic: 0.0` is **not a measurement**. The owner may remove the field.
-- **Pre-existing defect, not fixed:** `process_time_ms` is computed as `TIME_FPS * 1000`. `TIME_FPS` is frames per second,
-  not a frame time, so the value is wrong. Correcting it means choosing the intended metric (for example `TIME_PROCESS`).
-  That is an owner decision. It was observed by reading the code, not measured in the UI.
+- **Defect found here, fixed in section 18:** `process_time_ms` was computed as `TIME_FPS * 1000`. `TIME_FPS` is frames per
+  second, not a frame time. It now uses `TIME_PROCESS`, and `dynamic_memory_mb` is removed.
 
 ### 17.7 Camera `delta`
 
@@ -995,7 +994,7 @@ The owner decides between these. Stage 29 cannot close until this is decided.
 | `player_movement.gd` | exit 0 | PASS 4 [GDScript runtime] |
 | `persistence_notice.gd` | exit 0 | PASS 11 [GDScript runtime] |
 | `session_policy.gd` | exit 0 | All checks passed [GDScript runtime] |
-| `domain_smoke.gd` | exit 1 | FAIL 4 of 92 (same 4 in 3 consecutive runs) [GDScript runtime, residual] |
+| `domain_smoke.gd` | exit 1 | FAIL 4 of 91 to 93 (total varies by run; same 4 failing each run) [GDScript runtime, residual] |
 | `save_restart.gd` | `-- write` exit 0, `-- read` exit 1 | Read fails: academic result; attendance and inventory [GDScript runtime, residual] |
 | Probe: performance monitor, life-history guard, save round trip | probe outside the repository, exit 0 | 11 of 11 PASS [GDScript runtime, probe] |
 | Probe: return-path lifecycle | probe outside the repository, exit 0 | Confirmed 17.5 [GDScript runtime, probe] |
@@ -1005,7 +1004,7 @@ The owner decides between these. Stage 29 cannot close until this is decided.
 
 Not run: in-game F5 play, the 2D scene during play, and visual inspection. These remain pending.
 
-The earlier copy-only note of "domain_smoke 4 of 91" was **not reproduced**. Three repository runs all reported 4 of 92.
+**Correction (section 18):** the statement that "4 of 91" was not reproduced was wrong. The total varies between runs (91, 92, and 93 were observed). The same four assertions fail in every run.
 
 ### 17.9 Residual findings (not fixed in this repair)
 
@@ -1017,9 +1016,9 @@ The earlier copy-only note of "domain_smoke 4 of 91" was **not reproduced**. Thr
   `_household_from_life_profile()`, which re-initializes life data when no valid `date_of_birth` is present. The
   supplied `life_history` is then replaced with generated `character_created` and `family_created` entries. Observed in a
   probe with no DOB. It is related to the DOB failure above.
-- **`process_time_ms` uses `TIME_FPS * 1000`** (17.6).
+- **`process_time_ms` used `TIME_FPS * 1000`** (17.6). Fixed in section 18.
 - **`world_3d.tscn` header** `load_steps=6` does not match 5 external and 4 sub-resources. Godot tolerates this. Not changed.
-- **Return path** (17.5).
+- **Return path** (17.5). Fixed in section 18.
 
 ### 17.10 Scope protection
 
@@ -1033,5 +1032,135 @@ fallback (`ng:state:on`) and invalid-region rejection are unchanged. The handoff
 - F5 compile blockers (16.6): **cleared** in the repository.
 - F5 headless runtime tests on the custom build: **passed** (41 of 41, 43 of 43).
 - F5 in-game and visual validation: **pending**.
-- 3D-to-2D return restore (16.3): **BLOCKED on an owner decision** (17.5).
+- 3D-to-2D return restore (16.3): **fixed in section 18** (runtime tests pass; in-game validation pending).
 - Stage 29 OPEN. Stage 28 OPEN. Production NOT READY.
+
+## 18. 3D-to-2D return repair: retained 2D session (2026-10-11)
+
+Scope: the owner's written return-path mission. It keeps the existing 2D session alive while the 3D world is active,
+suspends it, and resumes it on return. It also covers the performance-monitor fix (Phase G), which is independent and is
+committed separately. It does not change save formats, auth or session, Stage 28 safeguards, Stage 30 access, the region
+catalog, presets, the 32-region mapping, `time_of_day.gd`, or F13b.
+
+### 18.1 Result
+
+**RETURN_PATH_FIXED_RUNTIME_TESTS_PASSED**, with the limits in 18.9. Stage 29 remains OPEN. Stage 28 remains OPEN.
+Production remains NOT READY.
+
+### 18.2 Root cause (confirmed on the original code)
+
+- `scene_switcher.gd` `switch_to_3d()` called `queue_free()` on the 2D instance, so the character and clock were destroyed.
+- `switch_to_2d()` created a new `prototype.tscn` instance. Its `_ready()` opens character creation, and the
+  shared-state restore was skipped because `character` and `clock` did not exist yet.
+- Reproduced with a probe on a copy of the original code, outside the repository (GDScript runtime, custom build). One
+  round trip with an in-memory character (money 4321, life history set) produced: the original instance freed; the
+  creation screen shown again; `character == null`; the character lost.
+
+### 18.3 Design
+
+- `switch_to_3d()` calls `suspend_session()` on the retained 2D instance. It no longer frees it.
+- `suspend_session()` sets `process_mode = DISABLED`, hides the node and its UI, and sets `ALWAYS` on the multiplayer
+  client so an online socket keeps polling. It also sets a `_suspended` flag. `_process` and `_unhandled_input` return early
+  while suspended.
+- `switch_to_2d()` calls `resume_session()` on the retained instance. It does not create a new instance, and it does not
+  call `_restore_2d_state()`. That call now runs only on first start, when no instance exists.
+- The 3D instance is still released with `queue_free()`, as before.
+- `set_shared_state()` no longer warns on the empty first-creation handoff. A non-empty pending character still warns.
+
+Files changed: `game/3d_world/scripts/scene_switcher.gd`, `game/scripts/prototype_game.gd`, new `game/tests/return_path.gd`.
+
+### 18.4 Lifecycle (verified at runtime)
+
+| Step | Expected | Result |
+|---|---|---|
+| Startup | one 2D session, character creation shown once | PASS |
+| New game | playing, character and clock created, creation closed | PASS |
+| 2D to 3D | same 2D instance retained, suspended, hidden, not processing, one 3D world under `Mode3D` | PASS |
+| While 3D | the 2D clock does not advance, the 2D player does not move, no modal input | PASS |
+| Close window while 3D | the retained session is saved with its unsaved money | PASS |
+| 3D to 2D | same instance resumed, 3D world released, no new instance, no creation screen, HUD shown | PASS |
+| Movement after return | the 2D player moves again | PASS |
+| Repeated cycles | three more round trips: one 2D session, one 3D world, same character and clock; no duplicate connections or bindings | PASS |
+| Default region | a character with no located region gets the existing fallback (`ng:state:on`) | PASS |
+| Continue | saved money restored; creation not opened | PASS |
+
+### 18.5 State preservation evidence (runtime)
+
+The test checks the live objects, not copies. After return:
+
+- The character is the same object (`==` identity). The clock is the same object, and its dictionary is unchanged.
+- Unsaved money (4321) is unchanged, and so is the geographic `state_id`.
+- A life-history event added before the switch is still present.
+- The player position is unchanged. The HUD shows the existing character's name.
+
+### 18.6 Test results (custom build, exit codes are real)
+
+| Test | Command and exit | Result | Class |
+|---|---|---|---|
+| Engine identity | `--version` on `godot.linuxbsd.template_debug.x86_64`, exit 0 | `4.7.2.stable.custom_build.ed1daf0bf` | engine |
+| Return path | `--script res://tests/return_path.gd`, exit 0 | PASS 46 of 46, 0 SCRIPT ERROR (three repeat runs also 46 of 46) | GDScript runtime |
+| Return path on original code | same test on a copy of `HEAD` outside the repository, exit 1 | Fails the retained, suspended, and cannot-process checks, then reads a freed object. The watchdog (below) ends the run | GDScript runtime |
+| Original vs repaired probe | in-memory round-trip probe, exit 0 on both trees | Original: instance freed, creation shown, character lost. Repaired: same instance, no creation, character kept | GDScript runtime, probe |
+| `regional_handoff.gd` (Test 9) | exit 0 | PASS 41 of 41 | GDScript runtime |
+| `regional_visual_profiles.gd` (Test 9) | exit 0 | PASS 43 of 43 | GDScript runtime |
+| Performance metrics (Phase G) | `--script res://tests/performance_metrics.gd`, exit 0 | PASS 11 of 11 | GDScript runtime |
+| Performance metrics on original code | same test on a copy of `HEAD`, exit 1 | FAIL 7 of 11 | GDScript runtime |
+| Check-only sweep | `--check-only` on 39 `.gd` files | 39 of 39 exit 0 | GDScript parse |
+| `player_movement.gd` | exit 0 | PASS 4 | GDScript runtime |
+| `persistence_notice.gd` | exit 0 | PASS 11 | GDScript runtime |
+| `session_policy.gd` | exit 0 | All checks passed | GDScript runtime |
+| Main project `--quit` | exit 0 | 0 SCRIPT ERROR | GDScript load |
+| `domain_smoke.gd` | exit 1 | FAIL 4 (see 18.8) | GDScript runtime, residual |
+| `save_restart.gd --write` / `--read` | exit 0 / exit 1 | Read fails with the same messages on `HEAD` and on the repaired tree | GDScript runtime, residual |
+| `npm test` | exit 0 | 0 fail, 37 skipped | Node, static |
+| `npm run lint` | exit 1 | 51 errors, the existing baseline (`services/world-api/src`, not touched) | static |
+
+Tests 1–8 and 10 are covered by `return_path.gd`, which exercises the real `SceneSwitcher`, the real `main.tscn`, and the
+real `toggle_3d_mode` action. Test 10 (new, load, continue): new game runs `_start_new_game()`. The Continue and Load
+buttons both connect to `_continue_game()` (`prototype_game.gd` lines 66 and 71). The test calls that handler directly and
+does not click the buttons.
+
+### 18.7 Save-file safety during testing
+
+- `return_path.gd` backs up `user://naija-stage1-save.json`, refuses to run if a backup already exists, and restores the
+  file at the end.
+- An interrupted baseline run left a test-written save and backup in the user data folder. Both held only test data (the
+  name "Return Probe", money 5000). I removed them after checking that. No real save existed before these runs: the
+  first interrupted run did not find a backup, so none had been left by an earlier run.
+- The test now has a 180-second watchdog that restores the save and exits 1. It was verified by the baseline run.
+
+### 18.8 Phase G: performance monitor (separate commit)
+
+- `process_time_ms` now equals `TIME_PROCESS` in milliseconds. It was `TIME_FPS * 1000`. The test checks the value against
+  `TIME_PROCESS` read in the same frame, and it fails on the original code (1000 ms against an expected 0).
+- `dynamic_memory_mb` is removed. There is no Godot 4.7.2 monitor for it, so no value is reported.
+- `idle_time_ms` is removed. It duplicated `TIME_PROCESS`, and nothing else reads it.
+- `total_memory_mb` now equals static memory. The report line reads `Memory: X MB (static)`.
+- **Not verified:** the magnitude of frame times. In this headless `--script` run, `TIME_PROCESS` reads 0.0 and `TIME_FPS` reads
+  1.0 in every frame. A rendered run is needed to confirm live timing values.
+
+### 18.9 Gaps and limits (stay open)
+
+- The F3 key was driven through `InputEventAction` in the test. No rendered window or real keyboard was used.
+- No visual inspection of the 3D world or the HUD after return.
+- The Continue and Load buttons were not clicked. The handler they share was called directly.
+- The 3D world does not write character or economy data back. Its shared state carries only `region_id`, `time_of_day`,
+  and the 3D avatar's own state. So returning to 2D loses nothing, and the 2D clock stays authoritative.
+- Stage 29 acceptance still needs in-game validation on a rendered run.
+
+### 18.10 Pre-existing issues found, not fixed (out of scope)
+
+- `3d_world/scripts/character_3d.gd:48` queries the undefined `jump` action. Every 3D frame logs an error
+  (`InputMap action "jump" doesn't exist`). This is a 3D input issue, not a return-path regression. Owner decision.
+- `domain_smoke.gd`: FAIL 4. The count varies by run: 91, 92, and 93 were observed. The same four assertions fail every time:
+  timetable order, same-day subject repeat, academic restore, DOB and life-stage restore. The same four fail on the
+  unmodified `HEAD` copy, so they do not depend on this change.
+- `save_restart.gd --read`: the same academic and attendance messages on `HEAD` and on the repaired tree.
+- `character_state.gd` `load_dictionary` overwrites the supplied `life_history` when the DOB is invalid (17.9). Not changed.
+- `world_3d.tscn` `load_steps` (17.9). Not changed.
+
+### 18.11 Status
+
+- Return path (16.3, 17.5): **fixed in the repository; runtime tests pass; in-game validation pending** (18.9).
+- Performance monitor (17.6): **fixed**; magnitude not verified in headless mode (18.8).
+- Stage 29 OPEN. Stage 28 OPEN. Production NOT READY. F9, F10, F11, F13b, and the README gap keep their status.

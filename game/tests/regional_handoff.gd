@@ -3,7 +3,7 @@ extends SceneTree
 # Stage 29 F5 headless test: the regional handoff from the 2D client to the 3D world.
 # Run with Godot 4.7.2 from the game/ directory:
 #   godot --headless --path game --script res://tests/regional_handoff.gd
-# STATUS: NOT RUN. Godot 4.7.2 was unavailable when this file was written.
+# STATUS: RUN on a custom Godot 4.7.2 build (4.7.2.stable.custom_build.ed1daf0bf): PASS 41 of 41, exit 0.
 # It exercises the real SceneSwitcher, World3DController, and EnvironmentConfig scripts and the
 # real world_3d.tscn scene. It does not test the 2D client, which needs the full prototype scene.
 
