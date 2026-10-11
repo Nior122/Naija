@@ -156,6 +156,27 @@ The options for the owner to choose from:
 
 Until one option is chosen, the push is on HOLD. No code change has been made for this conflict.
 
+**Decision recorded, 2026-10-11 (owner): no option is chosen; the owner selected C (hold).** The owner's rules for this item:
+
+1. An unknown write outcome returns `identity_creation_pending`, and the same key is refused until the original outcome is
+   safely reconciled. A returned error does not prove the write failed.
+2. Immediate release is allowed only when the storage layer can prove nothing was committed and no saved identity conflicts
+   with the key. That capability does not exist, so it is not assumed.
+3. A successful write followed by failed live-state reconciliation preserves the saved identity. A later ordinary save must
+   not silently delete or replace it.
+4. A reconciled identity follows the existing recovery path, with no second identity and no session transfer.
+5. The current implementation is not accepted while an ordinary save can delete a persisted, unacknowledged identity.
+
+Status against these rules. The residual in section 6a (the next successful save removes the unacknowledged identity from
+the file) is present in the committed code (`8721104`, `a487630`), where a retry also saves first and then creates a new
+identity. A rejected candidate (saved outside the repository at `/home/user/stage28-optionD-rejected.patch`) refused the
+retry while the key was pending, but still left the removal in place, so it was reverted. Rules 3 and 5 cannot be met
+inside Stage 28 without the merge (A/B), the broad write block, or the overlay (C), and the owner has ruled out the first
+two. The limitation is documented here. Push stays on HOLD.
+
+Tests for the rule outcomes (identity count, token and session ownership, budget accounting) are NOT written, because the
+capability they would exercise (a safe reconciliation path or a proven pre-commit failure signal) does not exist.
+
 Test status of this section: the file and PostgreSQL characterization tests pass, and they pin the current behaviour, not
 the approved wording.
 

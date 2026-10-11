@@ -1,5 +1,8 @@
 # Stage 28 — R8: Recovery design (design only, not implemented)
 
+> **Status update (2026-10-11, Stage 28 Foundation Hardening, D-05).** Key-only identity recovery is REFUSED by the server: `identity.create` with an existing creation key returns `identity_recovery_unavailable` and changes nothing. The waiting-period recovery procedure is NOT implemented (no verified notification channel exists). The client no longer repeats `identity.create` with a saved key after `session_invalid`. Statements below that describe key-based recovery as working describe the earlier state. See `docs/STAGE_28_FOUNDATION_HARDENING.md`.
+
+
 **Status:** Direction **B** is approved as the design direction (user decision, 2026-10-10). **Implementation is NOT approved.** Section 10 gives the required detail. Its open decisions (section 10.8) must be answered first. Nothing in this document is implemented. Key-only recovery is **not** removed, and no code, data, client, or test behaviour changes as a result of this document. Implementation waits for review and an explicit approval. R8 is listed in `docs/STAGE_28_CREATION_KEY_REVIEW.md` (section 5) as "Stop recovery by key alone".
 
 **Related:** R7 (credential lifecycle, `docs/STAGE_28_R7_CREDENTIAL_LIFECYCLE_DESIGN.md`), the creation-key review (`docs/STAGE_28_CREATION_KEY_REVIEW.md`), and the account/character design (`docs/STAGE_28_ACCOUNT_CHARACTER_DESIGN.md`). Account integration is a separate task and is out of scope here.

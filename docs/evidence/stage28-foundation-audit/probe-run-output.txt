@@ -1,0 +1,7 @@
+A_recovery_with_key_only {"recoveryReplyType":"identity.created","returnsSamePlayerId":true,"returnsNewToken":true,"oldTokenReply":"error:session_invalid"}
+B_decide_appeal_by_non_judge {"replyType":"justice.result","replyCode":null,"appealStatus":"decided","decidedBy":"attacker","judgmentStatus":"reversed","caseStatus":"closed","attackerIsAssignedJudge":false}
+C_criminal_conviction_against_other {"replyType":"crime.result","replyCode":null,"recordsCreatedDelta":1,"victimConvictions":1,"recordCreatedByCharacter":"offender (no check of incident, target or actor role)"}
+D_economy_transfer_from_other_account {"replyType":"economy.error","replyCode":"economy_account_not_found","victimBalanceChanged":false,"offenderHasSecondAccount":false}
+E_pay_fine_of_other_character_free {"replyType":"justice.result","replyCode":null,"fineBefore":{"status":"outstanding","paid":0},"fineAfter":{"status":"paid","paid":500000},"payerCashBalanceChanged":false,"fineOwnerIsPayer":false}
+F_apply_reply military.result  Military application submitted.
+F_military_self_enlist {"applyType":"military.result","applyStatus":"submitted","enlistReply":"military.error:military_application_not_approved","decideAction":"military.error:military_action_unknown","serviceRecordsCreated":0}

@@ -1,5 +1,8 @@
 # Stage 28 — Identity creation: atomicity and same-key serialization (R1, R2)
 
+> **Status update (2026-10-11, Stage 28 Foundation Hardening, D-05).** Key-only identity recovery is REFUSED by the server: `identity.create` with an existing creation key returns `identity_recovery_unavailable` and changes nothing. The waiting-period recovery procedure is NOT implemented (no verified notification channel exists). The client no longer repeats `identity.create` with a saved key after `session_invalid`. Statements below that describe key-based recovery as working describe the earlier state. See `docs/STAGE_28_FOUNDATION_HARDENING.md`.
+
+
 **Status:** implemented on `arena/00cdea0e-naija` with tests. **Not** production-ready. The guarantees below are scoped to one server process (R1) and to the save paths tested (R2). See section 6.
 
 **Related:** `docs/STAGE_28_CREATION_KEY_REVIEW.md` (E3 and E6b, the original reproductions), `docs/STAGE_28_R8_RECOVERY_DESIGN.md`, `docs/STAGE_28_R7_CREDENTIAL_LIFECYCLE_DESIGN.md`.

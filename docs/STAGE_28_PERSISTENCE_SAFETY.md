@@ -57,17 +57,30 @@ Tests: `persistence-failure-audit.test.mjs` ("G1: while saves are refused…"), 
 `persistence-failure-audit-postgres.test.mjs` ("G1: health() reports fail…"). The old characterization tests that
 asserted the gap were replaced, not loosened.
 
-**Known flake in the G1 readiness assertion (not fixed; cause identified, not reproduced).** The G1 test's last step
-asserts that `/health` is not 503 after a successful save. `/health` also runs a `memory` check (`src/monitoring.ts`,
-`checkMemory`), which reports `fail` when `heapUsed / heapTotal` is above 90%. That ratio depends on garbage-collection timing,
-not on the heap limit. In one of five full PostgreSQL runs (`/tmp/s28/final-test-pg.log`, 1019 pass, 1 fail, rc=1) the
-final assertion failed with `memory: fail, "Heap usage critical: 91.8%"`, and the `persistence` check was `pass`. Four later
-full PostgreSQL runs passed. Ten isolated G1 runs, six parallel G1 runs, and a 20-iteration probe (recovered-state heap
-48% to 71%) did not reproduce it. The health semantics were **not** changed to make the test pass. Options, for review: make the
-memory check use the heap limit (a health-semantics change, needs approval), or assert the `persistence` check directly in the
-test (a test change that narrows what it checks, needs approval). Until one is chosen, a clean full run is not claimed as
-proof that the flake is gone.
+**G1 flake: test narrowed (test-only; production health unchanged; pending review).** The original G1 readiness assertion
+checked the whole `/health` status after a successful save. `/health` also runs a `memory` check (`src/monitoring.ts`,
+`checkMemory`), which reports `fail` when `heapUsed / heapTotal` is above 90%. That ratio depends on garbage-collection
+timing, not on the heap limit. In one of five full PostgreSQL runs (`/tmp/s28/final-test-pg.log`, 1019 pass, 1 fail,
+rc=1) the final assertion failed with `memory: fail, "Heap usage critical: 91.8%"`, while the `persistence` check was
+`pass`. Earlier isolated runs did not reproduce it.
 
+The G1 tests in `persistence-failure-audit.test.mjs` now use a `withHeapReading` helper:
+
+- **"G1: while saves are refused…" (persistence)**: heap is pinned at 50%, so the memory check cannot influence the result.
+  The test asserts the `persistence` check directly: `/health` returns 503 with `persistence` failing while saves are
+  refused and `memory` passing, `/live` stays 200, and after a later successful save `persistence` passes and `/health` is
+  not unhealthy (200). This test runs on the file backend only.
+- **"G1 (memory)"**: heap is pinned at 95%. The test asserts that memory pressure alone returns 503 with the `memory` check
+  failing and the `persistence` check passing. This keeps the memory check tested.
+
+Verification of the narrowed tests: `--test-name-pattern G1` passed 3 of 3 runs on the file backend and 3 of 3 runs on
+PostgreSQL loopback (`/tmp/s28/g1-file-{1,2,3}.log`, `/tmp/s28/g1-pg-{1,2,3}.log`). Mutation checks: forcing the memory check
+to `pass` makes only the memory test fail (`/tmp/s28/r2-mut-memory.log`, rc=1); forcing the persistence check to `pass` makes
+only the persistence test fail (`/tmp/s28/r2-mut-persist.log`, rc=1). Both were restored afterwards.
+
+What this does not do: it does not change the memory check's 90% heap-ratio threshold, which still measures
+`heapUsed / heapTotal` rather than the heap limit. That is a health-semantics question and needs separate approval. A clean
+full run is not claimed as proof of anything beyond the G1 tests above.
 
 Mutation check: in the built output, a failing save was forced to report `pass`. `persistence-recovery-signal.test.mjs`
 then failed 3 of 4 tests (the audit test was not re-run for this mutant).

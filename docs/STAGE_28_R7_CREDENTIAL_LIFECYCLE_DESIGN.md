@@ -1,5 +1,8 @@
 # Stage 28 — R7: Credential lifecycle design and test plan (design only)
 
+> **Status update (2026-10-11, Stage 28 Foundation Hardening, D-05).** Key-only identity recovery is REFUSED by the server: `identity.create` with an existing creation key returns `identity_recovery_unavailable` and changes nothing. The waiting-period recovery procedure is NOT implemented (no verified notification channel exists). The client no longer repeats `identity.create` with a saved key after `session_invalid`. Statements below that describe key-based recovery as working describe the earlier state. See `docs/STAGE_28_FOUNDATION_HARDENING.md`.
+
+
 **Status:** DESIGN AND TEST PLANNING ONLY. Nothing here is implemented. No client-breaking rotation is proposed for immediate release. The current behaviour is unchanged.
 
 **Related:** `docs/STAGE_28_R8_RECOVERY_DESIGN.md` (recovery options and decisions), `docs/STAGE_28_CREATION_KEY_REVIEW.md` (R1–R10 and experiment E1–E7).

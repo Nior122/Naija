@@ -1,5 +1,8 @@
 # Stage 28 — Creation key review (Task 3)
 
+> **Status update (2026-10-11, Stage 28 Foundation Hardening, D-05).** Key-only identity recovery is REFUSED by the server: `identity.create` with an existing creation key returns `identity_recovery_unavailable` and changes nothing. The waiting-period recovery procedure is NOT implemented (no verified notification channel exists). The client no longer repeats `identity.create` with a saved key after `session_invalid`. Statements below that describe key-based recovery as working describe the earlier state. See `docs/STAGE_28_FOUNDATION_HARDENING.md`.
+
+
 **Status:** REVIEW ONLY. No authentication behaviour was changed. Remediation is proposed, not implemented, and needs user approval (see section 6).
 
 **Scope:** the `creationKey` used by `identity.create` in the world API (`services/world-api/src/multiplayer/world-engine.ts`), its client (`game/scripts/services/multiplayer_client.gd`), and the session token that follows it.

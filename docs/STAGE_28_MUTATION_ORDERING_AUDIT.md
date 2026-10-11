@@ -173,3 +173,21 @@ What the notice does and does not do:
    reviewed.
 3. Write per-action guard tests for rows 3, 4, 9, 15–23 (the non-deduplicated handlers) before any change to them.
 4. Review the money and legal handlers (rows 2, 5, 7, 13, 16, 18) first when the next ordering change is scoped.
+
+## 8. Guard tests for re-sent requests (added 2026-10-11)
+
+File: `services/world-api/test/mutation-resend-guards.test.mjs`. Each test sends a mutating request twice with the same
+`requestId` and checks the saved state. Run results: default suite (file backend) 4/4; PostgreSQL loopback
+(`naija_stage28_test`, `DB_SSL=false`, trust auth, disposable) 8/8, including the file backend cases.
+
+| Handler | Test result | What it shows |
+| --- | --- | --- |
+| `property.purchase` | guard passes | A re-sent purchase returns `property.error`, and the price is charged once. The test asserts the reply type and the balance, not the error code. |
+| `justice.file_case` | characterisation passes | **Gap, current behaviour.** A re-sent filing creates a second case. The test asserts `2` so the gap stays visible. Change it when the handler is deduplicated. |
+| `government.create_budget` | characterisation passes | **Gap, current behaviour, needs review.** A character with no office and no appointment can create a budget, and a re-sent request creates a second one. The handler checks the organisation and the fields, but not the character's authority. This is not a mutation-ordering issue. It is a confirmed authorization gap: see `docs/STAGE_28_GOVERNMENT_AUTHORIZATION.md`. |
+| `school.begin` (classroom) | guard passes | A re-sent request while the quiz is pending returns `quiz_in_progress`, and one attendance record is written. The test places the character at the desk in disposable in-memory state; the walking route is covered by `education.test.mjs`. |
+
+Not written: guards for `government.publish_announcement` and the other justice actions. Their setup (appointments, a
+court with a judge, or a filed case) is larger than the scope of this pass.
+
+These tests characterise current behaviour. They do not claim it is correct. No handler was changed.

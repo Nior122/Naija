@@ -1,5 +1,8 @@
 # Architecture
 
+> **Status update (2026-10-11, Stage 28 Foundation Hardening, D-05).** Key-only identity recovery is REFUSED by the server: `identity.create` with an existing creation key returns `identity_recovery_unavailable` and changes nothing. The waiting-period recovery procedure is NOT implemented (no verified notification channel exists). The client no longer repeats `identity.create` with a saved key after `session_invalid`. Statements below that describe key-based recovery as working describe the earlier state. See `docs/STAGE_28_FOUNDATION_HARDENING.md`.
+
+
 ## Current shape
 
 The Stage 0 Node/TypeScript API and Stage 1 local Godot prototype remain in place. Stage 2 added optional multiplayer; Stage 3 extends the same project with bounded geographic data and preview/presence; Stage 4 adds a data-driven education domain; Stage 5 adds calendar-driven age/life simulation, family/relationship history and lifecycle status; Stage 6 adds a data-driven, server-authoritative careers domain. Education, life and career records integrate with the existing character, household, geography, save and multiplayer contracts. The online server owns one shared `nigeria-main` clock and timeline; offline local state remains separate from online authority. Godot 4.7.2 is unavailable, so all client UI and runtime paths—including Stage 5 and Stage 6—remain engine-unverified.
