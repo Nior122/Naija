@@ -55,6 +55,7 @@ const MAINTENANCE_STATUSES = new Set(["pending", "completed", "cancelled"]);
 const GOVERNMENT_LEVELS = new Set(["federal", "state", "local"]);
 const GOVERNMENT_ORGANISATION_STATUSES = new Set(["active", "inactive", "dissolved"]);
 const APPOINTMENT_STATUSES = new Set(["active", "ended", "removed"]);
+const OFFICE_STATUSES = new Set(["active", "suspended"]);
 const BUDGET_STATUSES = new Set(["draft", "approved", "active", "closed"]);
 const PROJECT_STATUSES = new Set([
   "proposed", "under_review", "approved", "funded", "in_progress", "completed", "suspended", "cancelled",
@@ -523,6 +524,10 @@ export function validateGovernmentRecords(maps: PersistentGovernmentMaps): Recor
     v.ref(r, "organisation_id", "governmentOrganisations", orgs);
     v.nonEmptyText(r, "label");
     v.bool(r, "unique");
+    // Optional and not normalised: a legacy office with no status is valid as it stands (absent means active), and a
+    // valid record must not be rewritten on load. Any other value is refused.
+    v.invariant("status", r.status === undefined || (typeof r.status === "string" && OFFICE_STATUSES.has(r.status)),
+      "must be one of the documented office statuses when present");
     v.timestamp(r, "created_at");
     v.timestamp(r, "updated_at");
   });

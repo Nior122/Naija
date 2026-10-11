@@ -1002,7 +1002,8 @@ export function scheduleHearing(
 
   const court = state.courts[courtId];
   if (!court) throw new Error("justice_court_not_found");
-  if (!court.assigned_judge_ids.includes(judgeCharacterId)) throw new Error("justice_judge_not_assigned");
+  if (!isAssignedJudgeForCase(state, caseId, judgeCharacterId)) throw new Error("justice_judge_not_assigned");
+  if (isCaseParty(state, caseId, judgeCharacterId)) throw new Error("justice_judge_conflicted");
 
   const hearingCount = Object.values(state.hearings).filter((h) => h.case_id === caseId).length;
   if (hearingCount >= catalog.rules.max_hearings_per_case) throw new Error("justice_hearing_limit_reached");
@@ -1049,11 +1050,15 @@ export function issueJudgment(
 ): JudgmentRecord {
   const caseRec = state.cases[caseId];
   if (!caseRec) throw new Error("justice_case_not_found");
+  // Judicial standing (J-2): an active judge or magistrate appointment to this case's own court, and the court's
+  // assignment. Anyone else, including a suspended or inactive judge, gets the same refusal as a missing case (J-3).
+  if (!isAssignedJudgeForCase(state, caseId, judgeCharacterId)) throw new Error("justice_case_not_found");
+  // Conflict (J-8): a judge who is a party to the case does not decide it.
+  if (isCaseParty(state, caseId, judgeCharacterId)) throw new Error("justice_judge_conflicted");
   if (caseRec.status !== "awaiting_judgment") throw new Error("justice_case_not_awaiting_judgment");
 
   const court = state.courts[caseRec.court_id];
   if (!court) throw new Error("justice_court_not_found");
-  if (!court.assigned_judge_ids.includes(judgeCharacterId)) throw new Error("justice_judge_not_assigned");
 
   if (reasoning.length > catalog.rules.judgment_reasoning_max_length) throw new Error("justice_judgment_reasoning_too_long");
 
@@ -1364,6 +1369,7 @@ export function justiceErrorMessage(code: string): string {
     justice_professional_age_ineligible: "Character does not meet minimum age for this legal role.",
     justice_already_professional: "Character already holds an active legal professional appointment.",
     justice_judge_not_assigned: "Judge is not assigned to this court.",
+    justice_judge_conflicted: "A judge who is a party to this case cannot decide it.",
     justice_hearing_wrong_court: "Hearing must be in the case's assigned court.",
     justice_hearing_limit_reached: "Maximum hearings per case reached.",
     justice_hearing_notes_too_long: "Hearing notes are too long.",

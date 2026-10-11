@@ -13,6 +13,7 @@ import type {
   GovernmentEventRecord,
   GovernmentExpenditureRecord,
   GovernmentLevel,
+  GovernmentOfficeRecord,
   GovernmentOrganisationRecord,
   GovernmentOrganisationSnapshot,
   GovernmentProjectRecord,
@@ -24,6 +25,9 @@ import type {
 } from "./types.js";
 import type { PersistentPlayer, PersistentWorldState } from "../multiplayer/types.js";
 import type { CalendarDate } from "../life/types.js";
+import { compareDates } from "../life/calendar.js";
+import { isOfficeSuspended } from "./authority.js";
+import type { OfficeStatus } from "./types.js";
 
 function cloneDate(date: CalendarDate): CalendarDate {
   return { year: date.year, month: date.month, day: date.day };
@@ -186,6 +190,8 @@ export function appointOfficial(
 ): AppointmentRecord {
   const office = state.governmentOffices[officeId];
   if (!office) throw new Error("government_office_not_found");
+  // A suspended office cannot be filled (Stage 30). Suspension is an administrative state with no player route.
+  if (isOfficeSuspended(office)) throw new Error("government_office_suspended");
 
   const player = characterForId(state, characterId);
   if (!player) throw new Error("government_character_not_found");
@@ -978,10 +984,68 @@ export function getCharacterAppointments(state: PersistentWorldState, characterI
     });
 }
 
-export function processGovernmentWorldDate(state: PersistentWorldState): number {
-  // Future: auto-expire terms, process recurring budgets, etc.
-  void state;
-  return 0;
+/** Daily government processing: term expiry. Returns the number of appointments that ended. */
+export function processGovernmentWorldDate(state: PersistentWorldState, date: CalendarDate, now: number): number {
+  return expireElapsedTerms(state, date, now);
+}
+
+/**
+ * Ends every active appointment whose term has ended on or before the date. Each ended term gets an audit event.
+ * Appointments with no term end (every appointment created so far) are not affected. Running it again on the same date
+ * changes nothing, because an ended appointment is no longer active.
+ */
+export function expireElapsedTerms(state: PersistentWorldState, date: CalendarDate, now: number): number {
+  let expired = 0;
+  const timestamp = new Date(now).toISOString();
+  for (const appointment of Object.values(state.governmentAppointments)) {
+    if (appointment.status !== "active") continue;
+    if (!appointment.end_world_date || compareDates(appointment.end_world_date, date) > 0) continue;
+    appointment.status = "ended";
+    appointment.end_date = appointment.end_date ?? timestamp;
+    appointment.end_reason = "Term ended.";
+    appointment.updated_at = timestamp;
+    const office = state.governmentOffices[appointment.office_id];
+    const org = office ? state.governmentOrganisations[office.organisation_id] : undefined;
+    if (org) {
+      org.updated_at = timestamp;
+      appendGovernmentEvent(state, org.organisation_id, "appointment_ended",
+        `Term ended for ${office?.label ?? appointment.office_id}.`, date, now,
+        { office_id: appointment.office_id, character_id: appointment.character_id, appointment_id: appointment.appointment_id, reason: "term_ended" });
+    }
+    expired += 1;
+  }
+  return expired;
+}
+
+/**
+ * Trusted, administrative change of an office's status. Suspension stops all authority over the office. It does not
+ * remove the holder's appointment, so reinstating the office restores the existing holder's authority. No player route
+ * calls this function.
+ */
+export function setGovernmentOfficeStatus(
+  state: PersistentWorldState,
+  officeId: string,
+  status: OfficeStatus,
+  reason: string,
+  date: CalendarDate,
+  now: number,
+): GovernmentOfficeRecord {
+  const office = state.governmentOffices[officeId];
+  if (!office) throw new Error("government_office_not_found");
+  if (status !== "active" && status !== "suspended") throw new Error("government_office_status_invalid");
+  const previous = office.status ?? "active";
+  if (previous === status) return office;
+  const timestamp = new Date(now).toISOString();
+  office.status = status;
+  office.updated_at = timestamp;
+  const org = state.governmentOrganisations[office.organisation_id];
+  if (org) {
+    org.updated_at = timestamp;
+    appendGovernmentEvent(state, org.organisation_id, status === "suspended" ? "office_suspended" : "office_reinstated",
+      `${office.label} ${status === "suspended" ? "suspended" : "reinstated"}. ${reason.trim()}`.trim(), date, now,
+      { office_id: officeId, status, previous_status: previous });
+  }
+  return office;
 }
 
 export function governmentErrorMessage(code: string): string {
@@ -992,6 +1056,10 @@ export function governmentErrorMessage(code: string): string {
     government_character_deceased: "Deceased characters cannot hold government office.",
     government_age_ineligible: "Character does not meet the minimum age requirement for this office.",
     government_office_already_occupied: "This office already has an active occupant.",
+    government_office_suspended: "This office is suspended and cannot be filled.",
+    government_office_status_invalid: "Invalid office status.",
+    government_authority_none: "You do not hold an active office with authority over this organisation.",
+    government_authority_scope: "Your office does not cover this organisation.",
     government_appointment_limit_reached: "Character already holds the maximum number of government appointments.",
     government_appointment_not_found: "Appointment not found.",
     government_appointment_not_active: "This appointment is not active.",

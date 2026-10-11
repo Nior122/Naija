@@ -101,17 +101,23 @@ function addPlayer(world, name, age, stateId = "ng:state:fc") {
   return characterId;
 }
 
-function setupElectionWithCandidate(world, adminId, electionType = "presidential", jurisdictionId = null) {
+/**
+ * Sets up an election with one approved candidate. The candidate is a separate citizen (E-2: a candidate may not approve,
+ * certify, or publish their own election), so the administrator approves and administers as a non-candidate.
+ */
+function setupElectionWithCandidate(world, adminId, electionType = "presidential", jurisdictionId = null, candidateName = "Candidate") {
   const catalog = loadElectionsCatalog();
   const party = createPoliticalParty(world.state, "Test Party", "TP", "Desc", adminId, [], world.date, world.now, catalog);
   registerPoliticalParty(world.state, party.party_id, adminId, world.date, world.now);
+  const candidateId = addPlayer(world, candidateName, 45);
+  joinPoliticalParty(world.state, party.party_id, candidateId, world.date, world.now, catalog);
   const election = createElection(world.state, electionType, jurisdictionId, null, adminId,
     "2025-01-01T00:00:00Z", "2025-02-01T00:00:00Z",
     "2025-02-02T00:00:00Z", "2025-04-01T00:00:00Z",
     "2025-04-02T00:00:00Z", "2025-04-15T00:00:00Z",
     world.date, world.now);
   advanceElectionPhase(world.state, election.election_id, "candidate_registration", adminId, world.date, world.now);
-  const candidate = registerCandidate(world.state, election.election_id, adminId, party.party_id, null, world.date, world.now, catalog);
+  const candidate = registerCandidate(world.state, election.election_id, candidateId, party.party_id, null, world.date, world.now, catalog);
   approveCandidate(world.state, candidate.candidate_id, adminId, world.date, world.now);
   advanceElectionPhase(world.state, election.election_id, "screening", adminId, world.date, world.now);
   advanceElectionPhase(world.state, election.election_id, "campaign", adminId, world.date, world.now);
@@ -353,7 +359,10 @@ test("approveCandidate and withdrawCandidate work correctly", () => {
     "2025-01-01T00:00:00Z", "2025-02-01T00:00:00Z", "2025-02-02T00:00:00Z", "2025-04-01T00:00:00Z",
     "2025-04-02T00:00:00Z", "2025-04-15T00:00:00Z", world.date, world.now);
   advanceElectionPhase(world.state, election.election_id, "candidate_registration", adminId, world.date, world.now);
-  const candidate = registerCandidate(world.state, election.election_id, adminId, party.party_id, null, world.date, world.now, catalog);
+  // The nominee is a separate citizen (E-2). The administrator approves; the nominee cannot approve their own candidacy.
+  const nomineeId = addPlayer(world, "Nominee", 45);
+  joinPoliticalParty(world.state, party.party_id, nomineeId, world.date, world.now, catalog);
+  const candidate = registerCandidate(world.state, election.election_id, nomineeId, party.party_id, null, world.date, world.now, catalog);
   const approved = approveCandidate(world.state, candidate.candidate_id, adminId, world.date, world.now);
   assert.equal(approved.status, "approved");
   const withdrawn = withdrawCandidate(world.state, candidate.candidate_id, world.date, world.now);
@@ -406,7 +415,10 @@ test("countVotes tallies ballots and identifies winner", () => {
     "2025-01-01T00:00:00Z", "2025-02-01T00:00:00Z", "2025-02-02T00:00:00Z", "2025-04-01T00:00:00Z",
     "2025-04-02T00:00:00Z", "2025-04-15T00:00:00Z", world.date, world.now);
   advanceElectionPhase(world.state, election.election_id, "candidate_registration", adminId, world.date, world.now);
-  const c1 = registerCandidate(world.state, election.election_id, adminId, party.party_id, null, world.date, world.now, catalog);
+  // E-2: the first candidate is a separate citizen; the administrator approves but does not stand.
+  const charId1 = addPlayer(world, "Candidate1", 41);
+  joinPoliticalParty(world.state, party.party_id, charId1, world.date, world.now, catalog);
+  const c1 = registerCandidate(world.state, election.election_id, charId1, party.party_id, null, world.date, world.now, catalog);
   const c2 = registerCandidate(world.state, election.election_id, charId2, party.party_id, null, world.date, world.now, catalog);
   approveCandidate(world.state, c1.candidate_id, adminId, world.date, world.now);
   approveCandidate(world.state, c2.candidate_id, adminId, world.date, world.now);
@@ -423,7 +435,7 @@ test("countVotes tallies ballots and identifies winner", () => {
   advanceElectionPhase(world.state, election.election_id, "counting", adminId, world.date, world.now);
   const result = countVotes(world.state, election.election_id, world.date, world.now);
   assert.equal(result.total_valid_votes, 4);
-  assert.equal(result.winner_character_id, adminId);
+  assert.equal(result.winner_character_id, charId1);
   assert.equal(result.is_tie, false);
   assert.equal(result.status, "preliminary");
 });
@@ -451,16 +463,16 @@ test("transferElectedOffice assigns winner to correct government office", () => 
   initializeElectionWorldState(world.state);
   const govCatalog = loadGovernmentCatalog();
   seedGovernmentWorld(world.state, world.date, world.now, govCatalog);
-  const winnerId = addPlayer(world, "Winner", 42);
-  const { election, candidate } = setupElectionWithCandidate(world, winnerId);
+  const adminId = addPlayer(world, "Administrator", 40);
+  const { election, candidate } = setupElectionWithCandidate(world, adminId);
   const voterId = addPlayer(world, "Voter", 25);
   castBallot(world.state, election.election_id, voterId, candidate.candidate_id, world.date, world.now);
-  advanceElectionPhase(world.state, election.election_id, "counting", winnerId, world.date, world.now);
+  advanceElectionPhase(world.state, election.election_id, "counting", adminId, world.date, world.now);
   countVotes(world.state, election.election_id, world.date, world.now);
-  certifyElectionResult(world.state, election.election_id, winnerId, world.date, world.now);
-  publishElectionResult(world.state, election.election_id, winnerId, world.date, world.now);
+  certifyElectionResult(world.state, election.election_id, adminId, world.date, world.now);
+  publishElectionResult(world.state, election.election_id, adminId, world.date, world.now);
   const appointment = transferElectedOffice(world.state, election.election_id, world.date, world.now);
-  assert.equal(appointment.character_id, winnerId);
+  assert.equal(appointment.character_id, candidate.character_id, "the winning candidate takes office");
   assert.equal(appointment.status, "active");
   assert.ok(appointment.appointed_by.startsWith("election:"));
 });

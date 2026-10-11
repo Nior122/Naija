@@ -1421,7 +1421,7 @@ export class MultiplayerWorld {
     processEconomyWorldDate(this.store.state, this.store.state.worldClock.world_date, this.now(), this.economyCatalog);
     processBusinessWorldDate(this.store.state, this.store.state.worldClock.world_date, this.now(), this.businessCatalog);
     processPropertyWorldDate(this.store.state);
-    processGovernmentWorldDate(this.store.state);
+    processGovernmentWorldDate(this.store.state, this.store.state.worldClock.world_date, this.now());
     processElectionWorldDate(this.store.state, this.store.state.worldClock.world_date, this.now());
     processJusticeWorldDate(this.store.state, this.store.state.worldClock.world_date, this.now());
     processCareerWorldMinute(this.store.state, this.store.state.worldClock.world_date,

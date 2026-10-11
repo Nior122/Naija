@@ -28,6 +28,7 @@ import {
   getCourt,
   listCourts,
   appointLegalProfessional,
+  assignJudgeToCourt,
   fileCase,
   advanceCaseStatus,
   getCase,
@@ -368,8 +369,9 @@ test("issueJudgment issues a judgment for a case awaiting judgment", () => {
   const claimantId = addPlayer(world, "Claimant", 30);
   const judgeId = addPlayer(world, "Judge", 45);
   const caseRec = fileCase(world.state, "civil_general", "court:state-high-fct", claimantId, null, "Summary.", "Desc.", [], null, world.date, world.now, catalog);
-  // Assign judge to court
-  world.state.courts["court:state-high-fct"].assigned_judge_ids = [judgeId];
+  // Appoint the judge (trusted path) and assign to the court: judicial standing needs the appointment, not a list entry.
+  const pro = appointLegalProfessional(world.state, judgeId, "judge", [], "operator-seed", world.date, world.now, catalog);
+  assignJudgeToCourt(world.state, "court:state-high-fct", judgeId, pro.professional_id, world.date, world.now);
   // Advance case to awaiting_judgment
   advanceCaseStatus(world.state, caseRec.case_id, "accepted", claimantId, world.date, world.now);
   advanceCaseStatus(world.state, caseRec.case_id, "pretrial", claimantId, world.date, world.now);
@@ -410,7 +412,8 @@ test("fileAppeal and decideAppeal work correctly", () => {
   const claimantId = addPlayer(world, "Claimant", 30);
   const judgeId = addPlayer(world, "Judge", 45);
   const caseRec = fileCase(world.state, "civil_general", "court:state-high-fct", claimantId, null, "Summary.", "Desc.", [], null, world.date, world.now, catalog);
-  world.state.courts["court:state-high-fct"].assigned_judge_ids = [judgeId];
+  const pro2 = appointLegalProfessional(world.state, judgeId, "judge", [], "operator-seed", world.date, world.now, catalog);
+  assignJudgeToCourt(world.state, "court:state-high-fct", judgeId, pro2.professional_id, world.date, world.now);
   advanceCaseStatus(world.state, caseRec.case_id, "accepted", claimantId, world.date, world.now);
   advanceCaseStatus(world.state, caseRec.case_id, "pretrial", claimantId, world.date, world.now);
   advanceCaseStatus(world.state, caseRec.case_id, "awaiting_hearing", claimantId, world.date, world.now);

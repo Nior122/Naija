@@ -81,8 +81,9 @@ function cashAccount(state, characterId) {
 }
 
 /**
- * Builds a case with a judgment and an appeal using trusted service functions on the test state. The judge is an
- * assigned judge of the court, which no player route can do yet. Returns the identifiers the requests need.
+ * Builds a case with a judgment and an appeal using trusted service functions on the test state. The judge is appointed
+ * and assigned to the court through the trusted path (appointLegalProfessional, then assignJudgeToCourt), which no
+ * player route can do yet. Returns the identifiers the requests need.
  */
 function buildAppealChain(backend, filer, respondent, judge) {
   const state = backend.store.state;
@@ -90,7 +91,8 @@ function buildAppealChain(backend, filer, respondent, judge) {
   const now = Date.now();
   const catalog = J.loadJusticeCatalog();
   J.seedJusticeWorld(state, date, now, catalog);
-  state.courts[COURT_ID].assigned_judge_ids = [judge.characterId];
+  const pro = J.appointLegalProfessional(state, judge.characterId, "judge", [], "operator-seed", date, now, catalog);
+  J.assignJudgeToCourt(state, COURT_ID, judge.characterId, pro.professional_id, date, now);
   const caseRec = J.fileCase(state, "civil_general", COURT_ID, filer.characterId, respondent.characterId, "Summary.", "Desc.", [], null, date, now, catalog);
   for (const status of ["accepted", "pretrial", "awaiting_hearing", "in_hearing", "awaiting_judgment"]) {
     J.advanceCaseStatus(state, caseRec.case_id, status, filer.characterId, date, now);

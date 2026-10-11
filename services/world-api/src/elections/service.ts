@@ -100,6 +100,17 @@ function activeAppointmentForOffice(state: PersistentWorldState, officeId: strin
   ) ?? null;
 }
 
+/**
+ * E-2 (Stage 28 authority model): a candidate in an election may not approve, certify, or publish that election's
+ * result, and may not approve their own candidacy. Any candidacy record for the election counts, whatever its status,
+ * so that a withdrawn or rejected candidate is still excluded from administering the same election.
+ */
+function isCandidateInElection(state: PersistentWorldState, electionId: string, characterId: string): boolean {
+  return Object.values(state.candidates).some(
+    (c) => c.election_id === electionId && c.character_id === characterId,
+  );
+}
+
 function endExistingAppointment(state: PersistentWorldState, officeId: string, reason: string, date: CalendarDate, now: number): void {
   const existing = activeAppointmentForOffice(state, officeId);
   if (!existing) return;
@@ -646,6 +657,8 @@ export function approveCandidate(
   const candidate = state.candidates[candidateId];
   if (!candidate) throw new Error("elections_candidate_not_found");
   if (candidate.status !== "pending") throw new Error("elections_candidate_not_pending");
+  // E-2: no one approves their own candidacy.
+  if (approvedBy === candidate.character_id) throw new Error("elections_self_approval_refused");
 
   const player = characterForId(state, candidate.character_id);
   const timestamp = new Date(now).toISOString();
@@ -1106,6 +1119,8 @@ export function certifyElectionResult(
 ): ElectionResultRecord {
   const election = state.elections[electionId];
   if (!election) throw new Error("elections_election_not_found");
+  // E-2: a candidate in this election does not certify its result.
+  if (isCandidateInElection(state, electionId, certifiedBy)) throw new Error("elections_self_certification_refused");
   if (!election.results) throw new Error("elections_no_results_to_certify");
   if (election.results.status === "certified") throw new Error("elections_already_certified");
   if (election.results.is_tie) throw new Error("elections_tie_cannot_certify");
@@ -1131,6 +1146,8 @@ export function publishElectionResult(
 ): ElectionResultRecord {
   const election = state.elections[electionId];
   if (!election) throw new Error("elections_election_not_found");
+  // E-2: a candidate in this election does not publish its result.
+  if (isCandidateInElection(state, electionId, publishedBy)) throw new Error("elections_self_certification_refused");
   if (!election.results) throw new Error("elections_no_results");
   if (election.results.status !== "certified" && election.results.status !== "preliminary") {
     throw new Error("elections_result_not_ready");
@@ -1164,6 +1181,9 @@ export function transferElectedOffice(
   }
   if (!election.results.winner_character_id) throw new Error("elections_no_winner");
   if (election.results.is_tie) throw new Error("elections_tie_no_transfer");
+  // E-4: one transfer per certified result. A second request is refused and changes nothing.
+  const transferred = Object.values(state.governmentAppointments).some((a) => a.appointed_by === `election:${electionId}`);
+  if (transferred) throw new Error("elections_office_already_transferred");
 
   // Find the matching office
   const match = findOfficeForElection(state, election);
@@ -1492,6 +1512,9 @@ export function electionsErrorMessage(code: string): string {
     elections_candidate_wrong_election: "Candidate does not belong to this election.",
     elections_no_results_to_certify: "No results to certify.",
     elections_already_certified: "Election result is already certified.",
+    elections_self_approval_refused: "A candidate cannot approve their own candidacy.",
+    elections_self_certification_refused: "A candidate in an election cannot certify or publish its result.",
+    elections_office_already_transferred: "This election result has already been used to transfer office.",
     elections_tie_cannot_certify: "Cannot certify an election with a tie.",
     elections_no_results: "No results available.",
     elections_result_not_ready: "Election result is not ready for publication.",

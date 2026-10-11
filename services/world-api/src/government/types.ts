@@ -19,6 +19,9 @@ export type AppointmentStatus = "active" | "ended" | "removed";
 
 export type BudgetStatus = "draft" | "approved" | "active" | "closed";
 
+/** An office is active unless suspended. Suspension removes all office authority over it (see authority.ts). */
+export type OfficeStatus = "active" | "suspended";
+
 export interface GovernmentLevelDefinition {
   readonly id: GovernmentLevel;
   readonly label: string;
@@ -134,6 +137,8 @@ export interface GovernmentOfficeRecord {
   readonly organisation_id: string;
   label: string;
   unique: boolean;
+  /** Absent or null means active (records seeded before Stage 30 have no field). */
+  status?: OfficeStatus | null;
   created_at: string;
   updated_at: string;
 }

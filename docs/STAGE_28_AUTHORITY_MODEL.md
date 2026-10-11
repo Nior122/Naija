@@ -2,6 +2,8 @@
 
 Status update (2026-10-11, authority mission): the rule-by-rule implementation and test map is in `docs/STAGE_29_REGIONAL_VISUAL_PROFILES_AUDIT.md` section 28. No rule below was changed by that work. Rows marked SUSPENDED stay suspended, because the owner decisions they depend on are still open.
 
+Status update (Stage 30, hybrid governance foundation): the rows below marked "Stage 30" are implemented in the trusted service layer and tested. None of them re-opens a player route. Every government and election write is still refused at the engine, so no row marked SUSPENDED is enabled. The stage record is `docs/STAGE_30_GOVERNMENT_ELECTION_AUTHORITY.md`.
+
 Status: DESIGN, minimal rule set, revisable. Most consequential mutations are SUSPENDED until these rules are implemented and each route has server-side checks and negative tests. Nothing here is a claim that the rules are implemented, except where a row says so.
 
 Principles (apply to every family):
@@ -16,9 +18,9 @@ Principles (apply to every family):
 | Rule | Adopted minimal rule | Status |
 |---|---|---|
 | G-1 Initial officials | Seeded by server world initialisation only. No player route can create initial officials. | Seeding exists; initial seeding is not a player route. |
-| G-2 Who appoints | An office is filled by (a) certified election transfer (`transfer_office` flow, server-side, one per certified result), or (b) an appointing official whose office is named as the appointing authority for that office in the government definition. Platform-level appointment is not a player action. | `appoint` and `remove_official` SUSPENDED (see STAGE_28_GOVERNMENT_AUTHORIZATION.md). Rule (b) needs the appointing-office table, which is a DECISION. |
-| G-3 Removal | Only the appointing office, or a certified election replacing the holder. | Suspended with G-2. |
-| G-4 Budgets, revenue, expenditure | Only the holder of the office that owns the budget (its ministry or government level) may create or record against it. Spending must not exceed the approved amount. A refused request changes no treasury. | `create_budget`, `record_revenue`, `record_expenditure` SUSPENDED. |
+| G-2 Who appoints | An office is filled by (a) certified election transfer (`transfer_office` flow, server-side, one per certified result), or (b) an appointing official whose office is named as the appointing authority for that office in the government definition. Platform-level appointment is not a player action. | `appoint` and `remove_official` SUSPENDED (see STAGE_28_GOVERNMENT_AUTHORIZATION.md). Rule (b) needs the appointing-office table, which is a DECISION. Stage 30: `appointOfficial` refuses a suspended office (`government_office_suspended`). Authority is granted only by an effective appointment (resolver `authorizeGovernmentActor`). |
+| G-3 Removal | Only the appointing office, or a certified election replacing the holder. | Suspended with G-2. Stage 30: an appointment ends at its term end (`appointment_ended`, idempotent). The holder loses authority at that point, and the resolver checks the term on every call, not only when the term is processed. A suspended office keeps its holder but confers no authority (`office_suspended`, reversible by `office_reinstated`). |
+| G-4 Budgets, revenue, expenditure | Only the holder of the office that owns the budget (its ministry or government level) may create or record against it. Spending must not exceed the approved amount. A refused request changes no treasury. | `create_budget`, `record_revenue`, `record_expenditure` SUSPENDED. Stage 30: no treasury change. The owning-office table is R-b (DECISION), and the budget age rule is R-f (DECISION). Stage 30 provides only the authority check that a future budget route would call. |
 | G-5 Projects | Proposed by any eligible citizen; approved and funded only by the owning office. A proposer cannot approve or fund their own project. | `create_project`, `update_project`, `fund_project` SUSPENDED. |
 | G-6 Announcements | Only the holder of a communications or executive office. | `publish_announcement` SUSPENDED. |
 | G-7 Public financial eligibility | An official holding a budget or fund authority must not hold a conflicting interest in the recipient (for example, an appointing official may not be the recipient). Checked server-side. | Not implemented. DECISION: definition of "conflicting interest". |
@@ -29,16 +31,17 @@ Principles (apply to every family):
 | Rule | Adopted minimal rule | Status |
 |---|---|---|
 | E-1 Election oversight | Election administration (scheduling, certification, publication) is performed by an electoral authority office, not by a candidate. | Election writes SUSPENDED. The electoral authority office is a DECISION (not yet in the model). |
-| E-2 Self-certification | A candidate may not approve their own candidacy, certify, or publish their own election result. Checked against the candidate's character ID and the election record. | Not implemented; writes suspended. |
+| E-2 Self-certification | A candidate may not approve their own candidacy, certify, or publish their own election result. Checked against the candidate's character ID and the election record. | Stage 30: IMPLEMENTED in the service layer (`elections_self_approval_refused`, `elections_self_certification_refused`). A withdrawn candidate is still excluded. Tested in `election-authority.test.mjs` and `elections.test.mjs`. Election writes at the engine remain SUSPENDED. |
 | E-3 Voting | One ballot per eligible voter per election; eligibility from the voter's own character record. | Suspended with the election writes. |
-| E-4 Office transfer | Only from a certified result, once, with a link to the election. Preserves prior appointment history. | Suspended. |
+| E-4 Office transfer | Only from a certified result, once, with a link to the election. Preserves prior appointment history. | Stage 30: IMPLEMENTED in the service layer. A second `transferElectedOffice` for the same election is refused (`elections_office_already_transferred`) and changes no appointment. Engine election writes remain SUSPENDED. |
 
 ## 3. Justice (D-01, D-02, D-03)
 
 | Rule | Adopted minimal rule | Status |
 |---|---|---|
 | J-1 Assignment | A judge is assigned to a court only through the trusted appointment path (appoint legal professional, then assign to court). No player route. | Trusted functions exist; no player route. |
-| J-2 Judicial standing for a case | Active judge or magistrate appointment, assigned to the case's own court. | IMPLEMENTED (`isAssignedJudgeForCase`). Tested through the socket. |
+| J-2 Judicial standing for a case | Active judge or magistrate appointment, assigned to the case's own court. | IMPLEMENTED (`isAssignedJudgeForCase`). Tested through the socket. Stage 30: a judge who is suspended or whose appointment ends loses standing at once. Refusals are `justice_case_not_found`, the same as a missing case (J-3). Tested on both backends in `judicial-authority.test.mjs`. |
+| J-8 Judicial conflict | A judge who is a party to a case (filing party, respondent, or active participant) may not issue its judgment or schedule its hearing. | Stage 30: IMPLEMENTED (`justice_judge_conflicted`). DEFAULT: conflict covers case parties only. Wider conflicts, such as family or business ties, are an owner decision. |
 | J-3 Case access | Parties (filing party, respondent, active participant) and assigned judges of the case's court may view. Everyone else gets `justice_case_not_found`. | IMPLEMENTED. Tested. Recorded in `docs/STAGE_28_CASE_ACCESS.md`. |
 | J-4 Evidence | Parties may submit, only while the case is open to evidence (filed through in hearing). An assigned judge may not submit evidence in that capacity. Anyone else gets `justice_case_not_found`, the same as a missing case. | IMPLEMENTED. Tested. Corrected in the case-access slice: non-parties previously received `justice_not_case_party`, which revealed that the case exists. See `docs/STAGE_28_CASE_ACCESS.md`. |
 | J-5 Appeal decision | Authorised, independently assigned judge of the appellate court; not the original judge; not a party; not conflicted. | SUSPENDED (`justice_appeal_decision_suspended`). Appellate assignment mechanism is not built. |
@@ -75,12 +78,26 @@ Principles (apply to every family):
 | C-1 Linking an incident to a police record | Only a police officer with authority over the incident's station. | `link_to_police` SUSPENDED (`crime_link_suspended`). |
 | C-2 Linking an incident to a justice case | Only a party to the case with standing over the incident, or the court's own process. Never a player-supplied case ID alone. | `link_to_justice` SUSPENDED (`crime_link_suspended`). |
 
+## Permanent rules R-a to R-f (from STAGE_28_GOVERNMENT_AUTHORIZATION.md)
+
+| Rule | Question | Status after Stage 30 |
+|---|---|---|
+| R-a Who may appoint, and to which offices | Appointing authority per office | NOT DECIDED. Only the trusted appointment path fills offices. A suspended office cannot be filled. No appointing-office table exists. |
+| R-b Which offices control budgets, projects, and announcements | Owning-office table | NOT DECIDED. G-4 to G-6 stay SUSPENDED. |
+| R-c Hierarchy | May a federal office act for a ministry, state, or locality? | DEFAULT: exact organisation scope only. No hierarchy is assumed. Seed data places all 10 offices, including state and local definitions, in `gov:federal`, so those offices grant nothing (`office_level_mismatch`). No state or local organisation exists. |
+| R-d Election authority | Who administers an election | NOT DECIDED. E-1 open. Stage 30 adds no electoral authority office. |
+| R-e Self-dealing | May a candidate approve or certify their own election? | DEFAULT, not an owner decision: no, under the adopted minimal rule E-2. Implemented in the service layer. The owner must confirm it. |
+| R-f Age for budgets | Minimum age for budget authority | NOT DECIDED. Office holders are 18+ by catalogue. No budget age rule exists. |
+
 ## Open decisions (need the user)
 
-1. G-2: the appointing-office table (which office appoints which office).
+1. G-2 / R-a: the appointing-office table (which office appoints which office), and the succession rule when an office falls vacant.
 2. G-7: the definition of a conflicting interest for public financial decisions.
-3. E-1: whether an electoral authority office exists in the model, and who holds it.
+3. E-1 / R-d: whether an electoral authority office exists in the model, and who holds it.
 4. M-2 / M-4 / M-6: whether recruiting, commanding, and unit roles are modelled as offices, or as service-record fields.
 5. P-2 / P-3: station command and the legal-basis record format.
+6. R-c: whether a federal office may act for a ministry, state, or locality. The current default is exact scope. The seed data's placement of every office in `gov:federal` must also be corrected (or confirmed) before any state or local office can grant authority.
+7. J-8: whether judicial conflict covers more than case parties (family, business, or prior advocacy).
+8. R-b / R-f: the budget owner table and the budget age rule.
 
-Until these are answered, the suspended rows stay suspended. The implemented rows are the only player-reachable consequential mutations that the rules above allow.
+Until these are answered, the suspended rows stay suspended. The implemented rows are the only player-reachable consequential mutations that the rules above allow. Stage 30 implemented rows are service-layer rules. Player routes that call them remain suspended.

@@ -27,14 +27,25 @@ export {
   getPublishedAnnouncements,
   getCharacterAppointments,
   processGovernmentWorldDate,
+  expireElapsedTerms,
+  setGovernmentOfficeStatus,
   governmentErrorMessage,
 } from "./service.js";
+export {
+  appointmentAuthorityState,
+  authorizeGovernmentActor,
+  effectiveOfficeGrants,
+  isLiveAppointment,
+  officeOccupancy,
+} from "./authority.js";
+export type { AppointmentAuthorityState, OfficeAuthorityDecision, OfficeAuthorityGrant, OfficeOccupancy } from "./authority.js";
 export type {
   GovernmentLevel,
   ProjectStatus,
   AnnouncementStatus,
   AppointmentStatus,
   BudgetStatus,
+  OfficeStatus,
   GovernmentLevelDefinition,
   MinistryDefinition,
   ProjectCategoryDefinition,
