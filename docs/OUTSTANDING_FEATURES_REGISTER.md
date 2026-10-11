@@ -77,8 +77,8 @@ This document tracks all features that are incomplete, partially implemented, or
 ---
 
 #### 1.3 Complete Visual Profiles for All 37 Regions
-**Status:** ⚠️ PARTIALLY COMPLETE (5/37)  
-**Current State:** 5 regions have environment profiles (Lagos, Ondo, Kaduna, Borno, Plateau)  
+**Status:** ⚠️ PARTIALLY COMPLETE (4/37 valid; Stage 29 Phase A audit complete, implementation not started)
+**Current State:** 4 regions have valid visual profiles (Lagos, Kaduna, Borno, Plateau). The Ondo entry is keyed to the non-existent `ng:state:od` instead of `ng:state:on`. See `docs/STAGE_29_REGIONAL_VISUAL_PROFILES_AUDIT.md`.
 **Target State:** All 36 states + FCT have environment profiles  
 **Dependencies:**
 - Regional environment data from Stage 22 (✅ Complete)

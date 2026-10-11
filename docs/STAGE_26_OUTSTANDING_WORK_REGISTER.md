@@ -374,7 +374,7 @@ Stage 20 created basic NPC system but advanced AI is missing.
 
 ### 13. Regional Environment Completion
 
-**Status:** ⚠️ PARTIAL (5 of 37 regions have visual profiles)  
+**Status:** ⚠️ PARTIAL (4 of 37 regions have valid visual profiles; Ondo's entry is keyed to a non-existent ID. Stage 29 Phase A audit complete: `docs/STAGE_29_REGIONAL_VISUAL_PROFILES_AUDIT.md`)
 **Impact:** LOW - Limited visual variety  
 **Estimated Effort:** 40-60 hours  
 **Dependencies:** 3D asset creation
