@@ -2319,3 +2319,204 @@ Save-writing suites: the matrix (f5a, 41 of 41), real runs t10 to t13, and the o
 - The matrix and fault-injection harness, and the mutation harness, are scratch-only and are not committed.
 - Real user data: not reachable from this sandbox. Not touched.
 - Production save code is not changed by this round. Hard-kill and read-only cases apply to test saves only.
+
+## 26. Academic fixtures, input context, and save-guard self-test (2026-10-11)
+
+### 26.1 Result
+
+- TEST-FX-2 (academic fixtures in `domain_smoke` and `save_restart`) is a test defect. It is fixed in the test code. Production code is unchanged. Both suites pass on commit `9e0532d`.
+- KEY-2 (Space for `jump` and `ui_accept`) is NOT AN ISSUE in the current contexts. A structural test now checks this. Revisit it if a GUI control is added to the 3D world.
+- Save recovery: each required behaviour group has a permanent, deterministic test (`game/tests/save_guard_headless.gd`, 77 checks). Three guard mutations were each caught.
+- FI-13 (hang after save) and FI-14 (runtime error after save) were re-run on the current code in scratch, twice each. Both pass. This coverage is temporary only and is not committed.
+- Stage 29 remains OPEN (rendered validation BLOCKED: graphical display unavailable). Stage 28 remains OPEN and was not re-audited here. Production is NOT READY. No claim is made for any of these.
+
+### 26.2 Repository state (verified before editing)
+
+- Branch `arena/00cdea0e-naija`. HEAD, upstream, and `origin/arena/00cdea0e-naija` were all `f95eeb5`. The working tree was clean.
+- `origin/arena/f48b6f8e-naija` = `02dd67c` (preserved, not touched). `origin/main` = `44483b4`.
+- Commits this round: `2936d61` (academic fixtures), `dff5a5c` (input context check), `9e0532d` (save-guard self-test and README). This section is committed after them.
+- No saves, backups, locks, harness files, or generated artifacts are tracked. The Godot user-data directories under `~/.local/share/godot` were not created or modified by this round's runs.
+
+### 26.3 Toolchain (executed today)
+
+- Godot `4.7.2.stable.custom_build.ed1daf0bf`, built from source at `/tmp/godot-src` (editor binary sha256 prefix `b7052e20`). The official release binary is not reachable from this sandbox, so it is NOT VERIFIED.
+- Node v22.22.3, npm 10.9.8.
+- Isolation: every Godot run copied `game/` into a fresh scratch directory with `HOME` and `XDG_DATA_HOME` pointed at scratch paths. The repository was never a test working directory. Two-process `save_restart` runs share one scratch base.
+
+### 26.4 Academic fixtures (TEST-FX-2)
+
+Failing assertions on `f95eeb5` (run today, custom build):
+
+- `domain_smoke`: `Save/load restores academic data`. Restored Biology = 64, expected 88. Exit 1; 1 failing check.
+- `save_restart --read`: `academic result` (64, expected 88) and `attendance and inventory` (attendance size 0, expected 1). Exit 1.
+
+Trace:
+
+1. The fixtures set `character.academic_scores["Biology"] = 88` and append a legacy `attendance` entry.
+2. `save_state` writes the legacy views and `education_record`.
+3. `CharacterState.load_dictionary` ends with `advance_life_to_date`, which reaches `ensure_life_data`, and it also calls `EducationService.sync_legacy_character` itself. The sync rebuilds `academic_scores` and `attendance` from `education_record`, so the direct writes are discarded.
+4. Scratch probe P1 confirmed it: after load, Biology = 64 (the record value) and the attendance view is empty. Probe P2 confirmed the production route: `EducationService.record_result(character, 3, "Biology", true, "11:30")` writes the record, the attendance record, and the derived view. After save and load the view equals the record-derived view (80 in the day-3 probe) and attendance has 1 entry.
+
+Intended invariant (documented, not inferred): `docs/EDUCATION_PLAN.md` (line 22), `docs/ARCHITECTURE.md` (line 111), and `docs/DATABASE_PLAN.md` (line 24) place the academic record in `CharacterRecord.education_record`. The legacy score and attendance fields are input only for version-1 saves, which are migrated when the record is absent or invalid (`migrate_legacy_record`).
+
+Classification: broken fixture. The test wrote a derived view. It is not a serialization defect, a validation defect, or missing data. The cause is shared by both suites.
+
+Fix (test code only, smallest responsible component):
+
+- `domain_smoke` and `save_restart` record the Biology result through `record_result`. The expected value is the record-derived value, not the hard-coded 88. `save_restart --read` also requires a value that differs from the starting score (64), so the check cannot pass on the starting record alone.
+- `domain_smoke` gains a permanent regression check, `_test_legacy_academic_view_is_rebuilt_on_load`. It asserts that a direct write to the legacy views does not survive save and load, and that the restored view matches the record.
+- No assertions were removed or weakened.
+
+Evidence:
+
+- `f95eeb5` (before): `domain_smoke` exit 1; `save_restart --read` exit 1 with two failures.
+- `9e0532d` (after): `domain_smoke` exit 0, 98 checks (97 to 99 across runs); `save_restart` write exit 0, read exit 0.
+- Mutation (scratch only): the three `sync_legacy_character(self)` calls in `character_state.gd` were disabled. `domain_smoke` exit 1, with exactly the three new projection checks failing. So the regression check detects the defect it guards against.
+
+Owner decision: not needed. The rule is set by the documents above. Observation, not a defect: the save file also persists the derived legacy views. They are rebuilt on load, so this is harmless.
+
+Status: TEST-FX-2, SMOKE-1, and SR-1 are FIXED_VERIFIED (fixture side; custom build).
+
+### 26.5 Input policy (KEY-1, KEY-2, ACT-1)
+
+Configured bindings (`game/project.godot`, `[input]`): `toggle_3d_mode` = physical F3 (4194334); `jump` = physical Space (32); `toggle_first_person` = physical V (86). `ui_accept` is not overridden, so it uses the engine default, which includes Space (observed true by the test).
+
+Context proof (code and test):
+
+- `jump` is read only at `3d_world/scripts/character_3d.gd:48`. That character is attached only in `world_3d.tscn`.
+- `world_3d.tscn` has no `Control` or `CanvasLayer` node (the test counts 0).
+- While 3D is active, the 2D session is suspended (`process_mode` DISABLED). Switching to 3D is refused while a modal is open. A modal also disables player movement.
+
+Result: Space jump and Space UI activation are not live in the same context. KEY-2 is NOT AN ISSUE for the current contexts. Residual risk: if a `Control` is added to the 3D world, the overlap becomes live and must be decided again.
+
+Test: `input_bindings_headless.gd` now runs `_check_space_contexts` (2 checks: only `character_3d.gd` reads `jump`; `world_3d.tscn` has no GUI node). Scratch mutation (a `Control` added to the 3D scene): exit 1, 1 of 26 checks failing. The 2D modal gate is not covered by a test. Its evidence is code reading only.
+
+- KEY-1 (F3 for `toggle_3d_mode`): confirmed by commit `cd1703c` ("Standardize world-switch key on F3") and the Stage 23 documents. Configured and tested. Physical keypress: BLOCKED (graphical display unavailable).
+- `jump` = Space: documented ("Space to jump", `docs/ADVANCED_3D_WORLD_ARCHITECTURE.md`). Kept unchanged.
+- `toggle_first_person` = V: no documented key in docs or history. Commit `e6ff46c` says "These are default bindings; confirm them with the owner." Left unchanged. OWNER DECISION.
+- Touch controls: `create_action_button` has no caller that passes `"jump"`, so no touch jump control exists.
+
+No binding was changed in this round.
+
+### 26.6 Save recovery (guard)
+
+Permanent test: `game/tests/save_guard_headless.gd` (77 checks, exit 0, 0 skipped on Linux as non-root). It uses only the test slot `user://naija-guard-selftest-slot.json`, never the player's save. It uses no timing. A crash is simulated by abandoning a guard instance after `begin` and `observe`, then rewriting the recorded pid of that run to a process that has already exited. The guard then has proof that no run is active. The test refuses to start if any protocol file exists, so it never deletes another run's material.
+
+Coverage (scenario, status):
+
+| Required behaviour | Scenario | Status |
+|---|---|---|
+| Backup verified before modification | S01 | Permanent |
+| Existing save restored | S01 | Permanent |
+| Originally absent save | S02 | Permanent |
+| Refusal on ambiguous recovery state | S03 | Permanent |
+| Recovery-marker handling (observed change, stale lock, stray backup, unreadable manifest) | S04, S08, S09 | Permanent |
+| Byte mismatch | S05 | Permanent |
+| Restore failure, material kept, then recovery | S06 (chmod 444; skipped as root) | Permanent |
+| Repeated recovery attempts | S03, S06, S10 | Permanent |
+| Concurrent test starts | S07 | Permanent for the held-lock case. The true simultaneous race cannot be forced deterministically: NOT_VERIFIED |
+| Successful cleanup after verified restoration | S01, S04, S06 | Permanent |
+| No mutation when a run refuses to start | S03, S05, S07, S08 | Permanent |
+| FI-13 hang after save (watchdog restores) | scratch `run_fi.py`, 2 runs | Temporary only (timing; not committed) |
+| FI-14 runtime error after save (watchdog restores) | scratch `run_fi.py`, 2 runs | Temporary only (not committed) |
+
+Integration suites that use the guard, `return_path`, `ui_flow_headless`, and `load_confirmation_headless`, remain permanent and passed.
+
+FI-13 and FI-14 (this round, scratch copy, injected after the save point, watchdog set to 8 s): hang run, exit 1 at 8.5 s, watchdog message present, save restored byte for byte to the seed, no protocol file left. Runtime-error run, exit 1 at 8.5 s, `SCRIPT ERROR: Cannot call method` logged, same restore result. Both repeated. The original FI harness (`/tmp/naija-harness/fi_cases.py`) targets the pre-guard protocol and was not run. Its intent was taken from the watchdog comments in `return_path.gd` and TEST-10.
+
+Guard mutations (scratch only, one change each):
+
+- M1, ambiguous-state refusal removed: 7 of 75 checks fail.
+- M2, backup byte check removed during recovery: 3 fail.
+- M3, atomic lock check disabled (the `make_dir` call is kept): 2 fail (the two held-lock checks).
+- M3-broad, lock call removed entirely: 29 fail. This shows only that the lock is required. It is not counted as evidence for the atomic check.
+
+Limits:
+
+- A hard kill cannot be caught. TEST-9 remains KNOWN_LIMITATION (previously verified in 25.5).
+- The guard's protocol files are fixed under `user://`. The self-test must not run at the same time as another save-writing test. It refuses if any protocol file exists.
+- The restore-failure case needs a non-root user on Linux or macOS. Root ignores file permissions, so the case is skipped with a message.
+- The pid check uses `kill -0` on Linux and macOS only. On other platforms the guard treats a pid as active and refuses.
+- The unreadable-manifest case prints one expected engine line, `Parse JSON failed`, and the run is refused.
+- Production save code is not changed.
+
+### 26.7 Test results (tested commit `9e0532d`, executed 2026-10-11)
+
+| Suite | Exit | Result this run |
+|---|---|---|
+| domain_smoke | 0 | PASS, 98 checks (range 97 to 99 across runs) |
+| input_bindings_headless | 0 | PASS, 26 checks |
+| save_guard_headless | 0 | PASS, 77 checks, 0 skipped |
+| return_path | 0 | PASS, 47 checks |
+| ui_flow_headless | 0 | PASS, 57 checks |
+| load_confirmation_headless | 0 | PASS, 104 checks |
+| regional_handoff | 0 | PASS, 41 checks |
+| regional_visual_profiles | 0 | PASS, 43 checks |
+| performance_metrics | 0 | PASS, 11 checks |
+| persistence_notice | 0 | PASS, 11 checks |
+| player_movement | 0 | PASS, 4 checks |
+| session_policy | 0 | "all checks passed" (no count printed) |
+| save_restart (two processes) | 0 / 0 | write PASS, read PASS |
+
+Before (HEAD `f95eeb5`, run today): `domain_smoke` exit 1 (1 failing check, 92 or 93 total). `save_restart --read` exit 1 (2 failing checks).
+
+Counts vary between runs. `domain_smoke` ran 92 or 93 checks on HEAD and 97 to 99 on the working tree. The varying count does not change pass or fail, which was stable across all runs. Cause identified (not fully traced loop by loop): the actor ID includes a millisecond timestamp and a random number. `life_simulation_service.gd:216` derives the birthday offset from that ID, which changes the life-history loops that run. TEST-11 stays OPEN (Low). Counts are reported as ranges.
+
+Node: `npm test` exit 0. 1074 tests, 1037 pass, 0 fail, 37 skipped, 0 cancelled, 30 suites.
+
+Lint: `npm run lint` exit 1, 29 errors and 0 warnings. Breakdown: 24 `@typescript-eslint/no-unused-vars` and 5 `@typescript-eslint/no-explicit-any`, across 9 TypeScript files under `services/world-api/src`. This matches the 29-error baseline. No error was introduced, and this round changed no TypeScript. Not fixed (no sweeping changes).
+
+Historical results from earlier rounds (for example, 93 checks and the earlier academic failure) are superseded by the results above.
+
+### 26.8 Readiness by claim
+
+- Repository integrity: VERIFIED. The branch is clean, `origin/arena/f48b6f8e-naija` is preserved, and the remote tip is confirmed after the push (26.11).
+- Save-test safety: VERIFIED IN SCRATCH on the custom build, for the paths in 26.6. Test saves only. The official binary is not verified.
+- Core engine stability: all 13 Godot test files pass on `9e0532d` (exit 0). This is not a full playthrough.
+- Gameplay readiness: NOT ESTABLISHED. Rendered UI and physical input are blocked.
+- Stage 29: OPEN. Rendered validation is BLOCKED (graphical display unavailable).
+- Stage 28: OPEN. Not re-audited in this round. Not claimed.
+- Production: NOT READY. No claim is made.
+
+### 26.9 Consolidated issue register (supersedes 25.12 for the entries below; all other 25.12 entries stand)
+
+| ID | Component | Finding | Severity | Status | Evidence | Blocks release |
+|---|---|---|---|---|---|---|
+| TEST-FX-2 | Academic fixtures | Direct write to legacy views, discarded on load | Medium | FIXED_VERIFIED (fixture; production unchanged) | 26.4 | No |
+| SMOKE-1 | domain_smoke | Academic failure | Medium | FIXED_VERIFIED | 26.4 | No |
+| SR-1 | save_restart read | Academic and attendance failures | Medium | FIXED_VERIFIED | 26.4 | No |
+| TEST-2 | Backup read-back | Backup not read back and compared | High | FIXED_VERIFIED (guard); coverage permanent (S01, S05) | 25.12; 26.6 | No |
+| TEST-3 | Restore compare | Restore not compared to original | High | FIXED_VERIFIED; coverage permanent (S01, S04, S06) | 26.6 | No |
+| TEST-5 | Save-slot refusal | Refusal did not cover other tests' files | Medium | FIXED_VERIFIED; coverage permanent (S03, S07, S08) | 26.6 | No |
+| TEST-9 | Hard kill | Recovery material left by a kill | Medium | KNOWN_LIMITATION (unchanged) | 25.5; 26.6 | No |
+| TEST-10 | Runtime error, watchdog | Restore depends on the watchdog | Low | FIXED_VERIFIED (scratch, temporary only; FI-13 and FI-14, 2 runs each) | 26.6 | No |
+| TEST-11 | domain_smoke | Check total varies by run | Low | OPEN (cause identified, not fixed) | 26.7 | No |
+| GUARD-LOCK-1 | Atomic lock (`make_dir`) | Simultaneous start race cannot be forced; held-lock case covered | Low | NOT_VERIFIED (race window) | 26.6 | No |
+| SELFTEST-1 | Save-guard self-test | Must not run concurrently with other save tests | Low | KNOWN_LIMITATION (the test refuses in that case) | 26.6 | No |
+| KEY-1 | World-switch key | F3 | Low | DECIDED (cd1703c). Physical keypress BLOCKED | 26.5 | Yes, for Stage 29 rendered validation |
+| KEY-2 | Input | `ui_accept` and `jump` both use Space | Low | NOT AN ISSUE (current contexts; structural test) | 26.5 | No (revisit if GUI added to 3D world) |
+| ACT-1 | Input actions | `toggle_first_person` = V has no documented key | Low | OPEN (OWNER DECISION) | 26.5 | No |
+| LINT-1 | Lint | 29 errors, baseline unchanged | Low | OPEN (unchanged baseline, not fixed) | 26.7 | No |
+| ENV-2 | Display | No display server or GPU | High | BLOCKED | 25.3 | Yes, for Stage 29 close |
+| STAGE-29 | Rendered validation | Not performed | High | OPEN (BLOCKED: graphical display unavailable) | 26.1 | Yes |
+
+### 26.10 Owner decisions and next action
+
+- Owner decision: the `toggle_first_person` default (V) is not documented. Confirm it or choose another key. No change was made.
+- Owner note: `jump` = Space is documented and kept. Re-decide KEY-2 if a GUI control is added to the 3D world.
+- Single most important blocker: a graphical display and GPU for rendered validation. Stage 29, physical F3, and the modal dialog depend on it. Status: BLOCKED (GRAPHICAL DISPLAY UNAVAILABLE). No further attempts at screenshots or physical input were made in this round.
+
+### 26.11 Delivery
+
+- Commits on `arena/00cdea0e-naija`: `2936d61`, `dff5a5c`, `9e0532d`, and this audit commit. Pushed as a normal fast-forward. The remote tip is verified after the push.
+- Not staged: saves, backups, locks, harness files, probes, and fault-injection scripts. These remain in `/tmp/naija-harness/m2/` (scratch only, not committed).
+- Changed files: `game/tests/domain_smoke.gd`, `game/tests/save_restart.gd`, `game/tests/input_bindings_headless.gd`, `game/tests/save_guard_headless.gd` (new), `README.md` (test list), and this document. No production code, data, catalogs, climate, regional, `ng:state:fc`, environment-profile, time-of-day, authentication, Stage 28, or Stage 30 file was changed.
+
+### 26.12 Not tested, and limits
+
+- Physical keys, rendered UI, mouse input, and window close: BLOCKED (no display).
+- Official Godot release binary: not verified. All results are from the custom build.
+- FI-13 and FI-14 run in scratch only. They are timing-based and are not committed.
+- The simultaneous lock race (GUARD-LOCK-1) is not forced. NOT_VERIFIED.
+- The 2D modal gate that blocks switching to 3D is covered by code reading only.
+- Real user data: not reachable from this sandbox and not touched.
