@@ -5,7 +5,7 @@ class_name World3DController
 ## Manages the 3D environment, buildings, characters, and regional configuration
 
 # Regional configuration
-@export var region_id: String = "ng:state:od"  # Ondo State (Akure South)
+@export var region_id: String = "ng:state:on"  # Ondo State (Akure South)
 @export var environment_preset: String = "tropical_urban"
 
 # References
@@ -78,45 +78,10 @@ func _configure_environment() -> void:
 		push_warning("[World3D] Environment config not found")
 		return
 	
-	# Load regional environment profile from Stage 22 data
-	var env_profile = _load_regional_environment_profile()
-	if env_profile:
-		environment_config.apply_profile(env_profile)
-		emit_signal("environment_changed", environment_preset)
-
-func _load_regional_environment_profile() -> Dictionary:
-	"""Load environment profile for current region from Stage 22 data"""
-	# This would load from game/data/geography/regional-environment-profiles.json
-	# For now, return a default profile based on region
-	
-	var profiles = {
-		"ng:state:la": {  # Lagos
-			"climate": "tropical",
-			"terrain": "coastal",
-			"building_density": "high",
-			"vegetation": "sparse",
-			"ambient_sound": "urban",
-			"lighting": "bright"
-		},
-		"ng:state:od": {  # Ondo (Akure South)
-			"climate": "tropical",
-			"terrain": "forest",
-			"building_density": "medium",
-			"vegetation": "moderate",
-			"ambient_sound": "suburban",
-			"lighting": "normal"
-		},
-		"ng:state:kd": {  # Kaduna
-			"climate": "semi-arid",
-			"terrain": "savanna",
-			"building_density": "medium",
-			"vegetation": "sparse",
-			"ambient_sound": "semi-rural",
-			"lighting": "bright"
-		}
-	}
-	
-	return profiles.get(region_id, profiles["ng:state:od"])
+	# EnvironmentConfig is the single source of regional visuals (Stage 29). It resolves the region
+	# itself and warns, rather than silently substituting another region's values.
+	environment_config.apply_region_profile(region_id)
+	emit_signal("environment_changed", environment_preset)
 
 func _load_regional_buildings() -> void:
 	"""Load buildings appropriate for the current region"""
