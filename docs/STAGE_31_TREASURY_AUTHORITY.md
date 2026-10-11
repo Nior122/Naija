@@ -142,7 +142,7 @@ Results are in section 6.1.
 | Stage 31, after implementation (`npm test`) | 1123 | 1085 | 0 | 38 | +21 treasury tests. The 38 skips are DB-dependent, as before. |
 | Stage 31 focused (treasury, authority, government, authorization, record validation) | 225 | 225 | 0 | 0 | After the final build. |
 | `npm run lint` (repository root, eslint on `services/world-api/src`) | - | - | - | - | Exit 0 after removing four unused imports. |
-| Live PostgreSQL run (`DATABASE_URL` set) | not run | - | - | - | No disposable database was started in this session. |
+| CI on `683879f`: "World API build, lint, and tests" and "World API live PostgreSQL tests" (GitHub Actions run `38170879215`) | - | - | - | - | Both jobs succeeded. The live job ran against a disposable PostgreSQL service. No local live run was done. |
 
 The final full-suite numbers are in the commit message and the report. Where this table disagrees with a later run, the
 later run wins.
