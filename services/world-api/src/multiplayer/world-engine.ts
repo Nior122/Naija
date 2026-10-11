@@ -1,3 +1,4 @@
+import { saveOutcomeOf, type SaveOutcome } from "../persistence-status.js";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { describeSessionPolicy, evaluateSessionPolicy, isSessionRevoked } from "./session-policy.js";
 import type { IncomingMessage } from "node:http";
@@ -738,6 +739,8 @@ export class MultiplayerWorld {
   private failureNoticeOpenedAt: number | null = null;
   /** Failed save attempts since the last successful save. Reported in the recovery signal (G3). */
   private failedSaveAttemptsSinceSuccess = 0;
+  /** Outcome of the most recent failed save (Stage 33). Read by ensureDurable to answer a financial request. */
+  private lastFailedSaveOutcome: SaveOutcome = "unknown";
   private closed = false;
 
   constructor(private readonly store: WorldStoreLike, options: WorldEngineOptions = {}) {
@@ -2762,7 +2765,7 @@ export class MultiplayerWorld {
         case "approve_budget": {
           const budget = approveBudget(state, characterId, requiredString("budget_id", 120),
             requiredInteger("approved_amount_ngn", 1, this.governmentCatalog.rules.maximum_budget_amount_ngn),
-            date, now, this.governmentCatalog);
+            date, now, this.governmentCatalog, this.financialWritesOpen());
           data.budget = budget;
           messageText = `Budget ceiling set to ₦${budget.approved_amount_ngn.toLocaleString("en-NG")}.`;
           break;
@@ -2771,7 +2774,7 @@ export class MultiplayerWorld {
           // The request ID is the top-level requestId, so a retry of the same message replays the first result.
           const result = allocateBudget(state, characterId, requiredString("budget_id", 120),
             requiredInteger("amount_ngn", 1, this.governmentCatalog.rules.maximum_budget_amount_ngn),
-            requestId, date, now, this.governmentCatalog);
+            requestId, date, now, this.governmentCatalog, this.financialWritesOpen());
           data.budget = result.budget;
           data.replayed = result.replayed;
           messageText = result.replayed ? "Allocation already recorded." : "Allocation recorded.";
@@ -2785,7 +2788,7 @@ export class MultiplayerWorld {
             { kind: typeof destination.kind === "string" ? destination.kind : "",
               id: typeof destination.id === "string" ? destination.id : "" },
             typeof payload.reason === "string" ? payload.reason : "",
-            requestId, date, now, this.governmentCatalog);
+            requestId, date, now, this.governmentCatalog, this.financialWritesOpen());
           data.expenditure = result.expenditure;
           data.replayed = result.replayed;
           messageText = result.replayed
@@ -2919,10 +2922,13 @@ export class MultiplayerWorld {
       // A treasury reply is sent only once its change is saved. Until then the reply is an error, and a retry with the
       // same request ID returns the recorded result (replayed) after the save succeeds.
       this.changeGeneration += 1;
-      if (!(await this.ensureDurable())) {
+      const durability = await this.ensureDurable();
+      if (!durability.durable) {
+        // not_saved: the saved world does not hold this change. unknown: it may hold it. Both are retried with the same
+        // request ID, which never applies a change twice.
+        const code = durability.outcome === "unknown" ? "treasury_outcome_unknown" : "treasury_not_saved";
         this.send(context, appendOptionalRequestId({
-          type: "government.error", action, code: "treasury_not_saved",
-          message: governmentErrorMessage("treasury_not_saved"),
+          type: "government.error", action, code, message: governmentErrorMessage(code),
         }, requestId));
         return;
       }
@@ -5295,6 +5301,7 @@ export class MultiplayerWorld {
     } catch (error) {
       this.dirty = true;
       this.failedSaveAttemptsSinceSuccess += 1;
+      this.lastFailedSaveOutcome = saveOutcomeOf(error);
       // A refused save keeps the previous valid file. Nothing is removed to make room.
       if (error instanceof WorldStateCapacityError) {
         // One notice and one log line per episode; retries stay silent until a save succeeds.
@@ -5323,13 +5330,29 @@ export class MultiplayerWorld {
   }
 
   /**
-   * Makes every treasury change made so far durable before its reply is sent (Stage 32). Returns false when the save
-   * failed; the reply is then an error that says the change is not confirmed, and the retry uses the same request ID.
+   * Makes every treasury change made so far durable before its reply is sent (Stage 32, Stage 33). Saves at most
+   * three times. When the change is still not covered, the result says whether the save is known to have failed
+   * (not_saved) or may have happened (unknown). The reply is then an error, and the retry uses the same request ID.
    */
-  private async ensureDurable(): Promise<boolean> {
+  private async ensureDurable(): Promise<{ durable: true } | { durable: false; outcome: SaveOutcome }> {
     const target = this.changeGeneration;
-    if (this.savedGeneration >= target) return true;
-    await this.persistOnce();
-    return this.savedGeneration >= target;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      if (this.savedGeneration >= target) return { durable: true };
+      if (!(await this.persistOnce())) return { durable: false, outcome: this.lastFailedSaveOutcome };
+    }
+    // Not reached in practice: a save captures a generation no lower than this request's, so one successful save covers
+    // it. If it were reached, a save may have happened, so the outcome is reported as unknown (retry-safe).
+    return this.savedGeneration >= target ? { durable: true } : { durable: false, outcome: "unknown" };
+  }
+
+  /**
+   * Whether a new financial write may start (Stage 33). It may not while the last save failed, or while the store is
+   * fenced: a new treasury change would only widen the gap between memory and storage. The service refuses such a
+   * write before it changes anything. Replays of recorded requests are still answered, and are confirmed only after
+   * a save succeeds.
+   */
+  private financialWritesOpen(): boolean {
+    if (this.store.isFenced?.() === true) return false;
+    return this.failedSaveAttemptsSinceSuccess === 0;
   }
 }

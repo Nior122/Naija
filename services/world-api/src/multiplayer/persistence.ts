@@ -2,7 +2,8 @@ import { performance } from "node:perf_hooks";
 import { monitoring, type HealthCheck } from "../monitoring.js";
 import { randomUUID } from "node:crypto";
 import { mkdir, open, rename, rm } from "node:fs/promises";
-import { SaveStatusTracker, classifySaveFailure } from "../persistence-status.js";
+import { SaveStatusTracker, classifySaveFailure, markSaveOutcome } from "../persistence-status.js";
+import { WorldFileLockLostError, WorldFileWriterLock } from "../persistence/writer-lock.js";
 import { readFileSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { geographicLocationIsValid } from "../geography/catalog.js";
@@ -998,6 +999,8 @@ export class WorldStateCapacityError extends Error {
   constructor() {
     super("world_capacity_reached");
     this.name = "WorldStateCapacityError";
+    // Refused before any write: the previous world is still the saved one.
+    markSaveOutcome(this, "not_saved");
   }
 }
 
@@ -1013,6 +1016,11 @@ export interface WorldStoreLike {
    * modified after the call.
    */
   saveState(candidate: PersistentWorldState): Promise<void>;
+  /**
+   * True once this store can no longer write the world (another writer took over). A fenced store refuses every save
+   * with an outcome of not_saved. Optional: a store without fencing does not implement it.
+   */
+  isFenced?(): boolean;
 }
 
 export type WorldFileFormat = "pretty" | "compact";
@@ -1079,6 +1087,10 @@ export class WorldStore implements WorldStoreLike {
   private writeQueue: Promise<void> = Promise.resolve();
   /** Outcome of every save this instance has attempted (G1). Reported by health(). */
   readonly saveStatus = new SaveStatusTracker();
+  /** Set by acquireWriterLock(). A store without a lock (tests, scripts) writes without the token check. */
+  private writerLock: WorldFileWriterLock | null = null;
+  /** Set when the lock was lost. Every later save is refused without touching the file. */
+  private fenced = false;
 
   constructor(filePath: string, now: number = Date.now(), options: WorldStoreOptions = {}) {
     this.filePath = resolve(filePath);
@@ -1095,6 +1107,25 @@ export class WorldStore implements WorldStoreLike {
       if (isRecord(error) && error.code === "ENOENT") this.state = initialState(now);
       else throw new Error(`Could not load multiplayer world data: ${String(error)}`, { cause: error });
     }
+  }
+
+  /**
+   * Takes the single-writer lock for this world file (Stage 33). The server takes it before it accepts any player, and
+   * refuses to start if another live process holds it. Throws WorldFileLockedError.
+   */
+  acquireWriterLock(): void {
+    if (this.writerLock !== null) return;
+    this.writerLock = WorldFileWriterLock.acquire(this.filePath);
+  }
+
+  /** Releases the lock after the final save. A crashed process leaves a lock that the next start takes over. */
+  releaseWriterLock(): void {
+    this.writerLock?.release();
+    this.writerLock = null;
+  }
+
+  isFenced(): boolean {
+    return this.fenced;
   }
 
   async flush(): Promise<void> {
@@ -1129,23 +1160,41 @@ export class WorldStore implements WorldStoreLike {
    */
   private async writeSnapshot(state: PersistentWorldState): Promise<void> {
     const write = async (): Promise<void> => {
+      // Refused before any file operation. A fenced store, or a store whose lock was taken by another process, must
+      // not write: its snapshot may be older than the file that another writer has now.
+      if (this.fenced) throw markSaveOutcome(new WorldFileLockLostError(), "not_saved");
+      if (this.writerLock !== null) {
+        try {
+          this.writerLock.assertHeld();
+        } catch (error) {
+          // Only a confirmed takeover fences the store. A failure to read the lock file is refused for this save only.
+          if (error instanceof WorldFileLockLostError) this.fenced = true;
+          throw markSaveOutcome(error, "not_saved");
+        }
+      }
       // "pretty" is the default and matches the earlier output. "compact" is opt-in (same content and schema, about a
       // third smaller). Files in either format load the same way.
       const snapshot = this.format === "compact" ? JSON.stringify(state) : JSON.stringify(state, null, 2);
       if (Buffer.byteLength(snapshot, "utf8") > this.maxBytes) throw new WorldStateCapacityError();
-      await mkdir(dirname(this.filePath), { recursive: true });
       const temporaryPath = `${this.filePath}.${process.pid}.${randomUUID()}.tmp`;
+      // Until the rename, the file on disk is the previous world, so a failure is "not saved". After the rename the new
+      // world is visible, so a failure is "unknown": the save may have happened, even though it reports failure.
+      let renamed = false;
       try {
+        await mkdir(dirname(this.filePath), { recursive: true });
         await this.fileWriteFaultHook?.("before-temp");
         await writeFileDurably(temporaryPath, snapshot);
         await this.fileWriteFaultHook?.("after-temp-sync");
         await rename(temporaryPath, this.filePath);
+        renamed = true;
         await this.fileWriteFaultHook?.("after-rename");
         // The save is reported as successful only after the directory entry for the new file is synced (where the
         // platform allows it). A failure here means the new file may not survive a power loss; the save is reported
         // as failed, and the engine retries it.
         await syncDirectory(dirname(this.filePath));
         monitoring.recordWorldStateSaved(Buffer.byteLength(snapshot, "utf8"), Object.keys(state.players).length, this.maxBytes);
+      } catch (error) {
+        throw markSaveOutcome(error, renamed ? "unknown" : "not_saved");
       } finally {
         await rm(temporaryPath, { force: true });
       }

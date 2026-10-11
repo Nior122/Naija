@@ -10,6 +10,7 @@
 // reply says "government.result" only after the change is saved.
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { writeFileSync } from "node:fs";
 import { after, afterEach, before, test } from "node:test";
 import { backendNames, connectBackends, disconnectBackends, openBackend, startOver } from "./support/creation-backends.mjs";
 import { createIdentity, openPeer, resumeSession } from "./support/harness.mjs";
@@ -29,6 +30,9 @@ import {
 } from "../dist/government/service.js";
 import { initializeEconomyWorldState } from "../dist/economy/service.js";
 import { validateGovernmentRecords } from "../dist/multiplayer/record-validation.js";
+import { database } from "../dist/database/connection.js";
+import { PostgresWorldStore, WorldStateConflictError } from "../dist/database/world-store.js";
+import { classifySaveFailure, saveOutcomeOf } from "../dist/persistence-status.js";
 
 const CATALOG = loadGovernmentCatalog();
 const DATE = { year: 2026, month: 10, day: 11 };
@@ -467,6 +471,19 @@ async function resumeAs(entry, who) {
   return peer;
 }
 
+/**
+ * Makes this writer lose its storage: another writer has taken over. PostgreSQL: the saved version moves on. File: the
+ * lock file is replaced by a token this writer does not hold.
+ */
+async function fenceWriter(entry) {
+  if (entry.backend.name === "postgres") {
+    await entry.backend.restoreDurable(await entry.backend.durableState());
+    return;
+  }
+  entry.backend.store.inner.acquireWriterLock();
+  writeFileSync(`${entry.backend.filePath}.lock`, `${JSON.stringify({ pid: process.pid, token: randomUUID(), acquired_at: new Date().toISOString() })}\n`);
+}
+
 for (const backendName of backendNames) {
   const label = (text) => `${backendName}: ${text}`;
 
@@ -535,7 +552,8 @@ for (const backendName of backendNames) {
     entry.backend.store.failNextWriteAfterCommit("response lost");
     const first = await sendTreasury(minister.peer, treasuryRequest("spend_budget", "pay-lost", payload));
     assert.equal(first.type, "government.error");
-    assert.equal(first.code, "treasury_not_saved", "an uncertain outcome is never reported as success");
+    // The save committed before the failure was reported, so the outcome is unknown, not "not saved" (Stage 33).
+    assert.equal(first.code, "treasury_outcome_unknown", "an uncertain outcome is never reported as success or as not saved");
 
     const retry = await sendTreasury(minister.peer, treasuryRequest("spend_budget", "pay-lost", payload));
     assert.equal(retry.type, "government.result", JSON.stringify(retry));
@@ -579,7 +597,8 @@ for (const backendName of backendNames) {
     const payload = { budget_id: budget.budget_id, amount_ngn: 7_000_000, destination: { kind: "character", id: payee.characterId }, reason: "Committed" };
     entry.backend.store.failNextWriteAfterCommit("reply lost");
     const refused = await sendTreasury(minister.peer, treasuryRequest("spend_budget", "pay-committed", payload));
-    assert.equal(refused.code, "treasury_not_saved");
+    // The save committed before the failure was reported, so the outcome is unknown (Stage 33).
+    assert.equal(refused.code, "treasury_outcome_unknown");
     await crash(entry);
 
     await restart(entry);
@@ -610,6 +629,70 @@ for (const backendName of backendNames) {
     assert.deepEqual(auditTreasuryLedger(entry.backend.store.state), []);
   });
 
+  test(label("a failed save refuses the next new treasury change before it changes anything, and the recorded request is confirmed once saving works"), async () => {
+    const entry = await session(backendName);
+    const { minister, payee, budget } = await socketSetup(entry);
+    const payload = (reason) => ({ budget_id: budget.budget_id, amount_ngn: 4_000_000, destination: { kind: "character", id: payee.characterId }, reason });
+    const payeeStart = payeeCash(entry.backend, payee.characterId);
+    const start = financeBalance(entry.backend);
+    // Saving fails for as long as failures are queued, so no automatic retry can succeed during these checks.
+    for (let i = 0; i < 1000; i += 1) entry.backend.store.failNextWrite("disk unavailable");
+
+    const first = await sendTreasury(minister.peer, treasuryRequest("spend_budget", "gate-a", payload("First")));
+    assert.equal(first.type, "government.error");
+    assert.equal(first.code, "treasury_not_saved", "a save that failed before any write is reported as not saved");
+    const afterFirst = { balance: financeBalance(entry.backend), expenditures: expenditureCount(entry.backend), payee: payeeCash(entry.backend, payee.characterId) };
+
+    const second = await sendTreasury(minister.peer, treasuryRequest("spend_budget", "gate-b", payload("Second")));
+    assert.equal(second.type, "government.error", JSON.stringify(second));
+    assert.equal(second.code, "treasury_persistence_unavailable", "a new payment is refused while saving is failing");
+    const approve = await sendTreasury(minister.peer, treasuryRequest("approve_budget", "gate-approve", {
+      budget_id: budget.budget_id, approved_amount_ngn: 500_000_000,
+    }));
+    assert.equal(approve.code, "treasury_persistence_unavailable", "an approval is refused while saving is failing");
+    assert.equal(financeBalance(entry.backend), afterFirst.balance, "a refused request debits nothing");
+    assert.equal(expenditureCount(entry.backend), afterFirst.expenditures, "a refused request records nothing");
+    assert.equal(payeeCash(entry.backend, payee.characterId), afterFirst.payee, "a refused request credits nothing");
+
+    entry.backend.store.clearFailures();
+    const retry = await sendTreasury(minister.peer, treasuryRequest("spend_budget", "gate-a", payload("First")));
+    assert.equal(retry.type, "government.result", JSON.stringify(retry));
+    assert.equal(retry.data.replayed, true, "the recorded request is replayed, not applied again");
+    assert.equal(expenditureCount(entry.backend), afterFirst.expenditures, "one payment in total");
+    assert.equal(payeeCash(entry.backend, payee.characterId), payeeStart + 4_000_000, "credited once");
+    assert.equal(financeBalance(entry.backend), start - 4_000_000, "debited once");
+
+    const fresh = await sendTreasury(minister.peer, treasuryRequest("spend_budget", "gate-b", payload("Second")));
+    assert.equal(fresh.type, "government.result", JSON.stringify(fresh));
+    assert.equal(fresh.data.replayed, false, "with saving working again, a new request is accepted");
+    assert.equal(financeBalance(entry.backend), start - 8_000_000);
+    const durable = await entry.backend.durableState();
+    assert.equal(Object.keys(durable.governmentExpenditure).length, expenditureCount(entry.backend), "the saved world matches memory");
+    assert.equal(durable.governmentOrganisations[FINANCE].treasury_account.balance_ngn, start - 8_000_000);
+    assert.deepEqual(auditTreasuryLedger(entry.backend.store.state), []);
+  });
+
+  test(label("a fenced writer refuses new treasury changes after its first refused save, and never confirms one"), async () => {
+    const entry = await session(backendName);
+    const { minister, payee, budget } = await socketSetup(entry);
+    const durableBefore = Object.keys((await entry.backend.durableState()).governmentExpenditure).length;
+    await fenceWriter(entry);
+    const payload = (reason) => ({ budget_id: budget.budget_id, amount_ngn: 3_000_000, destination: { kind: "character", id: payee.characterId }, reason });
+
+    const first = await sendTreasury(minister.peer, treasuryRequest("spend_budget", "fence-a", payload("Fenced")));
+    assert.equal(first.code, "treasury_not_saved", "the fenced save is refused before any write");
+    const memory = { balance: financeBalance(entry.backend), expenditures: expenditureCount(entry.backend) };
+
+    const second = await sendTreasury(minister.peer, treasuryRequest("spend_budget", "fence-b", payload("Refused")));
+    assert.equal(second.code, "treasury_persistence_unavailable", "a fenced writer accepts no new treasury change");
+    assert.equal(financeBalance(entry.backend), memory.balance);
+    assert.equal(expenditureCount(entry.backend), memory.expenditures);
+    const durable = await entry.backend.durableState();
+    assert.equal(Object.keys(durable.governmentExpenditure).length, durableBefore, "nothing from this writer reached storage");
+    // This instance is fenced for good: it is ended as a crash, because a graceful stop would try to save.
+    await crash(entry);
+  });
+
   if (backendName === "postgres") {
     test(label("a fenced writer never confirms a payment: another writer saved first, so the payment is refused as not saved"), async () => {
       const entry = await session(backendName);
@@ -629,3 +712,80 @@ for (const backendName of backendNames) {
     });
   }
 }
+
+// ─── Two writers on one PostgreSQL world (Stage 33) ───────────────────────────
+// Each writer is its own store instance with its own copy of the saved world, loaded at the same version, so every
+// save is checked against the stored version as two server processes would be. The cross-process runs of that check
+// are in multiprocess-persistence.test.mjs.
+if (backendNames.includes("postgres")) {
+  const twoWriters = (text, fn) => test(`postgres: ${text}`, { timeout: 120_000 }, fn);
+
+  /** The setup (a minister, a payee, an approved and allocated budget) is saved by a server; that server is then ended. */
+  async function setupForWriters() {
+    const entry = await session("postgres");
+    const { minister, payee, budget } = await socketSetup(entry);
+    const worldKey = entry.backend.worldKey;
+    await crash(entry); // the server's own store is ended; the two writers below are the only writers
+    const first = await PostgresWorldStore.open({ db: database, worldKey });
+    const second = await PostgresWorldStore.open({ db: database, worldKey });
+    assert.equal(second.getVersion(), first.getVersion(), "premise: both writers start from the same saved version");
+    return { entry, worldKey, first, second, minister, payee, budgetId: budget.budget_id };
+  }
+  const treasuryBalanceOf = (state) => state.governmentOrganisations[FINANCE].treasury_account.balance_ngn;
+  const payeeCashOf = (state, characterId) => cashAccountOf(state, characterId).balance_ngn;
+  const savedWorld = async (worldKey) => (await database.queryOne("SELECT value FROM world_state WHERE key = $1", [worldKey])).value;
+
+  twoWriters("two writers: the stale writer's payment is refused as not saved, and the saved world holds only the first payment", async () => {
+    const { entry, worldKey, first, second, minister, payee, budgetId } = await setupForWriters();
+    const date = first.state.worldClock.world_date;
+    const start = treasuryBalanceOf(first.state);
+    const payeeStart = payeeCashOf(first.state, payee.characterId);
+
+    spendBudget(first.state, minister.characterId, budgetId, 10_000_000, { kind: "character", id: payee.characterId }, "First", "pay-first", date, Date.now(), CATALOG);
+    await first.flush();
+
+    spendBudget(second.state, minister.characterId, budgetId, 5_000_000, { kind: "character", id: payee.characterId }, "Second", "pay-second", date, Date.now(), CATALOG);
+    const refused = await second.flush().then(() => null, (error) => error);
+    assert.ok(refused instanceof WorldStateConflictError, "the stale save is refused by the version check");
+    assert.equal(saveOutcomeOf(refused), "not_saved", "the version check refused before any change was applied");
+    assert.equal(classifySaveFailure(refused), "conflict");
+    assert.equal(second.isFenced(), true, "the stale writer is fenced");
+    const again = await second.flush().then(() => null, (error) => error);
+    assert.ok(again instanceof WorldStateConflictError, "a fenced writer never saves again");
+    assert.equal(saveOutcomeOf(again), "not_saved");
+
+    const durable = await savedWorld(worldKey);
+    assert.equal(treasuryBalanceOf(durable), start - 10_000_000, "only the first payment was debited");
+    assert.equal(Object.values(durable.governmentExpenditure).length, 1, "one payment is saved");
+    assert.equal(payeeCashOf(durable, payee.characterId), payeeStart + 10_000_000, "only the first payment was credited");
+    assert.deepEqual(auditTreasuryLedger(durable), [], "the saved ledger is consistent");
+    await crash(entry).catch(() => {});
+  });
+
+  twoWriters("two writers: a restart loads what was saved, and the refused payment can be made again under its own request", async () => {
+    const { entry, worldKey, first, second, minister, payee, budgetId } = await setupForWriters();
+    const date = first.state.worldClock.world_date;
+    const start = treasuryBalanceOf(first.state);
+    spendBudget(first.state, minister.characterId, budgetId, 10_000_000, { kind: "character", id: payee.characterId }, "First", "restart-first", date, Date.now(), CATALOG);
+    await first.flush();
+    spendBudget(second.state, minister.characterId, budgetId, 5_000_000, { kind: "character", id: payee.characterId }, "Second", "restart-second", date, Date.now(), CATALOG);
+    await second.flush().then(() => assert.fail("the stale save must be refused"), (error) => assert.ok(error instanceof WorldStateConflictError));
+
+    // A new process loads the saved world. It holds the first payment and not the refused one.
+    const restarted = await PostgresWorldStore.open({ db: database, worldKey });
+    assert.equal(treasuryBalanceOf(restarted.state), start - 10_000_000);
+    assert.equal(restarted.isFenced(), false);
+    assert.deepEqual(auditTreasuryLedger(restarted.state), []);
+
+    // The refused payment is made again under the same request ID. It is applied once, and only now.
+    const retry = spendBudget(restarted.state, minister.characterId, budgetId, 5_000_000, { kind: "character", id: payee.characterId }, "Second", "restart-second", date, Date.now(), CATALOG);
+    assert.equal(retry.replayed, false, "nothing was saved for this request, so this is the first application");
+    await restarted.flush();
+    const durable = await savedWorld(worldKey);
+    assert.equal(treasuryBalanceOf(durable), start - 15_000_000);
+    assert.equal(Object.values(durable.governmentExpenditure).length, 2);
+    assert.deepEqual(auditTreasuryLedger(durable), []);
+    await crash(entry).catch(() => {});
+  });
+}
+

@@ -5,6 +5,8 @@
  *
  * The wrapper never changes what is persisted except through the wrapped store.
  */
+import { markSaveOutcome } from "../../dist/persistence-status.js";
+
 export class FaultyStore {
   constructor(inner) {
     this.inner = inner;
@@ -38,8 +40,18 @@ export class FaultyStore {
     return this.inner.health();
   }
 
+  /** Forwards the wrapped store's fence state, so the engine's treasury gate sees the same answer as in production. */
+  isFenced() {
+    return this.inner.isFenced?.() === true;
+  }
+
   failNextWrite(message = "injected write failure") {
     this.failures.push({ mode: "fail", error: new Error(message) });
+  }
+
+  /** Removes every queued failure, so the next save reaches the wrapped store again. */
+  clearFailures() {
+    this.failures = [];
   }
 
   failNextWriteAfterCommit(message = "injected response loss") {
@@ -85,7 +97,8 @@ export class FaultyStore {
     if (failure?.mode === "fail") {
       // An injected failure never reaches the wrapped store, so record it there, as a real failed save would be.
       this.inner.saveStatus?.recordFailure("error", Date.now());
-      throw failure.error;
+      // Failed before the wrapped store was touched, so the saved world is unchanged: "not_saved" (Stage 33).
+      throw markSaveOutcome(failure.error, "not_saved");
     }
     await perform();
     this.committedCount += 1;

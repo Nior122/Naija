@@ -26,8 +26,34 @@ export interface SaveStatus {
 export function classifySaveFailure(error: unknown): SaveFailureReason {
   const name = error instanceof Error ? error.name : "";
   if (name === "WorldStateCapacityError") return "capacity";
-  if (name === "WorldStateConflictError") return "conflict";
+  if (name === "WorldStateConflictError" || name === "WorldFileLockLostError") return "conflict";
   return "error";
+}
+
+/**
+ * What a failed save tells us about the storage (Stage 33). The engine uses it to answer a financial request truthfully.
+ *
+ * - not_saved: the failure happened before the new world could become visible. The storage holds the previous world,
+ *   so the change is certainly not saved. A retry is a new attempt.
+ * - unknown: the failure happened after the new world may have become visible (for example, after a rename, or after a
+ *   database commit whose reply was lost). The change may be saved. A retry must use the same request ID, which then
+ *   returns the recorded result instead of applying the change again.
+ *
+ * A failure that was not classified is treated as unknown: that is the safe reading.
+ */
+export type SaveOutcome = "not_saved" | "unknown";
+
+const saveOutcomes = new WeakMap<object, SaveOutcome>();
+
+/** Records the outcome on an error object and returns the same error, so the throw site stays unchanged. */
+export function markSaveOutcome<T>(error: T, outcome: SaveOutcome): T {
+  if (typeof error === "object" && error !== null) saveOutcomes.set(error, outcome);
+  return error;
+}
+
+export function saveOutcomeOf(error: unknown): SaveOutcome {
+  if (typeof error === "object" && error !== null) return saveOutcomes.get(error) ?? "unknown";
+  return "unknown";
 }
 
 const REASON_TEXT: Record<SaveFailureReason, string> = {

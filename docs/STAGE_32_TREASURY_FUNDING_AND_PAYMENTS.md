@@ -135,7 +135,9 @@ Saves are serialised per process (`serialize`), so each save captures every chan
 A treasury action (`GOVERNMENT_TREASURY_ACTIONS`) bumps `changeGeneration` after its change. It is answered with
 `government.result` only when `ensureDurable()` has seen a successful save that covers that change. Otherwise the reply
 is `government.error` with `treasury_not_saved`, which says the change is recorded but not confirmed, and the client
-retries with the same request ID. The same gate covers a replay. A replay of a payment whose save failed is therefore
+retries with the same request ID. *(Stage 33: when the save may have happened, the code is `treasury_outcome_unknown`
+instead. A save that is refused before any write is still `treasury_not_saved`. A new change is refused with
+`treasury_persistence_unavailable` while saving fails. See STAGE_33.)* The same gate covers a replay. A replay of a payment whose save failed is therefore
 not confirmed until a save succeeds.
 
 Memory is **not** rolled back after a failed save, so that a concurrent change made by another player is not overwritten.
@@ -146,7 +148,7 @@ A later successful save writes all of memory, including the treasury change. The
 | Case | Result | Test (both backends unless noted) |
 |---|---|---|
 | Save fails; process keeps running; retry with the same ID | Reply is `treasury_not_saved`. The retry's save succeeds, and the payee is credited once. | 17 (file), 24 (PG) |
-| Save commits, reply is lost; client retries | Retry is a replay. Payee is credited once. | 18 (file), 25 (PG) |
+| Save commits, reply is lost; client retries | First reply is `treasury_outcome_unknown` (Stage 33). Retry is a replay. Payee is credited once. | 18 (file), 25 (PG) |
 | Save fails, then the process crashes; restart; retry | Restarted world has no payment. Retry pays once. | 19 (file), 26 (PG) |
 | Save commits, reply is lost, then the process crashes; restart; retry | Restarted world holds the payment. Retry replays it. | 20 (file), 27 (PG) |
 | Funding applied, then restart | Funding is not applied a second time. | 21 (file), 28 (PG) |
@@ -265,8 +267,9 @@ fix is in a later commit on this branch. CI results for that commit are recorded
 
 - **Migration race (fixed, section 5.4).** Schema migrations are now serialised with an advisory lock. The regression
   test is live only, so it runs in CI and on any machine with a database, and is skipped without one.
-- **Single-writer file backend.** Exactly-once funding and the no-lost-update guarantee depend on one server process per
-  file. PostgreSQL enforces this across processes. The file backend does not.
+- **Single-writer file backend.** *(Addressed in Stage 33: a lock file refuses a second server process on the same world
+  file, and every save verifies the lock token. Same host only. See STAGE_33 section 3.5.)* Exactly-once funding and the
+  no-lost-update guarantee depend on one server process per file. PostgreSQL enforces this across processes.
 - **Memory ahead of storage** (section 5.4). A crash in that window loses the payment in full, and the payer was never
   told it was confirmed.
 - **One funded treasury, one payee type.** Only `gov:min:finance` is funded. Only characters can be paid.
@@ -284,8 +287,8 @@ fix is in a later commit on this branch. CI results for that commit are recorded
 2. **Revenue, tax, fines, borrowing.** Still no route, and still unavailable by mission constraint.
 3. **Funding amount and source.** ₦100m is the value chosen in the catalogue. The owner must confirm the amount and the
    source (the `rev:grant` category), or replace it.
-4. **Single-writer file backend.** If the file backend is used with more than one process, one-time funding is not
-   guaranteed. Either run one process per world file, or add a version check to the file backend. This is not done here.
+4. **Single-writer file backend.** *(Stage 33: enforced by a lock file, not by a version check. See STAGE_33 section 3.)*
+   If the file backend is used with more than one process, the second process is refused at startup.
 5. **Governors and local officials** are still not seeded (Stage 31 blocker 4).
 
 ## 10. Owner decisions still required
@@ -297,6 +300,10 @@ fix is in a later commit on this branch. CI results for that commit are recorded
 4. Confirm the choice of payee rules for businesses and organisations before they are opened.
 
 ## 11. Next recommended stage
+
+*(Superseded in part by Stage 33. Business payees were deferred in Stage 33, because no business account model exists
+to credit without a second ledger. See STAGE_33 sections 5 and 12. The file backend's single-process restriction is now
+enforced by a lock. Revenue routes should stay closed until the funding source is decided.)*
 
 Stage 33 should open **business payees** through the existing economy, in the same atomic write and with the same
 refusal rules. It should either leave the file backend single-process and say so, or add a version check to it before

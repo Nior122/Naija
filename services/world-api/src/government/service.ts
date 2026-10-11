@@ -698,6 +698,7 @@ export function approveBudget(
   date: CalendarDate,
   now: number,
   catalog: GovernmentCatalog = loadGovernmentCatalog(),
+  acceptNewWrites = true,
 ): BudgetRecord {
   const budget = state.governmentBudgets[budgetId];
   if (!budget) throw new Error("government_budget_not_found");
@@ -706,6 +707,8 @@ export function approveBudget(
   // Authority is decided first, so a refused caller learns nothing about the budget's amounts.
   const permission = authorizeOfficePermission(state, actorCharacterId, org.organisation_id, "budget_approve", date, catalog);
   if (!permission.ok) throw new Error(permission.code);
+  // Refused before the first write while saving is failing (Stage 33). Approval has no request ID, so there is no replay.
+  if (!acceptNewWrites) throw new Error("treasury_persistence_unavailable");
   if (org.status !== "active") throw new Error("government_organisation_inactive");
   if (budget.status === "closed") throw new Error("government_budget_closed");
   if (!Number.isSafeInteger(approvedAmountNgn) || approvedAmountNgn < 1 ||
@@ -743,6 +746,7 @@ export function allocateBudget(
   date: CalendarDate,
   now: number,
   catalog: GovernmentCatalog = loadGovernmentCatalog(),
+  acceptNewWrites = true,
 ): { budget: BudgetRecord; replayed: boolean } {
   if (!isRequestId(requestId)) throw new Error("treasury_request_id_required");
   const budget = state.governmentBudgets[budgetId];
@@ -761,6 +765,8 @@ export function allocateBudget(
     if (earlier.details.request_fingerprint === fingerprint) return { budget, replayed: true };
     throw new Error("treasury_idempotency_conflict");
   }
+  // A replay is answered above; a new allocation waits until saving works again (Stage 33).
+  if (!acceptNewWrites) throw new Error("treasury_persistence_unavailable");
 
   if (!Number.isSafeInteger(amountNgn) || amountNgn < 1 || amountNgn > catalog.rules.maximum_budget_amount_ngn) {
     throw new Error("government_budget_amount_invalid");
@@ -808,6 +814,7 @@ export function spendBudget(
   date: CalendarDate,
   now: number,
   catalog: GovernmentCatalog = loadGovernmentCatalog(),
+  acceptNewWrites = true,
 ): { expenditure: GovernmentExpenditureRecord; replayed: boolean } {
   if (!isRequestId(requestId)) throw new Error("treasury_request_id_required");
   const budget = state.governmentBudgets[budgetId];
@@ -828,6 +835,8 @@ export function spendBudget(
     if (earlier.request_fingerprint === fingerprint) return { expenditure: earlier, replayed: true };
     throw new Error("treasury_idempotency_conflict");
   }
+  // A replay is answered above; a new payment waits until saving works again (Stage 33).
+  if (!acceptNewWrites) throw new Error("treasury_persistence_unavailable");
 
   if (!Number.isSafeInteger(amountNgn) || amountNgn < catalog.rules.minimum_expenditure_amount_ngn ||
     amountNgn > catalog.rules.maximum_expenditure_amount_ngn) {
@@ -1621,6 +1630,8 @@ export function governmentErrorMessage(code: string): string {
     government_action_unknown: "Unknown government action.",
     treasury_destination_unsupported: "Payments can only be made to a person's cash account. Business and organisation payments are not available yet.",
     treasury_not_saved: "The change is recorded on the server but is not saved yet, so it is not confirmed. Retry with the same request ID; it will not be applied twice.",
+    treasury_outcome_unknown: "The server could not confirm whether this change was saved. Retry with the same request ID; it will not be applied twice.",
+    treasury_persistence_unavailable: "The server is not saving changes right now, so no new treasury change is accepted. Nothing was recorded for this request; try again later. A request already recorded is confirmed once saving works.",
     economy_payee_not_found: "The payment recipient is not a character in this world.",
     economy_payee_deceased: "The payment recipient is deceased and cannot receive payments.",
     economy_payee_account_missing: "The payment recipient has no cash account, so the payment cannot be made.",

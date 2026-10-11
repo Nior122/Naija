@@ -4,7 +4,7 @@ import { WORLD_ID, type PersistentWorldState } from "../multiplayer/types.js";
 import type { HealthCheck } from "../monitoring.js";
 import { monitoring } from "../monitoring.js";
 import { performance } from "node:perf_hooks";
-import { classifySaveFailure, SaveStatusTracker } from "../persistence-status.js";
+import { classifySaveFailure, markSaveOutcome, SaveStatusTracker } from "../persistence-status.js";
 
 /**
  * PostgreSQL-backed world state for Naija: One World.
@@ -37,6 +37,8 @@ export class WorldStateConflictError extends Error {
   constructor() {
     super("World state was changed by another writer. This instance is fenced and must restart before saving again.");
     this.name = "WorldStateConflictError";
+    // Raised only when the version check matched no row, so this write was not applied.
+    markSaveOutcome(this, "not_saved");
   }
 }
 

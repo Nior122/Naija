@@ -52,6 +52,7 @@ function openFileBackend() {
   const file = join(directory, "world-state.json");
   const backend = {
     name: "file",
+    filePath: file,
     store: new FaultyStore(new WorldStore(file, Date.now())),
     async durableState() {
       return JSON.parse(readFileSync(file, "utf8"));
@@ -73,6 +74,7 @@ async function openPostgresBackend() {
   const worldKey = uniqueWorldKey();
   const backend = {
     name: "postgres",
+    worldKey,
     store: new FaultyStore(await PostgresWorldStore.open({ worldKey, db: database })),
     async durableState() {
       const row = await database.queryOne("SELECT value FROM world_state WHERE key = $1", [worldKey]);
