@@ -10,6 +10,9 @@ const SESSION_CONFIG_ENV: String = "NAIJA_MULTIPLAYER_SESSION_PATH"
 const DEFAULT_NATIVE_URL: String = "ws://127.0.0.1:3000/ws"
 const CONNECT_TIMEOUT_SECONDS: float = 12.0
 const MAX_RECONNECT_DELAY_SECONDS: float = 30.0
+const PERSISTENCE_RESTORED_NOTICE: String = (
+	"Server saving is working again. This does not confirm changes made while saving was failing."
+)
 
 var _socket: WebSocketPeer
 var _profile: Dictionary = {}
@@ -294,6 +297,16 @@ func _save_local_session() -> void:
 func _clear_saved_token() -> void:
 	_session_token = ""
 	_save_local_session()
+
+
+## The notice text for a persistence.restored message, or "" for any other message. The server sends this message
+## once per outage, after the first successful save, to players who were online during the failure. It says only that a
+## save succeeded: it never says that changes made during the outage were recovered. Older servers never send it, and
+## older clients ignore it, so nothing else depends on it.
+static func persistence_notice(message: Dictionary) -> String:
+	if str(message.get("type", "")) != "persistence.restored":
+		return ""
+	return PERSISTENCE_RESTORED_NOTICE
 
 
 func _new_request_id() -> String:

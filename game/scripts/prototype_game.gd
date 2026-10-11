@@ -287,6 +287,11 @@ func _on_online_message(message: Dictionary) -> void:
 			var chat_text := str(message.get("text", ""))
 			ui.add_chat_message(sender, chat_text)
 			ui.notify("%s: %s" % [sender, chat_text])
+		"persistence.restored":
+			# Once per outage (server-side); see MultiplayerClientScript.persistence_notice. Never claims recovery.
+			var restored_notice := MultiplayerClientScript.persistence_notice(message)
+			if not restored_notice.is_empty():
+				ui.notify(restored_notice)
 		"player.interaction":
 			ui.notify(
 				(
