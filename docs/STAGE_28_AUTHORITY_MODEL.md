@@ -1,5 +1,7 @@
 # Stage 28 Authority Model (D-04)
 
+Status update (2026-10-11, authority mission): the rule-by-rule implementation and test map is in `docs/STAGE_29_REGIONAL_VISUAL_PROFILES_AUDIT.md` section 28. No rule below was changed by that work. Rows marked SUSPENDED stay suspended, because the owner decisions they depend on are still open.
+
 Status: DESIGN, minimal rule set, revisable. Most consequential mutations are SUSPENDED until these rules are implemented and each route has server-side checks and negative tests. Nothing here is a claim that the rules are implemented, except where a row says so.
 
 Principles (apply to every family):

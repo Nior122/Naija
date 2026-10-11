@@ -2871,3 +2871,254 @@ missing, but they can be resolved with infrastructure. The authorization gap nee
   Neon and any production or deployed environment. Real process kill. Two OS processes against one production-like database.
   Forced lock race. FI-13 and FI-14 remain scratch-only (section 26). The disposable PostgreSQL run used trust authentication on
   loopback and was stopped afterwards.
+
+## 28. Authority model, security evidence, persistence, CI, and corrections (2026-10-11, authority mission)
+
+Evidence labels: **verified** means a reproducible command or probe ran and its result is recorded here. **Local** means a
+disposable PostgreSQL 18.4 on loopback, or a private test CA on this sandbox. Nothing here is production, multi-host,
+Neon, or rendered evidence. Godot runs use the custom build `4.7.2.stable.custom_build.ed1daf0bf`, not the official release.
+
+### 28.1 Result
+
+- Commits in this section: `b510f69` (authority matrix), `9613bff` (outdated-schema test), `5573537` (lint), `9a2e4e0`
+  (P-4 matrix case), `c775893` (CI live-database job). Each commit was checked with `git diff --check` and the relevant suite.
+- Stage 28: **OPEN**. Stage 29: **OPEN (BLOCKED: no graphical display)**. Production: **NOT READY**.
+- Final tested commit: `9a2e4e0`. The `game/` tree and `scripts/` tree are unchanged since `30bfcd4`, so the earlier Godot
+  results apply to the same code. The Godot suites were re-run on `9a2e4e0` anyway (28.6).
+
+### 28.2 Repository baseline (phase A)
+
+- Verified before editing: branch `arena/00cdea0e-naija`; HEAD `761e23b`; upstream `origin/arena/00cdea0e-naija`; remote tip
+  `761e23b`; tree clean. `origin/arena/f48b6f8e-naija` at `02dd67c` and `origin/main` at `44483b4`, both unchanged.
+- The commit `761e23b` changed only this register (351 lines), so the code under test was the same as at `30bfcd4`.
+
+### 28.3 Authority rule map (phase B)
+
+Columns: rule; state before this work; state now; enforcement point; tests. "Suspended" means refused with a stable code.
+Every suspended row is still suspended. Where a rule needs an owner decision, the decision is listed in 28.10.
+
+| Rule | State before | State now | Enforcement | Tests |
+|---|---|---|---|---|
+| G-1 initial officials seeded by server only | implemented | unchanged | `seedGovernmentWorld` (trusted) | `government-authorization.test.mjs` (identity-creation seeding path) |
+| G-2 who appoints; G-3 removal | suspended | unchanged, **OWNER DECISION** (appointing-office table) | `government_writes_suspended` gate in `world-engine.ts` | `government-authorization.test.mjs` (every citizen write refused, state unchanged) |
+| G-4 budgets, revenue, expenditure | suspended | unchanged, **needs R-b** (which offices control budgets) | same gate | same |
+| G-5 projects; G-6 announcements | suspended | unchanged, **needs R-b** | same gate | same |
+| G-7 conflicting interest | not implemented | unchanged, **OWNER DECISION** (definition) | none | none |
+| G-8 government reads | open | unchanged, verified open | read list in gate | `government-authorization.test.mjs` (read availability) |
+| E-1 electoral authority | suspended | unchanged, **OWNER DECISION** (is there an electoral authority office) | `election_writes_suspended` | `government-authorization.test.mjs` |
+| E-2 no self-certification; E-3 voting; E-4 office transfer | suspended | unchanged | `election_writes_suspended` | same |
+| J-1 judge assignment | trusted only | verified: no engine write to `assigned_judge_ids` | no player route | grep of `world-engine.ts` (no write) |
+| J-2 judicial standing for a case | implemented | unchanged | `isAssignedJudgeForCase` | `justice-case-access.test.mjs` |
+| J-3 case access (parties and assigned judges; others get `justice_case_not_found`) | implemented | unchanged | `viewCaseForCharacter` | `justice-case-access.test.mjs`, `justice-finance-containment.test.mjs` |
+| J-4 evidence (parties only, open cases only; judge may not submit as judge) | implemented | unchanged | `submitEvidence` | `justice-case-access.test.mjs` (judge refusal, forged fields ignored) |
+| J-5 appeal decision | suspended | unchanged. The mechanism (independent appellate assignment) does not exist; `decideAppeal` records the caller as judge without that check, so it stays gated | `JUSTICE_SUSPENDED_ACTIONS` (`justice_appeal_decision_suspended`) | `justice-finance-containment.test.mjs` |
+| J-6 fine payment | suspended | unchanged. `payFine` takes no acting character and does not debit an account, and `FineRecord` has no designated account or treasury (see 28.10). Gate stays | `justice_fine_payment_suspended` | `justice-finance-containment.test.mjs` (responsible character and third party both refused) |
+| J-7 criminal record | suspended | unchanged | `crime_record_creation_suspended` | `justice-finance-containment.test.mjs`, `family-containment.test.mjs` |
+| M-1 recruitment intake (education from server) | implemented | unchanged | `apply_for_service` | `family-containment.test.mjs` (client education value ignored) |
+| M-2 enlist; M-3 training; M-4 promotion; M-5 command appointment; M-6 assignment | suspended | unchanged. Needs owner decision on recruiting, command, and unit roles | `military_*_suspended` | `family-containment.test.mjs` |
+| M-7 discharge | no route | verified: no route | none | grep |
+| M-8 military reads | open | unchanged | read list | `family-containment.test.mjs` (read availability) |
+| P-1 recruitment intake | implemented | unchanged | `apply_recruitment` (education from server) | `family-containment.test.mjs` |
+| P-2 officer appointment | no player route | verified: no route (`enrollOfficer` not reachable) | none | grep |
+| P-3 arrest | suspended | unchanged, **OWNER DECISION** (station command and legal-basis format) | `police_arrest_suspended` | `family-containment.test.mjs` |
+| P-4 misconduct complaints (any citizen, existing officer) | open, service-checked | **verified through the socket**. Officer must exist; complainant is the session character, a forged complainant field is ignored | `policeService.submitMisconductComplaint` | `authority-matrix.test.mjs` (P-4 case, mutation-checked) and `police.test.mjs` |
+| P-5 police reads | open | unchanged | read list | `family-containment.test.mjs` |
+| C-1 link to police; C-2 link to justice | suspended | unchanged | `CRIME_SUSPENDED_ACTIONS` (`crime_link_suspended`) | `family-containment.test.mjs` |
+
+Other consequential routes checked against the principles in this mission (not rows of the model):
+
+- **Economy:** `transfer` requires both accounts to belong to the session character (`transferBetweenAccounts`). Verified through the socket: a stranger cannot move money out of another character's account, even with forged fields (`authority-matrix.test.mjs`).
+- **Businesses:** `closeBusiness`, `hireEmployee`, `fireEmployee`, `transferOwnership`, `addBranch`, and `contributeCapital` call `authorizeBusinessAction` with the session character. Verified through the socket for close, transfer, hire, and capital (`authority-matrix.test.mjs`). Mutation-checked: removing the `closeBusiness` check fails the test.
+- **Properties:** `transferProperty` and `terminateRentalAgreement` check ownership or agreement membership. Covered by the service-level tests (`properties.test.mjs`). No socket-level stranger test yet (coverage gap, 28.8).
+
+Result of the review: no client-supplied authority field grants authority on any route checked. The one gap is the coverage noted above, not an open hole. No suspended operation was re-enabled.
+
+### 28.4 Credentials, sessions, and identity (phase C)
+
+- **Key-only takeover:** refused (`identity_recovery_unavailable`). Covered by `app.test.mjs`, `identity-budget.test.mjs`, and `identity-concurrency.test.mjs`.
+- **Logout and revocation:** a revoked token is refused on a new connection, and revocation survives restart (`session-lifecycle.test.mjs`, file and PostgreSQL backends). Unauthenticated sockets are refused with `not_authenticated` (`authority-matrix.test.mjs`).
+- **Session expiry: NOT enforced, by documented decision.** `session-policy.ts` evaluates the 30-day absolute and 7-day idle limits and writes a log line only (D-06 policy A, step 1). Enforcing them now would lock players out with no re-authentication path, and the limit values are "to be approved" (R7). This is **OWNER DECISION REQUIRED**. The mission's requirement that expired sessions cannot mutate state is therefore **not met** in code, by design, until the owner decides.
+- **Server storage of secrets:** the server stores SHA-256 hashes of the session token and the creation key (`tokenHash`, `creationKeyHash`, validated as 64 hex characters in `persistence.ts`). Server logs contain neither value (checked by grep of `console.*`).
+- **Client storage (KNOWN_LIMITATION, CRED-1):** the Godot client keeps the session token and creation key in plaintext in `user://naija-multiplayer.cfg`. That path is in the user data directory, outside the repository. Godot core has no secure store, and encrypting with a key shipped in the client would protect nothing, so no change was made. Mitigation to date: server stores hashes; nothing committed.
+- **`.env.example`:** placeholders only. The `DATABASE_URL` example has `USER`, `PASSWORD`, and `HOST` in place of credentials (checked with the value structure only, not printed).
+- **Recovery:** no recovery path exists. The 24-hour procedure in R8 is not implemented, and no shortcut was added.
+
+### 28.5 Persistence (phase D)
+
+- **Startup and migrations (new live tests, `persistence-readiness.test.mjs`):**
+  - an empty database is refused, writes no JSON file (existing test);
+  - a database one version behind (version 1, latest 2) is refused with `schema is at version 1; version 2 is required`, writes no file, and the refusal leaves the version unchanged;
+  - the real `MIGRATION_V2_DOWN_SQL` runs and restores version 1;
+  - migrating again restores version 2 (the upgrade path).
+  - Mutation-checked: disabling the up-to-date check fails both live refusal tests.
+- **Transactions and money (live):** `postgres-persistence.test.mjs` covers concurrent debits (exactly the affordable number succeed), concurrent idempotent credits (applied once), rollback of a failed transaction, and the database negative-balance constraint. All pass on the live PostgreSQL.
+- **Authority-matrix concurrency (single process):** two concurrent transfers competing for the same funds: exactly one succeeds, the paying account loses one transfer plus its fee, and the receiving account gains one transfer. A repeated `requestId` for an idempotent command gets `command.duplicate` and is applied once. These run on the file and PostgreSQL backends. **Limit:** the engine handles socket messages one at a time, so these are serialized inside one process. They are not database-level or multi-instance concurrency.
+- **Multi-process (live, previously recorded as NOT TESTED, now corrected):** `multiprocess-persistence.test.mjs` spawns real child processes. It covers two processes opening the same new world, fencing of a stale writer, recovery after a `SIGKILL` of the writer, an unsaved change in a killed process not being recovered, a writer killed during a row-lock wait, and two processes saving at the same time (exactly one succeeds, the other is fenced). All six pass on the disposable PostgreSQL. **Limit:** one host and one disposable database. Multi-host deployment, network partitions, and production database behaviour remain NOT VERIFIED.
+- **Save guard (Godot):** unchanged in this work. The production guard is not modified. Results are in 28.6. The forced lock race and hard-kill recovery of the Godot test processes remain NOT VERIFIED.
+
+### 28.6 Regression results (phase E, exact commit `9a2e4e0`)
+
+Godot (`regress.sh`, each suite on a fresh scratch copy with its own HOME and XDG directories; no real user data touched):
+
+| Suite | Exit | Result |
+|---|---|---|
+| domain_smoke | 0 | 99 PASS |
+| input_bindings_headless | 0 | 26 PASS |
+| save_guard_headless | 0 | 77 PASS, 0 skipped |
+| return_path | 0 | 47 PASS |
+| ui_flow_headless | 0 | 57 PASS (headless, simulated input) |
+| load_confirmation_headless | 0 | 104 PASS (headless, simulated input) |
+| regional_handoff | 0 | 41 PASS |
+| regional_visual_profiles | 0 | 43 PASS |
+| performance_metrics | 0 | 11 PASS |
+| persistence_notice | 0 | 11 PASS |
+| player_movement | 0 | 4 PASS |
+| session_policy | 0 | all checks passed |
+| save_restart, two-phase | 0 / 0 | write, then read in a fresh process: PASS |
+| scene load | 0 | 3 of 3 |
+| GDScript check-only | 0 | 45 files, 0 failed (44 project scripts plus one scratch probe) |
+
+Node (repository, Node v22.22.3):
+
+| Run | Configuration | Total | Pass | Fail | Skipped |
+|---|---|---|---|---|---|
+| `npm test` | default, no database | 1080 | 1042 | 0 | 38 (live database and TLS) |
+| `npm test` | disposable PostgreSQL 18.4 (loopback) | 1175 at `c775893` | 1171 | 0 | 4 (TLS only) |
+| `npm test` | disposable PostgreSQL 18.4 with `ssl=on`, private test CA | 1177 | 1177 | 0 | 0 |
+
+Lint: `npm run lint` exits 0, with no problems. The baseline was 29 errors (section 27.6), which were cleared in `5573537` by
+local, behaviour-preserving changes. No rule was disabled and no ignore pattern was added. `tsc --noEmit` is clean. `git diff --check` is clean.
+
+Not run: Neon (no route, no credentials); rendered Godot scenes (no display); physical keys; the official Godot release; the new
+CI job on GitHub (see 28.8).
+
+### 28.7 Stage 29 (phase F)
+
+- No Godot code changed in this work. The rendered and physical items in section 27.7 remain as they were. Headless evidence is
+  unchanged, and rendered and physical items stay BLOCKED or NOT VERIFIED.
+- Creation-card F3 (INPUT-START-1): probe `probe_namekeep.gd` (scratch, not committed). A typed name survives F3 to 3D and F3
+  back: the name was `Probe Name` on return, and the session was not playing. So the switch does not lose name progress. The
+  open question is whether a switch should be allowed before a life begins. The design documents do not decide that
+  (`ADVANCED_3D_WORLD_ARCHITECTURE.md` says only "Press F3 to toggle between 2D and 3D modes. State is preserved").
+- Touch controls (TOUCH-1): `touch_controls.gd` exists, but nothing instantiates it. The Stage 25 report presents it as delivered
+  for mobile. The same report says Android is not configured. Wiring it in would change desktop input for a platform the project
+  has not validated. **Left unwired. OWNER DECISION** (is mobile in scope for the next release).
+- Kaduna classification (F9): the visual `semi-arid` in `environment_config.gd` against `tropical` in the catalog and profile
+  data. Section 23.9 says it "should be reconciled by the owner, not silently changed". No authoritative decision exists, so it is
+  unchanged. **OWNER DECISION.**
+- Lighting ownership (TOD-1): traced again. `time_of_day.gd` looks up the light and environment under `get_parent()`, but the
+  scene puts them under `Environment`, so the writes are inert today. A quick fix would make `_update_lighting()` overwrite regional
+  ambient light every frame. The design choice is still open, so nothing was changed. **OWNER DECISION** (section 23.8 options).
+
+### 28.8 Corrections to earlier sections, and CI (phases G and H)
+
+Corrections (earlier text was stale or wrong):
+
+- **Multi-process and hard-kill (sections 26 and 27).** Recorded as NOT TESTED. Corrected: `multiprocess-persistence.test.mjs` covers
+  them and passes on the disposable PostgreSQL. Scope: local, one host.
+- **2D modal gate (section 26.12).** Recorded as code reading only. Corrected: `load_confirmation_headless` covers it headless (MODAL-GATE-1).
+- **Undefined actions and `load_steps` (section 23.9).** Recorded as OPEN. Corrected: `jump` and `toggle_first_person` are defined
+  in `project.godot` (`[input]`), and no InputMap error appears in the current logs. `world_3d.tscn` declares `load_steps=10`, which
+  matches its 5 external and 4 sub-resources. Both are NOT AN ISSUE now.
+- **Stage 28 criteria 8, 12, 22, and 24 (`STAGE_28_AUDIT.md` section 3).** Recorded as NOT TESTED. Now VERIFIED (local): criterion 8
+  (outdated-schema refusal), criterion 12 (down-migration executed), criterion 22 (two OS processes), criterion 24 (SIGKILL of the
+  writer). Each is local, on one host, against a disposable database.
+- **Lint (criterion 44).** Cleared to 0 errors at `5573537`. The `51` in the Stage 28 audit is from an older commit (`6ae2001`) and is not current.
+
+CI (`.github/workflows/ci.yml`):
+
+- Before: one job, `npm run check` (lint and tests, no database). Lint exited 1 with 29 errors, so the job was red before any test ran.
+- Now: the foundation job is unchanged and now passes lint. A second job, `node-live-database`, runs `npm test` against a `postgres:18`
+  service container (loopback, trust authentication, no password, ephemeral). The TLS suite is not run there, and its four tests skip
+  with their stated reason.
+- **Verification limit:** the workflow parses (js-yaml), and the exact job command was reproduced locally against PostgreSQL 18.4
+  (1175 tests, 1171 pass, 0 fail, 4 TLS skips). It has **not** run on GitHub Actions. The action versions (`checkout@v7`,
+  `setup-node@v7`) exist (checked against the GitHub releases API).
+- **Coverage gap:** the Godot suites are not in CI, because the engine binary is not available to the workflow. A TLS job would need
+  a TLS-enabled PostgreSQL and a private CA. Both are NOT IMPLEMENTED in CI.
+
+### 28.9 Production readiness (phase H), evidence-based
+
+| Area | Status | Basis |
+|---|---|---|
+| Authentication | PARTIALLY VERIFIED | Key-only takeover refused; token hashed server-side; unauthenticated refused. No account system, no recovery path, no re-authentication (R8 not implemented) |
+| Authorization (implemented rows) | VERIFIED (local) | J-2, J-3, J-4, M-1, P-1, P-4, economy, business ownership: tests in 28.3 |
+| Authorization (suspended rows) | VERIFIED (containment) / NOT IMPLEMENTED | Gates tested. Permanent rules need owner decisions |
+| Session validity | PARTIALLY VERIFIED | Revocation verified. Expiry NOT ENFORCED by documented decision (OWNER DECISION) |
+| Credential lifecycle | NOT IMPLEMENTED | R7 design only. Client stores plaintext (CRED-1) |
+| Sensitive-data logging | VERIFIED (local) | Session-policy log line has no secrets; `console.*` grep clean |
+| Database migrations and startup | VERIFIED (local) | 28.5 |
+| Transactions and money | VERIFIED (local, single process) | 28.5 |
+| Multi-process and crash recovery | VERIFIED (local, one host) | 28.5. Multi-host NOT VERIFIED |
+| Multi-instance consistency | NOT IMPLEMENTED | Stage 26/27/28 documents; fencing is per database, not per deployment |
+| Deployment configuration | BLOCKED | No deployment, ingress, or proxy configuration in the repository |
+| TLS and WebSocket security | PARTIALLY VERIFIED | Database TLS policy verified locally with a private CA. Public CA-signed server: BLOCKED. The application serves plain `node:http` with WebSocket on the same server (`app.ts`). TLS termination is not in the repository |
+| Environment and secret handling | PARTIALLY VERIFIED | `.env.example` placeholders; no secrets committed; deployment secret store BLOCKED |
+| Health checks | PARTIALLY VERIFIED | `/live` and `/health` tested locally; no probe wired to a platform |
+| Backup and restore | PARTIALLY VERIFIED | Library tested locally. No operator tool, encryption, retention, or scheduling |
+| Rate limiting and abuse | PARTIALLY VERIFIED | Per-connection command limit (`rate_limited`, `app.test.mjs`) and identity budget (R4, disabled by default in production) are tested; topology evidence is BLOCKED |
+| World-state size limits | VERIFIED (local) | `stored-world-size-load.test.mjs` (file and PostgreSQL) |
+| Load testing | PARTIALLY VERIFIED | Capacity benchmark summaries exist (`docs/evidence/stage28-capacity`). No production-scale load test |
+| Monitoring and alerting | PARTIALLY VERIFIED | Prometheus text endpoint unit-tested. No real scrape, no alert rules, no dashboards (NOT IMPLEMENTED) |
+| CI | PARTIALLY VERIFIED | Live-database job added, not yet run on GitHub. TLS and Godot not in CI |
+
+### 28.10 Owner decisions (none were made in this work)
+
+For each decision: the observed behaviour, the options, the recommendation, and whether implementation is blocked.
+
+1. **V as the first-person toggle.** Observed: `toggle_first_person` = V (physical 86) in `project.godot`. No documented key. Options: approve V, or choose another key. Recommendation: approve V if no conflict is wanted with other controls, and record the approval. Blocks: nothing else. Status stays provisional.
+2. **F3 on the character-creation card.** Observed: F3 switches to 3D with no character. The name survives. Options: (a) allow (current); (b) refuse while the creation card is shown, as a modal is refused. Recommendation: (b), because the 3D world with no character is not a defined state. Blocks: nothing that is tested; it affects the 3D default region only.
+3. **Authority rules R-a to R-f, and the rows G-2, G-4, G-5, G-6, G-7, E-1, M-2 to M-6, P-2, P-3** (`STAGE_28_GOVERNMENT_AUTHORIZATION.md`, `STAGE_28_AUTHORITY_MODEL.md`). Observed: all suspended. Options: define the appointing-office table, the budget-owner table, the electoral-authority office, and the recruiting, command, and unit roles, then implement. Recommendation: define the appointing and budget tables first; they unlock the most rows. Blocks: every suspended government, election, military, and police write.
+4. **Fine payment (J-6).** Observed: `payFine` debits no account and takes no actor. `FineRecord` has no designated account. Options: define a treasury or receiving account and an atomic debit-and-ledger rule. Recommendation: define the account, then implement with the economy ledger. Blocks: `pay_fine`.
+5. **Appeal decisions (J-5).** Observed: no appellate assignment exists. Options: define appellate assignment, then implement. Blocks: `decide_appeal`.
+6. **Session expiry (D-06).** Observed: limits are logged, not enforced. Options: approve the 30-day and 7-day values, and add a re-authentication path, then enforce. Recommendation: do not enforce until a re-authentication path exists, to avoid locking players out. Blocks: the "expired session cannot mutate" requirement.
+7. **Kaduna climate (F9).** Observed: `semi-arid` (visual) against `tropical` (catalog). Options: change the visual value, or change the catalog. Recommendation: confirm `tropical` (the catalog, the documented authoritative source), then change the visual value in a separate, reviewed change. Blocks: no runtime test, because the value is excluded data.
+8. **Lighting ownership (TOD-1).** Observed: see 28.7. Options: (a) regional profile owns ambient light, time of day modulates only the sun; (b) time of day owns ambient, regional supplies a base. Recommendation: (a), because the regional profiles are the reviewed configuration. Blocks: enabling `time_of_day.gd` lighting.
+9. **Touch controls (TOUCH-1).** Observed: implemented, not wired. Options: wire for mobile, or record as deferred. Recommendation: defer until an Android export is configured and tested. Blocks: nothing else.
+10. **Client credential storage (CRED-1).** Observed: plaintext in the user data directory. Options: accept as a local-client limitation, or add platform secure storage. Recommendation: accept for now, and record it. Blocks: nothing tested.
+11. **CI scope.** Observed: the live-database job is added. Options: add a TLS job with a temporary private CA; add Godot headless checks with a pinned engine binary. Recommendation: add the TLS job next, since its mechanism is already verified locally. Blocks: nothing.
+12. **Uniform random starter households (TEST-11).** Observed: the profile is chosen uniformly from four. The test pins one. Options: confirm uniform choice is intended, or weight it. Blocks: nothing.
+
+### 28.11 Register updates
+
+| ID | Area | Issue | Status | Section | Owner? |
+|---|---|---|---|---|---|
+| AUTH-MATRIX-1 | Authority tests | No cross-family socket matrix | FIXED_VERIFIED (`b510f69`, `9a2e4e0`): 5 cases per backend, mutation-checked | 28.3 | No |
+| AUTH-1 | Government, election, military, police writes | Suspended pending rules | KNOWN_LIMITATION (containment). Permanent rules OPEN | 28.3 | Yes |
+| AUTH-2 | Fines and appeals (J-5, J-6) | Suspended; no designated account; no appellate assignment | OPEN (OWNER DECISION) | 28.3 | Yes |
+| SESSION-1 | Session expiry | Logged, not enforced | OPEN (OWNER DECISION, D-06) | 28.4 | Yes |
+| CRED-1 | Client token and creation key | Plaintext in user data | KNOWN_LIMITATION | 28.4 | Accept or fund |
+| CRED-2 | Recovery | No recovery path | OPEN (R8 not implemented) | 28.4 | Yes |
+| PERSIST-MIG-1 | Outdated schema and down-migration | Not tested | FIXED_VERIFIED (`9613bff`), local | 28.5 | No |
+| PERSIST-MP-1 | Multi-process and SIGKILL | Recorded as not tested | NOT_VERIFIED for multi-host; local verified (correction of 26/27) | 28.5 | No |
+| FENCE-1 | Concurrency across instances | No multi-instance evidence | NOT_VERIFIED (one host only) | 28.5 | No |
+| LINT-1 | 29 lint errors | CI red before tests | FIXED_VERIFIED (`5573537`): 0 errors | 28.6 | No |
+| CI-1 | Live database in CI | Not run | FIXED_UNVERIFIED (`c775893`): workflow added, not run on GitHub | 28.8 | No |
+| CI-2 | TLS and Godot in CI | Not run | OPEN (needs TLS server or pinned engine) | 28.8 | No |
+| INPUT-START-1 | F3 on creation card | Switches to 3D with no character | OPEN (OWNER DECISION) | 28.7 | Yes |
+| ACT-1 | V as toggle key | Provisional | OPEN (OWNER DECISION) | 28.10 | Yes |
+| INPUT-MIX-1 | Physical and logical keys | Mixed policy | KNOWN_LIMITATION | 27.4 | Only if policy changes |
+| TOUCH-1 | touch_controls.gd | Implemented, not wired | KNOWN_LIMITATION (OWNER DECISION on scope) | 28.7 | Yes |
+| F9 | Kaduna climate | Visual differs from catalog | OPEN (OWNER DECISION) | 28.7 | Yes |
+| TOD-1 | Lighting ownership | Two owners, inert lookup | OPEN (OWNER DECISION) | 28.7 | Yes |
+| DOC-1 | Stale claims (23.9, 26.12, 26.7) | Corrected here | FIXED_VERIFIED (documentation, checked against code) | 28.8 | No |
+| TEST-11 | domain_smoke count | Random profile | FIXED_VERIFIED (`40b93a6`) | 27.3 | Confirm intent |
+| GUARD-SELFTEST-1 | Save-guard self-test | Refused start did not stop | FIXED_VERIFIED (`30bfcd4`) | 27.5 | No |
+| GUARD-LOCK-1 | Forced lock race | Not forced | NOT_VERIFIED | 27.5 | No |
+| STAGE-29 | Rendered validation | No display | BLOCKED | 27.7 | No |
+| STAGE-28 | Stage 28 | Criteria open | OPEN | 28.9 | Yes (decisions) |
+
+### 28.12 Remaining coverage gaps (honest list)
+
+- No socket-level test for a stranger against property transfer or lease termination (service tests only).
+- No socket-level test for business `fire_employee` by a stranger (the close, transfer, hire, and capital cases are covered).
+- The two-process and SIGKILL tests run on one host against a disposable database. Nothing here proves multi-host behaviour.
+- The lock race in the Godot save guard is not forced.
+- Mutation M4 (removing the unauthenticated gate itself) was not run, so the unauthenticated test's sensitivity is not proven by mutation.
+- Rendered, mouse, and physical-key behaviour: not tested (no display, no keyboard).
+
+### 28.13 Delivery
+
+- Commits on `arena/00cdea0e-naija` in this section: `b510f69`, `9613bff`, `5573537`, `9a2e4e0`, `c775893`, and the documentation commit that adds this section. Each was pushed by a normal fast-forward.
+- Production code changed: only `services/world-api/src`, for the lint-only edits in `5573537`. No authority, persistence, or session logic was changed. The protected areas were not modified.
+- Scratch-only (not committed): probes `probe_f3start.gd`, `probe_space.gd`, `probe_namekeep.gd`; the barrier race harness; the disposable PostgreSQL data directory, which was stopped; the scratch TLS certificates.
