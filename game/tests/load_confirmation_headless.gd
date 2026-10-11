@@ -78,7 +78,13 @@ func _backup_save() -> bool:
 		marker.store_string("No save file existed when this run started.")
 		marker.close()
 		return true
-	var original := FileAccess.get_file_as_bytes(SAVE_PATH)
+	# Read the original with an explicit open. get_file_as_bytes() returns an empty array on failure, so an
+	# unreadable save would otherwise be backed up as empty and then overwritten by the restore.
+	var source := FileAccess.open(SAVE_PATH, FileAccess.READ)
+	if source == null:
+		return false
+	var original := source.get_buffer(source.get_length())
+	source.close()
 	var file := FileAccess.open(BACKUP_PATH, FileAccess.WRITE)
 	if file == null:
 		return false
@@ -99,7 +105,12 @@ func _restore_save() -> bool:
 		push_error("Could not open user:// to restore the save file. Backup remains at %s" % BACKUP_PATH)
 		return false
 	if _save_existed:
-		var backup_bytes := FileAccess.get_file_as_bytes(BACKUP_PATH)
+		var backup_file := FileAccess.open(BACKUP_PATH, FileAccess.READ)
+		if backup_file == null:
+			push_error("Could not read the backup. The save file was not changed. Backup remains at %s" % BACKUP_PATH)
+			return false
+		var backup_bytes := backup_file.get_buffer(backup_file.get_length())
+		backup_file.close()
 		var file := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 		if file == null:
 			push_error("Could not rewrite the save file. Backup remains at %s" % BACKUP_PATH)
