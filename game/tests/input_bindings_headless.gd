@@ -37,6 +37,7 @@ func _run() -> void:
 	_check_configured_keys()
 	_check_referenced_actions_exist()
 	_check_no_key_conflicts()
+	_check_space_contexts()
 	_observe_builtin_space()
 	if _failures.is_empty():
 		print("PASS: %d input binding checks (%d action names referenced in game scripts)" % [_checks, _referenced.size()])
@@ -153,6 +154,38 @@ func _check_no_key_conflicts() -> void:
 	for code in owners:
 		_check((owners[code] as Array).size() == 1,
 			"physical key %d is bound to more than one project action: %s" % [code, str(owners[code])])
+
+
+func _count_gui_nodes(node: Node) -> int:
+	var count := 1 if (node is Control or node is CanvasLayer) else 0
+	for child in node.get_children():
+		count += _count_gui_nodes(child)
+	return count
+
+
+# Space is bound to the project's jump action and, through Godot's built-in ui_accept, to UI activation.
+# The two are kept apart by context: the only reader of jump is the 3D character, and the 3D world scene
+# has no GUI node that could consume ui_accept. This is a structural check; it does not send input, and the
+# 2D modal gate that blocks switching to 3D while a dialog is open is not covered here.
+func _check_space_contexts() -> void:
+	var jump_readers: Array[String] = []
+	var scripts: Array[String] = []
+	_collect_scripts("res://", scripts)
+	var jump_read := RegEx.new()
+	jump_read.compile("is_action_(just_)?pressed\\(\\s*\"jump\"")
+	for path in scripts:
+		if jump_read.search(FileAccess.get_file_as_string(path)) != null:
+			jump_readers.append(path)
+	_check(jump_readers == ["res://3d_world/scripts/character_3d.gd"],
+		"only the 3D character reads the jump action (found %s)" % str(jump_readers))
+	var packed := load("res://3d_world/scenes/world_3d.tscn") as PackedScene
+	_check(packed != null, "the 3D world scene loads for the context check")
+	if packed != null:
+		var root := packed.instantiate()
+		var gui_nodes := _count_gui_nodes(root)
+		root.free()
+		_check(gui_nodes == 0,
+			"the 3D world scene has no GUI node that could consume ui_accept (found %d)" % gui_nodes)
 
 
 func _observe_builtin_space() -> void:
