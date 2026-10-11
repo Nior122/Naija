@@ -108,9 +108,12 @@ func _test_world_environment_access() -> void:
 
 func _test_missing_world_environment() -> void:
 	var config = _new_config(false)
+	# _ready() already applied the default region and set the warning flag. Clear the flag so
+	# that the call below must set it again.
+	config.set("_warned_missing_world_env", false)
 	config.apply_region_profile("ng:state:pl")
 	_check(config.get("_warned_missing_world_env") == true,
-		"Missing WorldEnvironment is reported once, without a crash")
+		"Applying a region with no WorldEnvironment sets the warning flag")
 	_check(config.climate == "montane", "Region state still updates when the node is missing")
 	config.queue_free()
 
