@@ -1541,3 +1541,111 @@ These are headless tests. They do not show a rendered dialog, a visual lock, or 
 - Modal safety for world switching: fixed, and verified headless.
 - UI-flow determinism: clock frozen, save restore verified, refusal widened. Verified over 10 repeated runs.
 - Stage 29 **OPEN** until rendered validation is complete. Stage 28 **OPEN**. Production **NOT READY**.
+
+## 22. Re-audit of modal safety and UI-flow determinism, with mutation checks (2026-10-11)
+
+Evidence labels: **executed (headless)** means Godot `--headless` with simulated input, and no rendering. **Static** means file reading or grep. **Mutation** means a temporary change made only in a scratch copy under `/tmp`, never in the repository. The engine is the custom build `4.7.2.stable.custom_build.ed1daf0bf`. Its `--version` check exited 0. It is not the official release.
+
+### 22.1 Result
+
+- Overall: **MODAL_SAFETY_VERIFIED**. The defect in section 21 was fixed in `00f692b`. This task re-checked that protection, and it made no production change. The required tests were already present, and they fail when the guard is removed (see 22.5).
+- UI-flow determinism: the game clock is frozen by the session's own timing field, and the save restore is verified. The race is confirmed only with an accelerated clock. At the real rate, bypassing the freeze did not fail in three runs (see 22.5 and 22.6). The freeze is therefore a guard against a timing-dependent race, not a fix for a race that always fails.
+- Stage 29 remains **OPEN** until rendered validation is done. Stage 28 remains **OPEN**. Production remains **NOT READY**.
+
+### 22.2 Starting state (preflight)
+
+- Branch `arena/00cdea0e-naija`. Local HEAD `00f692be491507e1595330ba113cede5a74d6498`, the commit from section 21. Remote tip is the same commit, with 0 ahead and 0 behind.
+- `cd1703c` is an ancestor of HEAD. `03e6611` is also an ancestor. The working tree was clean, with no staged changes, no untracked files, and no stash.
+- The earlier report named `cd1703c` as HEAD. That was accurate for the previous task. The later commit `00f692b` is the expected successor, not a discrepancy.
+
+### 22.3 Code inspection (static)
+
+- **F3 binding.** `project.godot` binds `toggle_3d_mode` to one key event, physical keycode 4194334 (`KEY_F3`). F11 is not bound to that action. The only code that reads `toggle_3d_mode` is `scene_switcher.gd`, and the `return_path` and `ui_flow` tests.
+- **Dispatch.** `scene_switcher.gd` `_unhandled_input` checks `event.is_action_pressed("toggle_3d_mode")`. It then calls `_world_switch_blocked()`, which asks the 2D session through `blocks_world_switch()`. That function returns `ui.is_modal_open()`. When it is blocked, the event is consumed and nothing else runs.
+- **Modal.** The Load confirmation is created by `show_load_confirmation()` through `_open_modal()`. That sets `_modal_open`, emits `modal_changed(true)`, and adds a full-rect `ColorRect` with `MOUSE_FILTER_STOP`. The shade blocks mouse input to the game beneath it. Keys are not blocked by the shade, which is why the key guard is needed.
+- **Dismissal.** Confirm calls `_on_load_confirmed()`, which closes the modal and emits `load_requested`. That is routed to `_continue_game()`. Cancel calls `_close_modal()` and emits nothing.
+- **Validated commit.** `_continue_game()` calls `SaveServiceScript.load_state()`, then `_is_restorable_save()`, and only then replaces `clock` and `character`. A failed check returns with a notice, and the session is unchanged.
+- **Save validation.** `save_service.gd` defaults the character and clock to `null`, not `{}`, so a missing key fails the `is Dictionary` test.
+- **Suspension.** `suspend_session()` disables processing and hides the UI layer. `resume_session()` restores both. The 2D session is not freed.
+- **Autosave.** Autosave is clock-driven. The 2D session calls `_save_game(false)` when the 15-game-minute boundary is crossed (`prototype_game.gd`, the `_process` clock block), and only when no modal is open. Other saves are event-driven, from `_save_game(false)` calls at player actions. Nothing is timer-based.
+- **Rate.** `_seconds_per_game_minute` is set once in `_ready()`, from the calendar catalog (default 0.65 s). `ui_flow_headless.gd` freezes it after `_ready()` has run, so the freeze is not overwritten.
+- **Save path.** Both UI-flow tests use `user://naija-stage1-save.json`, which is `DEFAULT_SAVE_PATH`. This build has no command-line flag to redirect `user://`. A project-setting override exists, but it changes production configuration, so it is not used.
+
+Answers to the seven questions in the task:
+
+1. Is the Load confirmation a blocking modal? Yes, for input. It is a full-rect shade with `MOUSE_FILTER_STOP`, plus `_modal_open`, which the 2D session reads.
+2. Does F3 remain available while the modal is open? Yes, as a key event. The switcher ignores it while blocked.
+3. Can the switcher change worlds while the dialog is visible? Not since `00f692b`. Before that fix, yes (section 21.3).
+4. If it did, what happened to the dialog? Before the fix, `suspend_session()` hid the UI layer. The dialog stayed open but hidden in 3D, and it was visible again after a return to 2D. It was not orphaned.
+5. Could the session be left partly changed? Before the fix, the session objects were retained, so nothing was replaced. Confirm itself was not affected.
+6. Is there an established mechanism? Yes, `ui.is_modal_open()`, read by `_unhandled_input`, the movement code, and the clock block in the 2D session. `blocks_world_switch()` reuses it.
+7. Do other blocking dialogs use it? Every `_open_modal()` caller sets `_modal_open`, so they share the same query. No other mechanism exists.
+
+### 22.4 Executed evidence (headless, this run, sequential)
+
+- `load_confirmation_headless.gd`: exit 0. 104 of 104 PASS, 0 FAIL, 0 SCRIPT ERROR. The output also shows undefined-action errors (`toggle_first_person`, `jump`), which are known and not failures. Their count changes between runs because the engine logs them per frame.
+- `ui_flow_headless.gd`, three consecutive runs under identical conditions:
+  - Run 1: exit 0. 57 of 57 PASS, 0 FAIL, 0 SCRIPT ERROR.
+  - Run 2: exit 0. 57 of 57 PASS, 0 FAIL, 0 SCRIPT ERROR.
+  - Run 3: exit 0. 57 of 57 PASS, 0 FAIL, 0 SCRIPT ERROR.
+  - All three matched. The game-minute assertion passed in all three runs, which means game time did not advance during the save-dependent steps. Autosave is clock-driven, so no clock-driven autosave occurred in those windows. Event-driven saves are triggered by the test's own steps, and the test does not count them separately.
+  - Real user save: the test writes `user://naija-stage1-save.json`, the same path as the real save. The user data folder was checked after the batch and after each mutation run. It held only `logs`, `naija-multiplayer.cfg`, and `objectdb_snapshots`, and no save, backup, or marker existed. The previous turn ended with the same listing. The test created its own file and removed it at the end.
+- `return_path.gd`: exit 0. 46 of 46 PASS. Three further repeated runs: exit 0, 46 of 46 each.
+- `regional_handoff.gd`: exit 0. 41 of 41 PASS.
+- `regional_visual_profiles.gd`: exit 0. 43 of 43 PASS.
+- `performance_metrics.gd`: exit 0. 11 of 11 PASS.
+- `player_movement.gd`: exit 0. 4 of 4 PASS.
+- `persistence_notice.gd`: exit 0. It prints no PASS summary, so it has no assertion count in its output.
+- `session_policy.gd`: exit 0. It prints no PASS summary, so it has no assertion count in its output.
+- `domain_smoke.gd`: exit 1. `FAIL: 4 of 92 Stage 1 domain checks`. This is the known baseline failure. The total was 91 to 93 across earlier runs.
+- `save_restart.gd write`: exit 0. It writes its own file, `user://naija-stage1-restart-test.json`.
+- `save_restart.gd read`: exit 1, with 2 `ERROR` lines (`academic result`, `attendance and inventory`). This is the known baseline failure. The write ran first in this sequence, so it is not a sequencing error.
+- Main project load (`--quit`): exit 0.
+- GDScript check-only sweep: 41 files, 0 with a non-zero exit (static parse and check).
+- `npm test` (static Node tests, not Godot evidence): exit 0. 1074 total, 1037 pass, 0 fail, 37 skipped.
+- `npm run lint` (static): exit 1. 51 errors, 0 warnings. The error lines match the baseline file for file.
+- `git diff --check`: exit 0 on the tree before this section was added. It is rerun after the commit.
+
+### 22.5 Mutation checks (scratch copy only, never in the repository)
+
+- **M1: modal gate disabled** (`_world_switch_blocked()` returns `false`). Load confirmation test: exit 1, 7 of 104 checks fail. The failing checks are the expected ones: F3 does not switch to 3D while the dialog is open, no 3D world is created, the 2D session is not suspended, the dialog stays open after a blocked F3, the open-F3-cancel cycle, and the repeated node-count and session checks. The test detects removal of the guard.
+- **M2: clock forced fast** (0.0005 s per game minute instead of frozen). UI-flow test, 2 runs: exit 1 both times, 3 of 57 checks fail each time. The failures are the new game-minute assertion and the two saved-money checks (Load and Continue). The test detects an accelerated clock.
+- **M3: freeze bypassed at the real rate** (the freeze line is a no-op, and the default 0.65 s rate remains). UI-flow test, 3 runs: exit 0 each time, 57 of 57 PASS. The race did not reproduce at the real rate in these short runs. The game-minute assertion did not fail either, so the clock did not advance during the save-dependent steps.
+
+Conclusion from M1 to M3: the modal test catches removal of the guard. The UI-flow test catches an accelerated clock. At the real rate, the freeze is a guard against a timing-dependent race, and this run did not reproduce that race. It should not be described as a fix for a failure that always occurs.
+
+### 22.6 Determinism findings
+
+- **Race (accelerated clock only).** Section 21.3 records two failing runs of the old test, with the clock forced to fire boundaries every few milliseconds. This section's M2 reproduces the same class of failure with the new assertion.
+- **Real rate.** M3 did not reproduce the race in three runs. The honest claim is that the freeze removes a timing-dependent risk. It is not a demonstrated fix for a failure at the real rate.
+- **Isolation.** The test uses the session's own timing field, and it does not add a production hook, a sleep, or a timeout change. The real save slot is shared, but the test backs it up, byte-verifies the backup before removing the original, and restores and byte-compares the original before removing its backup. It refuses to run while any save-slot test's backup or marker is present.
+- **Limit.** The test cannot redirect `user://` in this build, so it cannot run in a separate user-data directory. The backup and refusal logic is the protection that is available.
+
+### 22.7 Baseline comparison
+
+- `domain_smoke`: 4 failing checks, unchanged. The total varied (91 to 93 before, 92 now).
+- `save_restart --read`: exit 1, 2 `ERROR` lines, unchanged.
+- ESLint: 51 errors, unchanged. The error lines match the baseline file for file (diff empty).
+- `toggle_first_person` and `jump`: still undefined, and still logged. Not changed.
+- `npm test`: 1074 / 1037 / 0 / 37, unchanged.
+- No new failure was introduced by this task. No production code changed in this task.
+
+### 22.8 Verification status
+
+- **Executed (headless):** the Load confirmation test, the UI-flow test (3 consecutive runs), the return-path test (4 runs), the regional handoff, visual profile, performance, player movement, and session-policy tests, the main project load, and the mutation checks in 22.5.
+- **Static:** the code inspection in 22.3, the check-only sweep, `npm test`, lint, and `git diff --check`.
+- **Not verified:** the rendered dialog, its layout, and its appearance. Real keyboard input in a window. Mouse interaction with the dialog's buttons. Any rendered timing.
+- **Blocked by tooling:** a separate user-data directory for the tests (see 22.6). Live-server behaviour, including the multiplayer disconnect safeguard in `_continue_game()`, which was not exercised because there is no server in this environment.
+
+### 22.9 Remaining risks
+
+- `return_path.gd` does not freeze the clock, and its restore is not byte-verified. It passed 4 of 4 runs in this task (the suite run and three repeats). It was not changed, because it is outside this task's scope.
+- The UI-flow test's freeze writes a private field, `_seconds_per_game_minute`. This is test-only, and it follows the existing approach.
+- The undefined-action log volume varies by run, because it is per frame. It is not an assertion.
+- Rendered validation and live-server validation are outstanding (see 22.8).
+
+### 22.10 Status
+
+- Modal safety for world switching: verified headless, with the guard in `00f692b`. This section adds no production change.
+- UI-flow determinism: clock frozen, save restore verified, and three consecutive runs passed. The race is confirmed only with an accelerated clock.
+- Stage 29 **OPEN** until rendered validation is complete. Stage 28 **OPEN**. Production **NOT READY**.
