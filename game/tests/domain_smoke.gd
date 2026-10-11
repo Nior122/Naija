@@ -108,11 +108,10 @@ func _test_school_records() -> void:
 	)
 	_check(new_score > prior_score, "A correct class activity improves the academic average")
 	_check(character.attendance.size() == 1, "Attending class stores an attendance record")
-	var following_lesson: Dictionary = SchoolServiceScript.next_lesson(
-		character, clock.day, clock.minute_of_day
-	)
+	# English Language starts at 09:00 and its window opens 30 minutes earlier, so check it at 08:30.
+	var following_lesson: Dictionary = SchoolServiceScript.next_lesson(character, clock.day, 510)
 	_check(
-		str(following_lesson.get("subject", "")) == "English",
+		str(following_lesson.get("subject", "")) == "English Language",
 		"A completed subject is not repeated in the same day"
 	)
 	var english_score_before := int(character.academic_scores["English"])

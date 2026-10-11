@@ -348,6 +348,17 @@ static func subject_names(record: Dictionary) -> Array[String]:
 	return result
 
 
+## JSON numbers load as floats, and Array.has() does not match the integer 0 against 0.0.
+## Weekday lists from the catalog therefore never matched, so no lesson was ever scheduled.
+static func _has_weekday(days: Variant, weekday: int) -> bool:
+	if not days is Array:
+		return false
+	for value in days:
+		if typeof(value) in [TYPE_INT, TYPE_FLOAT] and int(value) == weekday:
+			return true
+	return false
+
+
 static func schedule_for_day(record: Dictionary, day: int) -> Array[Dictionary]:
 	var data := catalog()
 	var weekday := posmod(day - 1, 7)
@@ -355,7 +366,7 @@ static func schedule_for_day(record: Dictionary, day: int) -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
 	for entry_value in data.get("timetable", []):
 		var entry: Dictionary = entry_value
-		if not entry.get("days_of_week", []).has(weekday):
+		if not _has_weekday(entry.get("days_of_week", []), weekday):
 			continue
 		if not entry.get("class_ids", []).has(str(record.get("current_class_id", ""))):
 			continue
@@ -471,7 +482,7 @@ static func mark_missed_periods(record: Dictionary, day: int, minute_of_day: int
 	var weekday := posmod(day - 1, 7)
 	if (
 		str(record.get("enrollment_status", "")) != "enrolled"
-		or not data.get("calendar", {}).get("school_days_of_week", []).has(weekday)
+		or not _has_weekday(data.get("calendar", {}).get("school_days_of_week", []), weekday)
 	):
 		return 0
 	var marked := 0
