@@ -2520,3 +2520,354 @@ Historical results from earlier rounds (for example, 93 checks and the earlier a
 - The simultaneous lock race (GUARD-LOCK-1) is not forced. NOT_VERIFIED.
 - The 2D modal gate that blocks switching to 3D is covered by code reading only.
 - Real user data: not reachable from this sandbox and not touched.
+
+
+## 27. Pre-release audit: integrity, TEST-11, input, save guard, regression, Stage 29 and Stage 28 classification (2026-10-11)
+
+Evidence labels: **verified** means the stated command or probe ran and its result is recorded here. **Headless** means
+Godot `--headless` with simulated input, or Node tests. **Local** means a disposable database or private CA on this
+sandbox. Nothing here was rendered. **Static** means reading or grep. The Godot engine is the custom build
+`4.7.2.stable.custom_build.ed1daf0bf` (checked with `--version`). It is not the official release, so official-release
+compatibility is **not verified**. Scratch harnesses live in `/tmp/naija-harness/m2/` and `/tmp/naija-scratch/`, outside the
+repository. They are not committed. The Godot runs used isolated HOME and XDG directories, so none touched real user data.
+
+### 27.1 Result
+
+- Tested code commit: `30bfcd4`. Test commits in this section: `40b93a6` (TEST-11) and `30bfcd4` (save-guard self-test).
+  This documentation commit follows them. The remote tip is verified after the push.
+- Stage 29: **OPEN (BLOCKED: no graphical display in this sandbox, `DISPLAY` unset, no X server).** Stage 28: **OPEN**.
+  Production: **NOT READY**. Each is discussed in the sections below.
+- Corrections to section 26: see 27.3 (TEST-11 cause) and 27.4 (2D modal gate coverage).
+
+### 27.2 Repository integrity (phase 1)
+
+- Branch `arena/00cdea0e-naija`. Before this section: HEAD, upstream, and remote tip all at `e1c6cf5`, tree clean. The other
+  remote refs were unchanged: `origin/arena/f48b6f8e-naija` at `02dd67c`, and `main` at `44483b4`. All four series commits
+  were ancestors of HEAD. Nothing was rewritten, force-pushed, or merged.
+- Tracked files: no saves, backups, locks, harnesses, or generated artifacts. `.env` is absent. The only tracked env-like file is
+  `.env.example`. Its keys were checked with values redacted. It contains placeholders and no secrets.
+- Tracked evidence: the 25 `docs/evidence/stage28-capacity/*.json` files are benchmark summaries (shape checked, no save content).
+
+### 27.3 TEST-11: `domain_smoke` check-count variation (phase 2)
+
+**Root cause (corrects the earlier hypothesis in section 26.7).** The check total varied because the starter household is chosen
+at random from `game/data/life/life_catalog.json` (`family_generation.starter_household_profiles`). The four profiles have
+2, 3, 3, or 4 relatives. `HouseholdFactoryScript._starter_profile` picks one with `randi_range` (household_factory.gd:31). The
+`for relative in relatives` loop in `domain_smoke.gd` adds one check per relative. The total before the fix was therefore
+`95 + relatives`. The earlier hypothesis that the time-seeded actor ID changes the count was wrong. It changes the DOB offset,
+but the count does not depend on it.
+
+Controlled runs (scratch copies, instrumentation only, same repository content):
+
+| Variant | Relatives per run | Total checks | Result |
+|---|---|---|---|
+| Control, 5 runs (print only) | 4, 3, 4, 3, 3 | 99, 98, 99, 98, 98 | PASS each |
+| Profile forced to index 0, 3 runs | 2, 2, 2 | 97, 97, 97 | PASS each |
+| IDs made deterministic (process-wide sequence), profile random, 4 runs | 2, 3, 2, 3 | 97, 98, 97, 98 | PASS each. Count still follows the profile, so IDs do not drive it |
+| Profile forced and IDs deterministic, 3 runs | 2, 2, 2 | 97, 97, 97 | PASS each |
+| Constant IDs (first attempt, 2 runs) | 3, 4 | 98, 99 | 2 FAIL each: "New characters receive different households", "Starter NPCs receive distinct stable person IDs". Caused by my mutation (identical IDs), not product code. Discarded |
+
+**Intended or accidental?** The random profile choice is the code's design, and the catalog exists to give family variety. It is
+intended. Accidental was only the test: it counted a random input as a fixed total. The docs do not state the selection rule,
+so the owner should confirm uniform random choice (OWNER-TEST-11, Low, does not block).
+
+**Fix (`40b93a6`, test only).** The test sweeps 40 seeded samples and asserts that each has 2 to 4 relatives. It then pins the
+random stream for the household it checks (`STARTER_HOUSEHOLD_SEED = 1`, which gives 3 relatives). Production randomness is not
+changed. The total is now 99 (96 base + 3 relatives).
+
+**Verification.** Five unmodified runs of the edited test gave 99 each (5 of 5 identical). One run on `30bfcd4` also gave 99 PASS.
+
+**Effect of the variation.** It changes only the count of per-relative checks and the household composition. It does not change
+any outcome checked. In all variants with unique IDs, no check failed, and the save round-trip checks passed. Each suite runs in
+its own process and HOME, so there is no cross-suite effect. Status: **FIXED_VERIFIED** (test reproducibility). Production behaviour is unchanged.
+
+### 27.4 Input policy (phase 3)
+
+Verified (static reading, plus headless tests):
+
+- **Actions defined.** `game/project.godot` defines `toggle_3d_mode` (F3, physical 4194334), `jump` (Space, physical 32), and
+  `toggle_first_person` (V, physical 86). `prototype_game._setup_input_actions()` defines `move_up/down/left/right` (W/S/A/D and
+  arrows), `run` (Shift), and `interact` (E) at runtime, using logical keycodes. All 10 action names referenced in scripts are
+  defined. `_bind_action` skips any action that already has events, so bindings cannot be duplicated. `input_bindings_headless`: 26 checks, PASS.
+- **F3 and modal safety.** `SceneSwitcher.switch_to_3d` has one caller, the guarded F3 handler. The handler refuses the switch
+  and consumes the event while a blocking modal is open (`blocks_world_switch`). Headless evidence: `load_confirmation_headless`
+  presses the bound F3 event while the Load confirmation is open. The switch is refused, the modal stays open, Cancel closes it,
+  and F3 works again afterwards. The same suite checks that the F3 binding is used only by `toggle_3d_mode`.
+- **2D suspended while 3D is active.** Headless (`ui_flow_headless` section 5): the 2D session is suspended and not processing, the
+  HUD is hidden, and exactly one 3D world exists.
+- **Space.** `jump` is read only at `character_3d.gd:48`. `world_3d.tscn` has no GUI nodes. The structural test
+  `_check_space_contexts` (committed `dff5a5c`) fails if a Control is added to the 3D world (mutation: 1 of 26 failed). Scratch probe
+  (simulated key via `push_input`): with 3D active, Space did not activate the focused 2D "Begin your life" button (0 presses,
+  mode stayed 3D). The same Space in 2D activated it (1 press). The probe is a positive control.
+- **Duplicate and stale bindings.** `toggle_3d_mode` has exactly one binding, and round trips add none (`ui_flow_headless`).
+
+Gaps and findings:
+
+- **INPUT-START-1 (OPEN, OWNER DECISION).** The character-creation card is not a modal, so `blocks_world_switch()` is false
+  there. Pressing F3 on it switches to 3D. The 3D world loads with `region_id = ng:state:on` (a default, since no character exists).
+  F3 then returns to the same creation card. No error was logged. Scratch probe, real main scene, bound key. No existing test
+  covers this, since `ui_flow` presses F3 only after "Begin your life". I did not add a guard, because whether world switching should
+  be allowed before a life begins is a control policy decision for the owner.
+- **MODAL-GATE-1 (NOT AN ISSUE; corrects 26.12).** Section 26.12 said the 2D modal gate was covered by code reading only. That is
+  no longer true. `load_confirmation_headless` covers it headless (see above).
+- **INPUT-MIX-1 (KNOWN_LIMITATION).** Project actions use physical keys (F3, Space, V). Runtime actions use logical keycodes
+  (WASD, Shift, E), which can change with keyboard layout. Not changed. A binding change needs an owner decision.
+- **TOUCH-1 (KNOWN_LIMITATION).** `game/scripts/services/touch_controls.gd` is not instantiated or referenced anywhere in the
+  project, so its `_input` cannot run in this build. Touch controls are not verified.
+- **KEY-1 (BLOCKED).** Physical keypress verification needs a keyboard and display. Not available here. Simulated keycodes were used throughout.
+- **ACT-1 (OPEN, OWNER DECISION).** `toggle_first_person` = V has no documented key. It is kept as a **provisional technical default**.
+  This is not owner approval.
+
+### 27.5 Save guard (phase 4)
+
+Self-test coverage (`save_guard_headless.gd`, 77 checks, 0 skipped, uid 1001, not root). It covers: existing save backed up and
+restored; absent save; ambiguous state refused without change; observed interrupted change recovered; backup byte mismatch refused
+and kept; restore failure keeps the material, then recovers (the chmod case runs because the sandbox is not root); held-lock
+concurrent start refused; refusal before start changes nothing; stale lock without manifest removed; repeated finish is stable.
+Refusals leave the save, backup, manifest, and lock as they were. The self-test uses only a test-only slot.
+
+Real-save suites (`ui_flow_headless`, `return_path`, `load_confirmation_headless`): they call `begin()` first. On refusal they call
+`quit(1)` and return before any access to the save path. Confirmed by reading the code.
+
+**Concurrency, two OS processes on one shared user directory (scratch):**
+
+| Round | Setup | Outcome |
+|---|---|---|
+| Plain start, 3 rounds, before the fix | Both start with no barrier | One PASS (77), one refused by the precheck ("protocol or self-test slot files already exist; nothing was changed"). No leftover files |
+| Barrier, before the fix (`rb-b1`) | Both pass the precheck and wait for a shared start time, then reach the lock together | **Defect.** The refused run did not stop. A: 30 of 77 failed. B: 29 of 77 failed. Both ran scenarios that wrote the test slot and the shared protocol files |
+| Barrier, after the fix (`rb-b2`, `b3`, `b4`) | Same | Each round: one PASS (77), one BLOCKED with exit 1 ("another save-guard run holds the protocol; this run was refused at start and changed nothing"). No leftover files |
+
+**Defect and fix (`30bfcd4`, self-test only, production guard unchanged).** The self-test kept running after a refused start that
+had to succeed. Its later scenarios wrote the shared backup and manifest paths, and `_s02` removed the slot. A fixed slot name also let
+the pre-`begin()` fixture write land in another instance's slot. The fix:
+
+1. Each start that must succeed goes through `_start_expected`. It counts one check, as before, and a refusal stops the run.
+2. The slot name includes the process id, so one instance never writes another instance's slot.
+3. A refused run removes only its own slot and reports BLOCKED with exit 1.
+
+The normal run is unchanged: 77 checks, exit 0.
+
+**Protection invariants checked.** No test destroys the only valid copy of a save. Ambiguous states are refused, not overwritten.
+A refusal leaves the save and recovery material unchanged. A stale lock is removed only when its owner process has exited.
+
+**Limits.** The simultaneous lock race was observed in 3 barrier rounds, not forced to a chosen interleaving, so it is
+**NOT_VERIFIED** as a forced race (GUARD-LOCK-1). The barrier harness is scratch-only, so the two-process result is not a committed
+regression test. Real process kill and hard-kill recovery are **NOT_VERIFIED**. The crash-recovery cases simulate an abandoned run in
+one process. A crash that leaves protocol files behind blocks later runs until a person resolves them. That is deliberately conservative.
+
+### 27.6 Regression results (phase 5)
+
+Commit `30bfcd4`. Engine `4.7.2.stable.custom_build.ed1daf0bf`. Each Godot suite ran on a fresh scratch copy of `game/`, with its
+own HOME and XDG directories. None touched real user data. Node was run from the repository, with the variables listed below.
+
+| Suite | Exit | Assertions | Status | Save writing |
+|---|---|---|---|---|
+| domain_smoke | 0 | 99 PASS (96 base + 3 relatives) | PASS | Writes its own test save in the scratch HOME |
+| input_bindings_headless | 0 | 26 PASS | PASS | No |
+| save_guard_headless | 0 | 77 PASS, 0 skipped | PASS | Test-only slot in the scratch HOME |
+| return_path | 0 | 47 PASS | PASS | Scratch save slot |
+| ui_flow_headless | 0 | 57 PASS (headless, simulated input) | PASS | Scratch save slot, under the guard |
+| load_confirmation_headless | 0 | 104 PASS (headless, simulated input) | PASS | Scratch save slot, under the guard |
+| regional_handoff | 0 | 41 PASS | PASS | No direct save calls. Scene autosave not excluded (scratch HOME) |
+| regional_visual_profiles | 0 | 43 PASS | PASS | No direct save calls. Scene autosave not excluded (scratch HOME) |
+| performance_metrics | 0 | 11 PASS | PASS | No direct save calls. Scene autosave not excluded (scratch HOME) |
+| persistence_notice | 0 | 11 PASS | PASS | No direct save calls. Scene autosave not excluded (scratch HOME) |
+| player_movement | 0 | 4 PASS | PASS | No direct save calls. Scene autosave not excluded (scratch HOME) |
+| session_policy | 0 | "all checks passed" (no count printed) | PASS | No direct save calls. Scene autosave not excluded (scratch HOME) |
+| save_restart, two-phase | write 0, read 0 | Write: "Wrote a checkpoint". Read in a new process: "saved character state survived a fresh Godot process" | PASS | Scratch restart file |
+| Scene load (all 3 `.tscn`) | 0 | 3 of 3 loaded and instantiated | PASS | No |
+| GDScript check-only | 0 | 45 files, 0 failed (44 project scripts plus one scratch probe copy) | PASS | No |
+
+Startup: the import and main-scene instantiation ran in every suite. The main scene is covered by `ui_flow_headless`.
+
+Node (repository, `npm`, Node v22.22.3):
+
+| Run | Configuration | Total | Pass | Fail | Skipped |
+|---|---|---|---|---|---|
+| `npm test` | Default, no database | 1074 | 1037 | 0 | 37 (live DB and TLS suites) |
+| `npm test` | Disposable local PostgreSQL 18.4 (127.0.0.1, scratch data directory, trust auth), `NAIJA_ALLOW_DB_TESTS=true` | 1166 | 1162 | 0 | 4 (TLS only) |
+| `npm test` | Same, plus `ssl=on` with a private test CA (scratch CA, not public) | 1166 | 1166 | 0 | 0 |
+
+`npm run lint`: **29 errors** (24 `no-unused-vars`, 5 `no-explicit-any`), exit 1. This matches the baseline in section 26.
+Not chased, per the rules. `git diff --check`: clean.
+
+Not run: anything on Neon (no network route, no credentials). No production-like database. No rendered tests.
+
+### 27.7 Stage 29 checklist (phase 6)
+
+Acceptance: a headless equivalent does not count as a rendered result. The rendered items below stay BLOCKED until a display exists.
+
+| # | Item | Required evidence | Available evidence | Gap | Required environment or human action | Status |
+|---|---|---|---|---|---|---|
+| 1 | New game and HUD | Rendered screen after Begin, HUD visible | `ui_flow` section 1–2: Begin through the real button (keyboard activation), HUD present (57 checks) | Rendered output; mouse click | Display and GPU; a person checks the screenshot | Headless VERIFIED. Rendered BLOCKED |
+| 2 | F3 2D to 3D | Rendered 3D world appears after the real key | `ui_flow` section 5: bound key → 3D, 2D suspended. Simulated keycode only | Rendered; physical keypress | Display; physical keyboard | Headless VERIFIED. Rendered and physical BLOCKED |
+| 3 | Return to the same 2D session | Rendered HUD back, same session | `ui_flow` section 6: same instance, HUD visible, no creation screen | Rendered | Display | Headless VERIFIED. Rendered BLOCKED |
+| 4 | Character and clock continuity | Same character and time across switches, rendered | Same live objects; unsaved money preserved across round trips (`ui_flow` 4–6). The test freezes the clock by design | Live clock while rendering; the clock is frozen in this test | Display; a run with the clock running | Headless VERIFIED (frozen clock). Rendered NOT VERIFIED |
+| 5 | Modal safety during switches | F3 refused while a modal is open | `load_confirmation_headless`: refused, modal stays, Cancel, F3 works again | **INPUT-START-1**: F3 on the creation card switches (not a modal) | Owner decision on INPUT-START-1 | Modal case headless VERIFIED. Creation-card case OPEN (owner decision) |
+| 6 | Continue through the real UI | Real Continue activated and played | `ui_flow` / `return_path`: keyboard activation of the real button | Mouse click; rendered | Display; mouse | Headless VERIFIED (keyboard). Click BLOCKED |
+| 7 | In-game Load: confirm and cancel | Rendered confirm and cancel dialog, real clicks | `load_confirmation_headless`: 104 checks, keyboard activation | Rendered; mouse | Display; mouse | Headless VERIFIED. Rendered BLOCKED |
+| 8 | Regional visual differences | Rendered difference between regions | `regional_visual_profiles`: 43 checks on profile data and logic | No rendering, so no visual evidence | Display and GPU | Data VERIFIED (headless). Visual NOT VERIFIED |
+| 9 | Lighting ownership | One owner for ambient light, with a design | TOD-1 is OPEN (design, section 23.8). `time_of_day.gd` is not changed | Design decision not made | Owner decision on TOD-1. No new design is proposed here | OPEN (design, owner decision) |
+| 10 | Frame-time measurements | Non-zero, varying frame times, rendered | Headless `TIME_PROCESS` stayed 0.0 (section 19.6). Not a valid measurement | Rendered measurement | Display and GPU | BLOCKED |
+| 11 | No duplicate nodes, signals, or bindings after repeated transitions | Counts stable after repeated switches | `ui_flow` section 6–7: one 2D and one 3D child, no extra `create_requested` connections, binding count unchanged. `load_confirmation`: no extra `load_requested` connections | Rendered node count is not checked | Nothing beyond the display for the rendered view | Headless VERIFIED |
+
+Protected areas were not changed: Kaduna classification, regional catalogs, presets, `ng:state:fc` mapping, the environment-profile
+generator, and `time_of_day.gd` ambient ownership.
+
+### 27.8 Stage 28 and production audit (phase 7)
+
+Stage 28 criteria (from `STAGE_28_AUDIT.md` section 3) classified below. Classifications come from the audit's recorded statuses,
+except criteria 5, 44, 45, and 46. Those four were re-checked this session and are shown with that evidence. **VERIFIED (local)** means
+a local test ran. It is not production evidence.
+
+Counts over the 54 criteria: 28 VERIFIED (local), 5 PARTIALLY VERIFIED, 18 NOT VERIFIED, 3 BLOCKED.
+
+Area summary:
+
+- **A. Identity and auth.** Authority model: DESIGN only, and most consequential mutations are suspended. Government and election
+  writes: containment only (refused with `government_writes_suspended` and `election_writes_suspended`, tested in
+  `government-authorization.test.mjs`, passing in the 1166 run). Permanent rules R-a to R-f are NOT IMPLEMENTED. Case access:
+  implemented and tested locally. Creation-key recovery: key-only recovery refused by the server (status D-05). Credential lifecycle
+  (R7/R8): DESIGN only. Metrics token rules: verified locally by config reader. Secret handling: no secret in the repository.
+  Arena secret store: BLOCKED (question 3 in the audit). Classification: PARTIALLY VERIFIED (containment), NOT VERIFIED (permanent rules, lifecycle).
+- **B. Persistence and database.** Verified locally on PostgreSQL 18.4, including TLS with a private CA: migrations, fencing,
+  money concurrency and rollback, world snapshot, graceful shutdown, health. NOT VERIFIED: real process kill, two OS processes writing
+  one world, the down migration, refusal of an unmigrated schema, inventory. Backup and restore: a library exists and passes locally.
+  There is no operator tool, no encryption, no retention, no scheduling, and no `pg_dump` run (`STAGE_28_BACKUP_RESTORE_STATUS.md`).
+  The JSON importer is DEFERRED by owner decision.
+- **C. Deployment and operations.** No deployment, ingress, load-balancer, or trusted-proxy configuration exists in the repository.
+  BLOCKED. Health endpoints (`/live`, `/health`) are tested locally but not wired to any probe. CI (`.github/workflows/ci.yml`) runs
+  `npm run check` only: lint and `npm test`, with no live database, no TLS suite, and no Godot suites. Neon: BLOCKED, because the sandbox
+  has no route to Neon and no credentials were supplied. No secret was read or printed in this audit.
+- **D. Multiplayer and gameplay integrity.** Fencing was tested within one process only. Multi-instance operation is NOT
+  IMPLEMENTED. Two OS processes: NOT VERIFIED. 3D multiplayer: NOT VERIFIED (Godot multiplayer display not checked). Money
+  integrity: verified locally under concurrency. Record validation: PARTIALLY VERIFIED. Life simulation in Godot: `domain_smoke` PASS
+  headless (custom build). Gameplay rendering: BLOCKED.
+- **E. Testing and operational readiness.** Node: 1166 of 1166 locally with PostgreSQL and TLS; 1074 of 1074 pass with 37 skipped
+  without a database. Godot: all 13 suites plus scene and check-only sweeps pass (custom build). Lint: 29 errors, baseline unchanged.
+  Load test: NOT IMPLEMENTED. Prometheus: unit-tested, not scraped by a real server. Grafana, alerts, log aggregation, tracing: NOT
+  IMPLEMENTED. Platform testing: BLOCKED.
+
+Criterion table (generated from `STAGE_28_AUDIT.md` section 3, with the four re-checked rows):
+
+| # | Area | Criterion (from STAGE_28_AUDIT section 3) | Classification | Basis |
+|---|---|---|---|---|
+| 1 | E | DATABASE_URL investigation answered with no credential printed | VERIFIED (local) | Audit record; not re-run this session |
+| 2 | C | Secure DATABASE_URL configured in Arena | BLOCKED | Audit record; not re-run this session |
+| 3 | B | TLS: certificate verification ON by default | VERIFIED (local) | Audit record; not re-run this session |
+| 4 | B | TLS: `sslmode=disable` and `DB_SSL=false` require explicit opt-in; `prefer`, `allow`, `no-verify` rejected | VERIFIED (local) | Audit record; not re-run this session |
+| 5 | B | TLS handshake verified against a real CA-signed server | PARTIALLY VERIFIED | Local ssl=on server with a private test CA (disposable PG 18.4, 30bfcd4): TLS live tests pass. Not a public CA, not Neon. |
+| 6 | C | Startup refuses when DATABASE_URL is missing (postgres mode) | VERIFIED (local) | Audit record; not re-run this session |
+| 7 | C | Startup refuses when the database is unreachable, and the error contains no password | VERIFIED (local) | Audit record; not re-run this session |
+| 8 | B | Startup refuses an unmigrated or outdated schema | NOT VERIFIED | Audit record; not re-run this session |
+| 9 | B | File mode is labeled as development only, and never as PostgreSQL | VERIFIED (local) | Audit record; not re-run this session |
+| 10 | E | Live DB tests run only against an explicitly allowed database | VERIFIED (local) | Audit record; not re-run this session |
+| 11 | B | Migration v2: idempotency keys scoped per character (not global) | VERIFIED (local) | Audit record; not re-run this session |
+| 12 | B | Migration v2 down-migration | NOT VERIFIED | Audit record; not re-run this session |
+| 13 | B | Migration CLI `status` and `migrate`; re-running is a no-op | VERIFIED (local) | Audit record; not re-run this session |
+| 14 | D | Concurrent debits cannot overdraw a balance | VERIFIED (local) | Audit record; not re-run this session |
+| 15 | D | Same idempotency key applied exactly once under concurrency | VERIFIED (local) | Audit record; not re-run this session |
+| 16 | B | Failed transaction rolls back balance and ledger together | VERIFIED (local) | Audit record; not re-run this session |
+| 17 | B | Database rejects a negative balance (check constraint) | VERIFIED (local) | Audit record; not re-run this session |
+| 18 | B | Inventory integrity | NOT VERIFIED | Audit record; not re-run this session |
+| 19 | B | World snapshot: first open creates, later opens load the same version | VERIFIED (local) | Audit record; not re-run this session |
+| 20 | B | Stale writer is fenced; its data is not stored; health reports failure | VERIFIED (local) | Audit record; not re-run this session |
+| 21 | B | Fenced instance cannot shut down cleanly (refuses to overwrite) | VERIFIED (local) | Audit record; not re-run this session |
+| 22 | B | Two real processes writing the same world | NOT VERIFIED | Audit record; not re-run this session |
+| 23 | B | Recovery after a simulated crash (final save skipped) | VERIFIED (local) | Audit record; not re-run this session |
+| 24 | B | Recovery after a real process kill | NOT VERIFIED | Audit record; not re-run this session |
+| 25 | B | Graceful shutdown saves final state; recovered on restart | VERIFIED (local) | Audit record; not re-run this session |
+| 26 | B | Known limitation: a save committed but whose acknowledgement is lost is reported as failure | PARTIALLY VERIFIED | Audit record; not re-run this session |
+| 27 | B | `/health` reports persistence status (200 healthy, 503 fenced) | VERIFIED (local) | Audit record; not re-run this session |
+| 28 | B | Account and character repository persistence | PARTIALLY VERIFIED | Audit record; not re-run this session |
+| 29 | B | JSON → PostgreSQL importer: dry-run writes nothing | NOT VERIFIED (deferred by owner) | Audit record; not re-run this session |
+| 30 | B | Importer: create, no-op re-run, refuse different world, `--replace` with backup, rollback on interruption, ... | NOT VERIFIED (deferred by owner) | Audit record; not re-run this session |
+| 31 | B | Importer: source is never modified; backup has a verified checksum | NOT VERIFIED (deferred by owner) | Audit record; not re-run this session |
+| 32 | B | Importer: JSON → PostgreSQL → resumed session | NOT VERIFIED (deferred by owner) | Audit record; not re-run this session |
+| 33 | B | Importer run against real player data | NOT VERIFIED | Audit record; not re-run this session |
+| 34 | B | Importer kept in this commit | NOT VERIFIED (deferred by owner) | Audit record; not re-run this session |
+| 35 | C | Prometheus endpoint (`/metrics/prometheus`, text format 0.0.4) | VERIFIED (local) | Audit record; not re-run this session |
+| 36 | C | Prometheus scrape by a real server; alerting rules | NOT VERIFIED | Audit record; not re-run this session |
+| 37 | C | Grafana dashboards, alert rules, log aggregation, distributed tracing | NOT VERIFIED (not implemented) | Audit record; not re-run this session |
+| 38 | C | Load test (throughput, latency, persistence under load) | NOT VERIFIED (not implemented) | Audit record; not re-run this session |
+| 39 | C | Platform testing (#10) | BLOCKED | Audit record; not re-run this session |
+| 40 | D | 3D multiplayer testing (#11) | NOT VERIFIED | Audit record; not re-run this session |
+| 41 | D | Cross-region events, advanced sync, anti-cheat (from Stage 25 list) | NOT VERIFIED (not implemented) | Audit record; not re-run this session |
+| 42 | E | Stage 27 documentation corrections (table count, TLS claim) | VERIFIED (local) | Audit record; not re-run this session |
+| 43 | E | Stage 27 report files (infrastructure, load test, security and recovery, launch readiness) | PARTIALLY VERIFIED | Audit record; not re-run this session |
+| 44 | E | Lint: no new errors compared with the baseline | VERIFIED (local) | 30bfcd4: 29 errors, same breakdown as the baseline in STAGE_29 section 26 (24 unused-vars, 5 explicit-any). No new errors. |
+| 45 | E | Full test suite, default configuration (no database) | VERIFIED (local) | 30bfcd4, no database: 1074 total, 1037 pass, 0 fail, 37 skipped. |
+| 46 | E | Full test suite, against local PostgreSQL 18.4 | VERIFIED (local) | 30bfcd4, disposable local PostgreSQL 18.4 with TLS: 1166 total, 1166 pass, 0 fail, 0 skipped. Local only, not Neon or production. |
+| 47 | C | Live Neon validation | BLOCKED | Audit record; not re-run this session |
+| 48 | C | Production deployment readiness | NOT VERIFIED (not implemented) | Audit record; not re-run this session |
+| 49 | D | Record-level validators for property, government, election, and justice maps | PARTIALLY VERIFIED | Audit record; not re-run this session |
+| 50 | D | Record validator diagnostics do not expose values | VERIFIED (local) | Audit record; not re-run this session |
+| 51 | D | Valid schema-18 world round-trips with no loss and stable IDs | VERIFIED (local) | Audit record; not re-run this session |
+| 52 | D | Health test is deterministic about the contract | VERIFIED (local) | Audit record; not re-run this session |
+| 53 | D | Integration tests use an isolated state file; live file unchanged | VERIFIED (local) | Audit record; not re-run this session |
+| 54 | E | Stage 28 complete | NOT VERIFIED | Audit record; not re-run this session |
+
+### 27.9 Blockers, owner decisions, and external capabilities (phases 7 and 9)
+
+Owner decisions (none were made in this work):
+
+1. **INPUT-START-1.** Should F3 switch worlds while the character-creation card is shown? Options: allow, or refuse like a modal.
+2. **ACT-1.** Confirm V for `toggle_first_person`, or choose another key.
+3. **OWNER-TEST-11.** Is uniform random choice of the starter household intended? The test now pins one case and does not change production.
+4. **Authorization rules R-a to R-f** (`STAGE_28_GOVERNMENT_AUTHORIZATION.md`), needed before government and election writes can be re-enabled.
+5. **CI scope.** Should CI run the live-database and TLS suites (needs a database service) and the Godot suites?
+6. **Importer.** Keep deferred, or schedule it, given that Stage 28 criterion 29 to 34 depend on it.
+
+External capabilities needed:
+
+- A graphical display and GPU, and a physical keyboard, for rendered Stage 29 checks and physical key verification.
+- A network route to a Neon development database, and its connection string supplied by the operator through a git-ignored
+  `.env` on the test host. Never through chat or the repository.
+- A deployment platform, its ingress or load-balancer rules (blocking `/metrics`), and the trusted-proxy list.
+- A public CA-signed TLS PostgreSQL server for the verified-handshake criterion (criterion 5). The private test CA covers only the local mechanism.
+- Two OS processes against one production-like database, and a hard-kill harness (criteria 22 and 24).
+- A Prometheus server, for scraping, if monitoring is to be claimed.
+
+**Single most important blocker (based on evidence).** Consequential actions are not authorized by a finished model. The
+authority model is a design, and government and election writes are contained by suspension rather than authorized. The permanent
+rules are NOT IMPLEMENTED (`STAGE_28_GOVERNMENT_AUTHORIZATION.md`, `STAGE_28_AUTHORITY_MODEL.md`). Deployment topology and Neon evidence are also
+missing, but they can be resolved with infrastructure. The authorization gap needs design and implementation decisions.
+
+### 27.10 Register updates
+
+| ID | Area | Issue | Severity | Status | Section | Owner decision? |
+|---|---|---|---|---|---|---|
+| TEST-11 | domain_smoke | Check total varied by run (random starter profile) | Low | FIXED_VERIFIED (test reproducibility). Cause corrected: profile, not ID | 27.3 | Confirm intent (OWNER-TEST-11) |
+| GUARD-SELFTEST-1 | save_guard_headless | Refused start did not stop the run; shared slot | Medium | FIXED_VERIFIED (`30bfcd4`). Before and after shown with barrier harness, not committed | 27.5 | No |
+| GUARD-LOCK-1 | Atomic lock | Simultaneous `make_dir` race not forced | Low | NOT_VERIFIED (forced race). Observed in 3 barrier rounds | 27.5 | No |
+| INPUT-START-1 | F3 on creation card | F3 switches with no character; not a modal | Medium | OPEN (OWNER DECISION) | 27.4 | Yes |
+| ACT-1 | Input | `toggle_first_person` = V, no documented key | Low | OPEN (OWNER DECISION). Kept as provisional technical default | 27.4 | Yes |
+| KEY-1 | World-switch key | Physical F3 keypress | Low | BLOCKED (no keyboard or display) | 27.4 | No |
+| KEY-2 | Input | Space: `jump` and `ui_accept` | Low | NOT AN ISSUE (scratch probe plus structural test) | 27.4 | Revisit if GUI added to 3D |
+| MODAL-GATE-1 | 2D modal gate | Section 26.12 said code reading only | Low | NOT AN ISSUE (covered headless by `load_confirmation_headless`) | 27.4 | No |
+| INPUT-MIX-1 | Bindings | Physical keys for F3, Space, V; logical keys for WASD, Shift, E | Low | KNOWN_LIMITATION (not changed) | 27.4 | Yes, if binding policy changes |
+| TOUCH-1 | touch_controls.gd | Not instantiated; `_input` cannot run | Low | KNOWN_LIMITATION | 27.4 | No |
+| GOV-1 | Government and election writes | Contained by suspension; permanent rules R-a to R-f not implemented | High | OPEN | 27.8 | Yes (rules) |
+| MULTI-1 | Multi-instance | Not implemented; fencing tested in one process only | High | OPEN | 27.8 | Yes |
+| BACKUP-1 | Backup and restore | Library only; no operator tool, encryption, retention, or scheduling | Medium | OPEN | 27.8 | No |
+| IMPORT-1 | JSON importer | Deferred by owner decision | Low | KNOWN_LIMITATION | 27.8 | Yes |
+| CI-1 | CI scope | No live DB, TLS, or Godot suites in CI | Medium | OPEN | 27.8 | Yes |
+| DEPLOY-1 | Deployment and ingress | No configuration in repository | High | BLOCKED | 27.8 | No (needs platform) |
+| NEON-1 | Neon | No route, no credentials | High | BLOCKED | 27.8 | No (needs operator) |
+| LINT-1 | Lint | 29 errors, baseline unchanged | Low | OPEN (not chased) | 27.6 | No |
+| ENV-2 | Display | No display or GPU | High | BLOCKED | 25.3 | No |
+| STAGE-29 | Rendered validation | Not performed | High | BLOCKED (graphical display unavailable) | 27.7 | No |
+| STAGE-28 | Stage 28 | Criteria open; 54 criteria in 27.8 | High | OPEN | 27.8 | Yes |
+
+### 27.11 Delivery and limits
+
+- Commits on `arena/00cdea0e-naija`: `40b93a6` (TEST-11, `domain_smoke.gd`), `30bfcd4` (save-guard self-test, `save_guard_headless.gd`),
+  and this documentation commit. Pushed as normal fast-forward pushes. The remote tip is verified after the push.
+- Not staged: saves, backups, locks, harnesses, probes, barrier scripts, and the disposable PostgreSQL data directory. All of these
+  are in `/tmp` (scratch, not committed).
+- Production code changed: none. Protected areas (regional, climate, catalogs, `ng:state:fc`, environment-profile generator,
+  `time_of_day.gd`, authentication, Stage 28, Stage 30) were not modified.
+- Not tested, or limited: rendered output, mouse input, and physical keys (no display). Official Godot release (custom build only).
+  Neon and any production or deployed environment. Real process kill. Two OS processes against one production-like database.
+  Forced lock race. FI-13 and FI-14 remain scratch-only (section 26). The disposable PostgreSQL run used trust authentication on
+  loopback and was stopped afterwards.
