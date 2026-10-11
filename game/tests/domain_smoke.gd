@@ -5,6 +5,7 @@ const WorldClockScript = preload("res://scripts/domain/world_clock.gd")
 const HouseholdFactoryScript = preload("res://scripts/domain/household_factory.gd")
 const LifeSimulationServiceScript = preload("res://scripts/domain/life_simulation_service.gd")
 const SchoolServiceScript = preload("res://scripts/domain/school_service.gd")
+const EducationServiceScript = preload("res://scripts/domain/education_service.gd")
 const SaveServiceScript = preload("res://scripts/services/save_service.gd")
 const WorldMapScript = preload("res://scripts/world/world_map.gd")
 const TEST_SAVE_PATH: String = "user://naija-stage1-test-save.json"
@@ -38,6 +39,7 @@ func _run() -> void:
 	_test_clock()
 	_test_life_simulation()
 	_test_save_and_load()
+	_test_legacy_academic_view_is_rebuilt_on_load()
 	if not _guard.release_lock():
 		_failures.append("The save-test lock could not be released: %s" % _guard.message)
 	if _failures.is_empty():
@@ -496,7 +498,12 @@ func _test_save_and_load() -> void:
 	character.hunger = 61.0
 	character.current_location = "classroom"
 	character.position = Vector2(321.0, 456.0)
-	character.academic_scores["Biology"] = 88
+	# The academic result is written through the authoritative education record, not the legacy
+	# academic_scores view, which is rebuilt from that record on every load.
+	var biology_score: int = EducationServiceScript.record_result(
+		character, 1, "Biology", true, "11:30"
+	)
+	_check(biology_score > 0, "A lesson result is recorded in the education record")
 	character.add_item("water", "Bottled water", 2, "food", 8)
 	var clock := WorldClockScript.new()
 	clock.advance_minutes(75)
@@ -526,7 +533,10 @@ func _test_save_and_load() -> void:
 			restored.appearance.get("hairstyle", "") == "Braids",
 			"Save/load restores appearance choices"
 		)
-		_check(restored.academic_scores["Biology"] == 88, "Save/load restores academic data")
+		_check(
+			restored.academic_scores.get("Biology", -1) == biology_score,
+			"Save/load restores academic data"
+		)
 		_check(
 			restored_clock.day == clock.day and restored_clock.minute_of_day == clock.minute_of_day,
 			"Save/load restores world time"
@@ -562,6 +572,48 @@ func _test_save_and_load() -> void:
 	var absolute_path := ProjectSettings.globalize_path(TEST_SAVE_PATH)
 	if FileAccess.file_exists(TEST_SAVE_PATH):
 		DirAccess.remove_absolute(absolute_path)
+
+
+# Regression guard for the academic-fixture defect: the education record is authoritative and the legacy
+# academic_scores and attendance views are rebuilt from it on load. A direct write to those views must not
+# survive a save/load, so fixtures must write through the record (see _test_save_and_load).
+func _test_legacy_academic_view_is_rebuilt_on_load() -> void:
+	var character := CharacterStateScript.new()
+	character.create_new(
+		"Nneka", 16, "girl", {"hairstyle": "Braids"}, HouseholdFactoryScript.create_household()
+	)
+	var record_biology := int(
+		EducationServiceScript.legacy_academic_scores(character.education_record).get("Biology", -1)
+	)
+	character.academic_scores["Biology"] = 88
+	character.attendance.append(
+		{"day": 3, "subject": "Biology", "score": 88, "attended_at": "Day 3 · 11:30"}
+	)
+	var clock := WorldClockScript.new()
+	var save_result: Dictionary = SaveServiceScript.save_state(character, clock, TEST_SAVE_PATH)
+	_check(bool(save_result.get("ok", false)), "The projection regression save can be written")
+	var loaded: Dictionary = SaveServiceScript.load_state(TEST_SAVE_PATH)
+	_check(bool(loaded.get("ok", false)), "The projection regression save can be loaded")
+	if bool(loaded.get("ok", false)):
+		var restored := CharacterStateScript.new()
+		var restored_clock := WorldClockScript.new()
+		restored_clock.load_dictionary(loaded["clock"])
+		restored.load_dictionary(loaded["character"], restored_clock.calendar_date())
+		_check(
+			restored.academic_scores.get("Biology", -1) == record_biology,
+			"Load rebuilds the legacy academic view from the education record"
+		)
+		_check(
+			restored.academic_scores
+			== EducationServiceScript.legacy_academic_scores(restored.education_record),
+			"The restored academic view matches the education record"
+		)
+		_check(
+			restored.attendance.is_empty(),
+			"Load rebuilds the legacy attendance view from the education record"
+		)
+	if FileAccess.file_exists(TEST_SAVE_PATH):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(TEST_SAVE_PATH))
 
 
 func _check(condition: bool, description: String) -> void:

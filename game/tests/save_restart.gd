@@ -4,6 +4,7 @@ const CharacterStateScript = preload("res://scripts/domain/character_state.gd")
 const WorldClockScript = preload("res://scripts/domain/world_clock.gd")
 const HouseholdFactoryScript = preload("res://scripts/domain/household_factory.gd")
 const SaveServiceScript = preload("res://scripts/services/save_service.gd")
+const EducationServiceScript = preload("res://scripts/domain/education_service.gd")
 const RESTART_SAVE_PATH: String = "user://naija-stage1-restart-test.json"
 const SaveSlotGuardScript = preload("res://tests/support/save_slot_guard.gd")
 
@@ -61,10 +62,9 @@ func _write_checkpoint() -> void:
 	character.energy = 54.0
 	character.current_location = "classroom"
 	character.position = Vector2(321.0, 456.0)
-	character.academic_scores["Biology"] = 88
-	character.attendance.append(
-		{"day": 3, "subject": "Biology", "score": 88, "attended_at": "Day 3 · 11:30"}
-	)
+	# Written through the authoritative education record (the legacy academic_scores and attendance views
+	# are rebuilt from it on load, so writing to them directly would not persist).
+	EducationServiceScript.record_result(character, 3, "Biology", true, "11:30")
 	character.add_item("water", "Bottled water", 2, "food", 8)
 	var clock := WorldClockScript.new()
 	clock.day = 3
@@ -123,8 +123,18 @@ func _read_checkpoint() -> void:
 		and passed
 	)
 	passed = _expect(character.current_location == "classroom", "current location") and passed
+	# The expected value comes from the restored education record, which must hold a lesson result
+	# (not just the starting score) for the academic view to match it after load.
+	var biology_from_record := int(
+		EducationServiceScript.legacy_academic_scores(character.education_record).get("Biology", -1)
+	)
 	passed = (
-		_expect(character.academic_scores.get("Biology", 0) == 88, "academic result") and passed
+		_expect(
+			character.academic_scores.get("Biology", 0) == biology_from_record
+			and biology_from_record != CharacterStateScript.STARTING_SCORES["Biology"],
+			"academic result"
+		)
+		and passed
 	)
 	passed = (
 		_expect(
