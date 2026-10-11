@@ -173,6 +173,40 @@ for (const backendName of backendNames) {
     assert.equal(ownerContribution.type, "business.result", "the owner can still contribute capital to their own business");
   });
 
+  test(`[${backendName}] P-4: a citizen may file a misconduct complaint against an existing officer; the complainant is the session character`, async () => {
+    const { backend, started, entry } = await session(backendName);
+    const complainant = await citizen(entry, backend, "Complainant", { money: 0 });
+    const victim = await citizen(entry, backend, "Other", { money: 0 });
+    // Test setup on disposable in-memory state: an officer record, as if an accepted recruit had been enrolled.
+    // Enrolment itself is suspended (P-2 has no player route), so the complaint rule is the thing under test here.
+    const officerId = "officer-test-p4";
+    backend.store.state.policeOfficers = backend.store.state.policeOfficers ?? {};
+    backend.store.state.policeOfficers[officerId] = {
+      officer_id: officerId, character_id: victim.characterId, station_id: null, rank: "constable", status: "active",
+    };
+    const officerIds = [officerId];
+    const complaintsBefore = Object.keys(backend.store.state.misconductComplaints ?? {}).length;
+
+    // An unknown officer is refused and creates no complaint.
+    const unknown = await request(complainant.peer, {
+      type: "police.action", action: "file_complaint", requestId: "p4-unknown",
+      accused_officer_id: "officer-does-not-exist", category: "abuse_of_authority", description: "No such officer.",
+    });
+    assert.equal(unknown.type, "police.error", "a complaint against a missing officer is refused");
+    assert.equal(Object.keys(backend.store.state.misconductComplaints ?? {}).length, complaintsBefore, "no complaint is recorded");
+
+    // A real officer is accepted. A client-supplied complainant field is ignored: the session identity is recorded.
+    const accepted = await request(complainant.peer, {
+      type: "police.action", action: "file_complaint", requestId: "p4-valid",
+      accused_officer_id: officerIds[0], category: "abuse_of_authority", description: "The officer ignored my report.",
+      complainant_character_id: victim.characterId,
+    });
+    assert.equal(accepted.type, "police.result", "a citizen may file against an existing officer");
+    const recorded = Object.values(backend.store.state.misconductComplaints ?? {}).find((c) => c.accused_officer_id === officerIds[0]);
+    assert.ok(recorded, "the complaint is recorded");
+    assert.equal(recorded.complainant_character_id, complainant.characterId, "the complainant is the session character, not the forged field");
+  });
+
   test(`[${backendName}] a refused authenticated request changes no state and still refreshes the activity marker`, async () => {
     const { backend, started, entry } = await session(backendName);
     const stranger = await citizen(entry, backend, "Marker", { money: 0 });
