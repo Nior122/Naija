@@ -1787,6 +1787,8 @@ The Node suite includes `justice-case-access.test.mjs` and the `identity-*` test
 
 ### 23.11 Consolidated issue register
 
+> Historical snapshot (state before the 2026-10-11 verification in section 24). Current statuses are in section 24.8.
+
 | ID | Component | Finding | Severity | Status | Evidence | Blocks release |
 |---|---|---|---|---|---|---|
 | REC-1 | Git | Local branch was at `main`, not at `c898e21`, with no upstream | High | FIXED_VERIFIED | `git status`, `rev-list` 0/0, blob check 411/411 | No |
@@ -1827,3 +1829,163 @@ The Node suite includes `justice-case-access.test.mjs` and the `identity-*` test
 - Return-path save safety: **FIXED_UNVERIFIED** (engine-unexecuted).
 - Modal safety and UI-flow determinism: unchanged from section 22. **Engine-verified at `00f692b`**, not re-run in this task.
 - Stage 29: **OPEN**. Stage 28: **OPEN**. Production: **NOT READY**.
+
+## 24. Godot restoration, save-safety verification, and regression pass (2026-10-11)
+
+Starting point, verified: HEAD `d788e5f` on branch `arena/00cdea0e-naija`, equal to `origin/arena/00cdea0e-naija`, clean before this task's edits. Executed-test evidence is labelled per claim. Scratch logs and harness live outside the repository in `/tmp/naija-scratch` and `/tmp/naija-harness` and are not committed.
+
+### 24.1 Result
+
+- Repository: unchanged history. Edits in this task are listed in 24.6 and committed on the working branch as separate commits.
+- Engine: **CUSTOM BUILD** of Godot 4.7.2 from the official `4.7.2-stable` source tag. `--version` prints `4.7.2.stable.custom_build.ed1daf0bf`. The official release binary was not reachable from this sandbox. This is not a stock release and must be labelled as custom.
+- Save safety: SAVE-1 (unreadable save backed up as empty, then overwritten) reproduced on HEAD and fixed. Return-path, `ui_flow_headless`, and `load_confirmation_headless` refusal and restore paths were exercised in scratch.
+- UI-flow determinism: `ui_flow_headless` ran 3 consecutive times on the final tree, 57/57 each, exit 0, 0 script errors, save unchanged each run.
+- Readiness: PARTIALLY_COMPLETE. Stage 28 OPEN. Stage 29 OPEN. Production NOT READY.
+
+### 24.2 Engine provenance (executed)
+
+- Source: `github.com/godotengine/godot`, tag `4.7.2-stable`, commit `ed1daf0bf001b61586d9930840f2f1394092c079` (matched against the GitHub API). Not verified against a signed tag or a published checksum.
+- The release asset host `release-assets.githubusercontent.com` failed with `SSL_ERROR_SYSCALL` on each attempt, so the official binary and `SHA512-SUMS.txt` could not be fetched.
+- Build: SCons 4.11.1 under a scratch virtualenv. `platform=linuxbsd target=editor arch=x86_64 x11=no wayland=no alsa=no pulseaudio=no dbus=no speechd=no fontconfig=no udev=no libdecor=no tests=no dev_build=no debug_symbols=no linker=gold`. Build exit code `SCONS_EXIT=0`, 54 minutes on 2 cores.
+- SCons requires a `pkg-config` binary even with X11 and Wayland disabled. A scratch placeholder answering `0.0.0-shim` was used for that check only. It provides no libraries.
+- Binary: `bin/godot.linuxbsd.editor.x86_64`, 160,779,792 bytes, sha256 `b7052e201ae39df716d7b870f5331807a6a89cb00aad4aac2ccc6f94b7c32a5c`. Dynamic dependencies: libc and libm only.
+- Limits: fontconfig is disabled, so import logs show benign fontconfig notices. The project does not use `SystemFont`. There is no display server, so no rendered output was produced.
+
+### 24.3 Isolation and disposable data (executed)
+
+- Every engine run used a scratch copy with its own `HOME` and `XDG_DATA_HOME`. No engine was run against `/home/user/Naija/game`, which would write `.godot` caches and `.gd.uid` files.
+- No real player save was reachable from this sandbox (earlier search of the user-data locations found none), so none was touched. Fixtures were created in scratch by `save_restart -- write`, which uses the production `SaveService` format.
+- Unreadable and blocked saves were simulated with `chmod` on scratch copies only. No real save was corrupted.
+- Mutations (the scratch-only edits used in FI-05, FI-08, FI-13, FI-14) were applied to scratch copies, never to the repository.
+
+### 24.4 Save-slot failure injection (executed, scratch)
+
+Expected outcomes were written to `/tmp/naija-harness/fi-expectations.md` before any case ran. Results are generated from `fi-results-final.json` on the final tree.
+
+| Case | Test | Injected condition | Result | Observed |
+|---|---|---|---|---|
+| FI-00 | return_path | valid original save | PASS | exit 0; PASS: 47 return-path checks; save==orig True; backup None; marker None |
+| FI-01 | return_path | no original save | PASS | exit 0; PASS: 47 return-path checks; save None; marker None; backup None |
+| FI-02 | return_path | backup path blocked by a directory | PASS | exit 1; msg True; save==orig True; marker None |
+| FI-03a | return_path | original save mode 0200 (unreadable) | PASS | exit 1; save==orig True; save bytes original; backup None |
+| FI-03b | ui_flow | original save mode 0200 (unreadable) | PASS | exit 1; save==orig True; save bytes original; backup None |
+| FI-03c | load_confirmation | original save mode 0200 (unreadable) | PASS | exit 1; save==orig True; save bytes original; backup None |
+| FI-04 | all | backup read-back mismatch | NOT TESTED | no injection point without production hooks |
+| FI-05 | return_path (scratch mutation) | assertion failure after save changed | PASS | exit 1; injected True; save==orig True; backup None; marker None |
+| FI-06 | return_path | original save mode 0400 (not writable) | PASS | exit 1; save==orig True; backup==orig True; marker None; CHECK FAILED: Closing the window while suspended saves the retained session's unsaved progress |
+| FI-07a | return_path | recovery backup left from FI-06 | PASS | exit 1; unchanged True; FAIL: a save-slot backup or marker from an earlier run exists: ["user://naija-stage1-save.return-test-backup.json"]. Nothing was changed. Resolve it before reru |
+| FI-07b | ui_flow | recovery backup left from FI-06 | PASS | exit 1; unchanged True; FAIL: a backup or marker from an earlier save-slot run exists: ["user://naija-stage1-save.return-test-backup.json"]. Nothing was changed. Resolve it before reru |
+| FI-07c | load_confirmation | recovery backup left from FI-06 | PASS | exit 1; unchanged True; FAIL: a backup or marker from an earlier save-slot run exists: ["user://naija-stage1-save.return-test-backup.json"]. Nothing was changed. Resolve it before reru |
+| FI-08 | return_path (scratch mutation: restore writes wrong bytes) | restored bytes differ | PASS | exit 1; backup==orig True; save==orig False; marker None |
+| FI-09a | return_path | leftover return-path no-save marker | PASS | exit 1; unchanged True; FAIL: a save-slot backup or marker from an earlier run exists: ["user://naija-stage1-save.return-test-no-save.marker"]. Nothing was changed. Resolve it before r |
+| FI-09b | ui_flow | leftover return-path no-save marker | PASS | exit 1; unchanged True; FAIL: a backup or marker from an earlier save-slot run exists: ["user://naija-stage1-save.return-test-no-save.marker"]. Nothing was changed. Resolve it before r |
+| FI-09c | load_confirmation | leftover return-path no-save marker | PASS | exit 1; unchanged True; FAIL: a backup or marker from an earlier save-slot run exists: ["user://naija-stage1-save.return-test-no-save.marker"]. Nothing was changed. Resolve it before r |
+| FI-10 | return_path | SIGKILL after save changed (recovery material left) | PASS | reached True; exit -9; backup==orig True; save==orig False; marker None |
+| FI-11a | return_path | after killed run | PASS | exit 1; unchanged True; FAIL: a save-slot backup or marker from an earlier run exists: ["user://naija-stage1-save.return-test-backup.json"]. Nothing was changed. Resolve it before reru |
+| FI-11b | ui_flow | after killed run | PASS | exit 1; unchanged True; FAIL: a backup or marker from an earlier save-slot run exists: ["user://naija-stage1-save.return-test-backup.json"]. Nothing was changed. Resolve it before reru |
+| FI-11c | load_confirmation | after killed run | PASS | exit 1; unchanged True; FAIL: a backup or marker from an earlier save-slot run exists: ["user://naija-stage1-save.return-test-backup.json"]. Nothing was changed. Resolve it before reru |
+| FI-13 | return_path (scratch mutation: hang after save, 8 s watchdog) | hang after save changed | PASS | exit 1; elapsed 8s; watchdog msg True; save==orig True; backup None |
+| FI-14 | return_path (scratch mutation: runtime error after save) | GDScript runtime error after save changed | PASS | exit 1; runtime error text True; watchdog True; save==orig True; backup None |
+
+- FI-04 is NOT TESTED. Forcing a read-back mismatch requires a production hook or a fault point in file I/O, which was not added.
+- FI-06 exits 1 because the test's own save check fails when the file is not writable. The required restore behaviour still held: the backup was kept with the original bytes.
+- FI-10 is a documented limitation (KNOWN_LIMITATION). A SIGKILL cannot be caught, so recovery material stays on disk. The next run refuses (FI-11), which is the designed behaviour.
+- Baseline on HEAD (`d788e5f`, before the fix): `ui_flow_headless` and `load_confirmation_headless` both exited 0 with an unreadable save (mode 0200). The save was overwritten with 0 bytes (sha256 `e3b0c442…`, the hash of empty input), and the original bytes were not recoverable. See `fi-results-base.json`.
+
+### 24.5 Regression table (final tree, executed)
+
+Each run used a fresh scratch copy of the working tree. "Writes saves" refers to scratch only.
+
+| Suite | Command | Exit | Result | Writes saves | Isolation |
+|---|---|---|---|---|---|
+| player_movement | `--script res://tests/player_movement.gd` | 0 | PASS 4 checks | No | scratch |
+| performance_metrics | same pattern | 0 | PASS 11 checks | No | scratch |
+| regional_handoff | same pattern | 0 | PASS 41 checks | No | scratch |
+| regional_visual_profiles | same pattern | 0 | PASS 43 checks | No | scratch |
+| persistence_notice | same pattern | 0 | PASS 11 checks | No | scratch |
+| session_policy | same pattern | 0 | "all checks passed" (no count printed) | No | scratch |
+| domain_smoke | same pattern | 1 | FAIL 1 of 93 (academic fixture, 24.7). The total varies 91–93 between runs because household generation is random (`household_factory.gd` uses `randi_range`). | Scratch test save | scratch |
+| main scene | `--quit` | 0 | 0 script errors | No | scratch |
+| GDScript check-only | 41 `.gd` files | 0 | 41 of 41 exit 0 | No | scratch |
+| save_restart write | `-- write` | 0 | writes restart file | Scratch | scratch |
+| save_restart read | `-- read` | 1 | 2 errors: academic result, attendance and inventory (academic fixture, 24.7) | Scratch | scratch |
+| return_path ×3 | `res://tests/return_path.gd` | 0 ×3 | PASS 47 each; save unchanged; no backup or marker left | Scratch | scratch, consecutive |
+| ui_flow_headless ×3 | `res://tests/ui_flow_headless.gd` | 0 ×3 | PASS 57 each; 0 script errors; save unchanged | Scratch | scratch, consecutive |
+| load_confirmation_headless ×1 | `res://tests/load_confirmation_headless.gd` | 0 | PASS 104; the one `Parse JSON failed` line is the test's deliberate invalid-JSON case | Scratch | scratch, fresh |
+| npm test | `npm test` (in-process) | 0 | 1074 tests, 1037 pass, 0 fail, 37 skipped | No | repo `node_modules` |
+| npm run lint | `npm run lint` | 1 | 29 errors (51 at HEAD) | No | repo |
+| git diff --check | | 0 | clean | No | repo |
+
+Not exercised in this task: rendered UI, physical keyboard or mouse input, a live server, and deployed Stage 28 services. These are separate claims in section G of the final report.
+
+### 24.6 Defects and changes in this task
+
+| ID | Finding | Change | Status | Evidence |
+|---|---|---|---|---|
+| SAVE-1 | `ui_flow_headless` and `load_confirmation_headless` read the original with `get_file_as_bytes`, which returns empty on failure. An unreadable save was backed up as empty and then overwritten with 0 bytes. | Read the original with `FileAccess.open(READ)`; a null handle returns false before any write. | FIXED_VERIFIED (scratch) | FI-03b/c reproduced on HEAD and PASS after the fix |
+| SAVE-2 | The restore path read the backup with `get_file_as_bytes`. An unreadable backup would restore as empty bytes. | Same explicit-open change in `_restore_save`, failing before the save is opened for write. | FIXED_UNVERIFIED | Code and parse only; no injection of an unreadable backup |
+| SAVE-DOB-1 | `load_dictionary` kept JSON-parsed floats in `date_of_birth`, so a saved DOB did not equal the original integer dictionary. | `_date_with_integer_fields` converts only `year`, `month`, `day` to int. | FIXED_VERIFIED | `domain_smoke` DOB check passes; probe showed equality |
+| SCHED-1 | Catalog weekday lists are JSON floats, and `Array.has(int)` does not match `0.0`. `schedule_for_day` and `school_days_of_week` never matched, so no lesson was ever scheduled. The lesson prompt, class activity display, and missed-period marking never ran. | `_has_weekday` compares as integers at the two numeric call sites in `education_service.gd`. | FIXED_VERIFIED (engine). Behaviour change: lessons now appear at scheduled times. | Probe: Mathematics at 07:50 and 08:00; 6 entries on day 1; none on day 6. Rendered UI not exercised. |
+| TEST-FX-1 | `domain_smoke` checked the next lesson at 07:50 (English is not in its window until 08:30) and expected the name `English`, while the catalog name is `English Language`. | Query at 08:30 and expect `English Language`. The assertion is stricter than before. | FIXED_VERIFIED | `domain_smoke` no longer reports the timetable check |
+| ACT-1 | `toggle_first_person` and `jump` were used in code but absent from `project.godot`, so Godot logged `InputMap action doesn't exist` on every run. | Added `jump` (Space) and `toggle_first_person` (V). Default bindings chosen here; confirm with the owner. | FIXED_VERIFIED (input map). Not verified with physical input. | Probe: both actions exist with those keys; the errors no longer appear in any final log |
+| TSCN-1 | `world_3d.tscn` header has `load_steps=6` for 5 external and 4 sub-resources. | Not edited. Godot 4.7.2 neither reads nor writes `load_steps` in its text format (grep of `scene/resources/resource_format_text.cpp` finds no match). The scene loads and re-saves without error. | NOT AN ISSUE on 4.7.2 (inert metadata) | Source grep; load and re-save probe |
+| LINT-1 | 51 errors at HEAD. | Removed 22 unused import specifiers across 12 files in `services/world-api/src`. | PARTIALLY FIXED: 29 remain, OPEN | `npm run lint` 51 to 29; `npm test` 0 fail; `git diff --check` 0 |
+
+Not changed, per scope: `time_of_day.gd` (TOD-1), regional catalogs and generators, `ng:state:fc`, Stage 28 auth and persistence, Stage 30 access, the modal-blocking implementation, dependencies, lint rules.
+
+### 24.7 Open items (not fixed)
+
+- **Academic fixture (TEST-FX-2, OPEN).** `domain_smoke` ("Save/load restores academic data") and `save_restart --read` ("academic result", "attendance and inventory") write the legacy `academic_scores` field and attendance directly. Production never writes those fields. On load they are rebuilt from the education record (`sync_legacy_character`, `legacy_academic_scores`). A gameplay probe showed the production path keeps the data: recording a Mathematics result moved the score 72 to 84, with one attendance record, and both survived a save and load. The test needs a decision on whether to write through the education record API. It was not changed, to avoid choosing its contract.
+- **Return-path timing (TEST-6, TEST-7, TEST-8, OPEN).** Not reproduced in 3 consecutive return_path runs or the 22-case matrix. A test-local clock freeze would change the test's timing model, so it needs review and was not made.
+- **Domain-check denominator (TEST-11, OPEN, Low).** The total of `domain_smoke` checks varies by run (91, 92, 93) because the generated households differ. The failing set does not vary.
+- **TOD-1** (time-of-day lighting ownership, OPEN, design). **F9** (Kaduna `semi-arid` vs `tropical`), **GEN-1** (`ng:state:fc` mapping), **GEO-1** (FC audit row), unchanged. Excluded by scope.
+- **LINT-1 remainder (OPEN).** 24 unused variables and 5 `no-explicit-any` (in `database/connection.ts`). These need API or design decisions.
+- Not run: `ui_flow` with rendered UI, physical input, and any live backend.
+
+### 24.8 Consolidated issue register (current)
+
+| ID | Component | Finding | Severity | Status | Evidence | Blocks release |
+|---|---|---|---|---|---|---|
+| REC-1 | Git | Local branch was not at the recovered commit; no upstream | High | FIXED_VERIFIED | 23.2; `git status`, ancestry | No |
+| ENV-1 | Engine | No official Godot binary reachable | High | FIXED_VERIFIED (custom build) | 24.2 | Label as custom |
+| TEST-1 | return_path restore | Backup deleted even if original write fails | High | FIXED_VERIFIED | FI-06, FI-08 | No |
+| TEST-2 | return_path backup | Backup not read back and compared | High | FIXED_UNVERIFIED | Read-back mismatch not injected (FI-04 NOT TESTED) | Until FI-04 is run |
+| TEST-3 | return_path restore | Restore not compared to original bytes | High | FIXED_VERIFIED | FI-08 | No |
+| TEST-4 | return_path marker | No marker for the no-save case | Medium | FIXED_VERIFIED | FI-01, FI-09a | No |
+| TEST-5 | Save-slot refusal | Refusal did not cover other tests' files | Medium | FIXED_VERIFIED | FI-07, FI-09, FI-11 (all three tests refuse) | No |
+| TEST-6 | return_path clock | Autosave and clock advance during test | Medium | OPEN | 23.5; not reproduced | No |
+| TEST-7 | return_path timing | `resume_step <= 1` depends on frame delta | Medium | OPEN | 23.5; not reproduced | No |
+| TEST-8 | return_path timing | `moved > 1.0` depends on physics stepping | Low | OPEN | 23.5 | No |
+| TEST-9 | Crash recovery | Hard kill leaves recovery material; next run refuses | Medium | KNOWN_LIMITATION (verified) | FI-10, FI-11 | No |
+| TEST-10 | Runtime error path | Restore depends on watchdog | Low | FIXED_VERIFIED (watchdog path) | FI-13, FI-14 | No |
+| TEST-11 | domain_smoke | Check total varies by run (randomised households) | Low | OPEN | 24.5 | No |
+| SAVE-1 | UI-flow and load-confirmation | Unreadable save backed up as empty and overwritten | High (data loss) | FIXED_VERIFIED | FI-03b/c (base reproduced) | No |
+| SAVE-2 | Restore read of backup | Unreadable backup restored as empty | Medium | FIXED_UNVERIFIED | Code and parse | No |
+| SAVE-DOB-1 | Save load, DOB | Float fields broke equality | Medium | FIXED_VERIFIED | `domain_smoke` DOB check | No |
+| SCHED-1 | Education schedule | Weekday lists never matched; no lessons ever scheduled | High (gameplay) | FIXED_VERIFIED (engine) | Probe; `domain_smoke` timetable checks pass | Rendered UI not verified |
+| TEST-FX-1 | domain_smoke timetable check | Wrong clock time and subject name in fixture | Medium | FIXED_VERIFIED | `domain_smoke` | No |
+| TEST-FX-2 | Academic fixture (domain_smoke, save_restart) | Writes legacy field directly | Medium | OPEN (test decision) | 24.7; production path verified | Yes, for those two suites |
+| TOD-1 | time_of_day lighting | Lookup misses light and environment | Medium | OPEN (design) | 23.8 | No (inert today) |
+| F9 | Kaduna climate | `semi-arid` vs `tropical` | Low | OPEN (excluded data) | 23.9 | No |
+| GEN-1 | Generators | `ng:state:fc` vs `ng:fct:abuja` | Low | OPEN (excluded) | 23.9 | No |
+| GEO-1 | Audit history | FC row may be stale | Low | NOT_VERIFIED | 23.9 | No |
+| ACT-1 | Input actions | `jump` and `toggle_first_person` undefined | Low | FIXED_VERIFIED (input map) | Probe; logs clean | No |
+| TSCN-1 | world_3d.tscn | `load_steps` header | Low | NOT AN ISSUE (4.7.2) | Source grep; re-save | No |
+| LINT-1 | Lint | 51 errors | Low | PARTIALLY FIXED (29 OPEN) | `npm run lint` | No |
+| SMOKE-1 | domain_smoke | Failures in the earlier run | Medium | OPEN (1 remaining, TEST-FX-2) | 24.5 | Yes, until TEST-FX-2 |
+| SR-1 | save_restart --read | Two errors, same cause as TEST-FX-2 | Medium | OPEN (TEST-FX-2) | 24.5 | Yes, until TEST-FX-2 |
+| SEC-1 | Secrets | Placeholder Postgres URLs only | Info | VERIFIED NOT AN ISSUE (static) | 23.10 | No |
+
+### 24.9 Readiness by claim (section G)
+
+- Repository recovery: RECOVERY_COMPLETE (23.2).
+- Save safety: VERIFIED IN SCRATCH on this engine for the refusal and restore paths in 24.4, except FI-04 (NOT TESTED), SAVE-2 (code only), and the hard-kill limitation (documented).
+- Core engine stability: all non-save suites pass; `domain_smoke` has one known fixture failure. This is not a full playthrough.
+- Gameplay: school lessons are now scheduled (engine probe). Input actions exist. Neither is verified with rendered UI or physical input.
+- Stage 29: OPEN. It closes only with rendered validation, which has not been exercised.
+- Stage 28: OPEN. It closes only with the production criteria. Not re-audited here.
+- Production: NOT READY.
+
+### 24.10 Single most important blocker
+
+No rendered UI or physical input has been exercised on this machine: there is no display server and no GPU. Stage 29 cannot close without that evidence, and the lesson and control changes in this task are not visually confirmed.
