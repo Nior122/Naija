@@ -35,6 +35,9 @@ the number of catalog entries, which is 37.
 
 Counts are computed from the files, not from historical documentation.
 
+**Phase A snapshot.** The counts and the visual-layer figures in this section describe the files as they were
+before Phase C (`803fbdf`). They are kept for the audit record. Current state: Section 14.5.
+
 | Measure | Count | Notes |
 |---|---|---|
 | Authoritative regions (catalog entries) | 37 | Unique IDs; unique codes |
@@ -76,9 +79,11 @@ building density, vegetation). `world_3d_controller.gd` holds a different subset
 density, vegetation, ambient_sound, lighting). Where both define a region, the shared values agree
 (Lagos, Kaduna, Ondo). Two tables for the same concept is a maintenance risk.
 
-**F4. Region change never applies the visual profile.** `change_region()` calls the controller's
-`_configure_environment()`, which reads the controller's table. `EnvironmentConfig.apply_region_profile()` is never
-called on region change. Switching region therefore changes the stored `region_id` but not sky, fog, or ambient.
+**F4. Region change did not apply the visual profile (Phase A). Status after Phase C: changed in code, not reachable
+from play.** At Phase A, `change_region()` called only the controller's table, and `EnvironmentConfig.apply_region_profile()`
+was never called on region change. In the Phase C code, `change_region()` calls `_configure_environment()`, which calls
+`apply_region_profile(region_id)`. No game code calls `change_region()` with a region, because the 2D→3D restore does not
+pass `region_id` (F5). Static inspection only. Not runtime-verified.
 
 **F5. The region is never delivered from 2D to 3D (defect in the restore path).** `scene_switcher.gd`
 `_restore_3d_state()` passes `{"character": …, "world": …}` to the 3D `set_shared_state()`. The controller reads
@@ -102,9 +107,11 @@ connects them. `prototype_game.gd` line 530 compares the settlement ID directly.
 These fields are not removed by this audit. The stored-only fields have no runtime reader and must not be extended
 without a consumer.
 
-**F8. Stale-profile behaviour.** `apply_region_profile()` on a missing region calls `push_warning` and returns
-without resetting visuals, so the previous region's visuals remain. This is a stale-profile risk, but it is not
-reachable from the current runtime, because `apply_region_profile` is never called on region change (F4).
+**F8. Stale-profile behaviour (Phase A). Status after Phase C: resolved in code.** At Phase A, `apply_region_profile()`
+on a missing region warned and returned without resetting visuals. In Phase C an unresolved region applies the complete
+Forest preset with one warning, and every resolved visual is applied as one complete record, so no value from a
+previous region survives. Residual case: if the default-biome record were missing, visuals would be left unchanged
+with a logged error (Section 14.9). Shipped data does not trigger it. Static inspection only.
 
 **F9. Climate disagreement for Kaduna.** The visual table says `semi-arid`. The authoritative non-visual data says
 `tropical` (savanna). The visual climate value is not consumed (F7). It should be reconciled by the owner, not
@@ -133,16 +140,25 @@ scripts. The 2D client loads only `processed/akure-south-core.json`. No runtime 
   the change stays in the GDScript visual layer and in content files.
 - The 3D region is client-side presentation state. It is not written by any server mutation route.
 
-## 6. Client load and render path (as found)
+## 6. Client load and render path (as found at Phase A)
 
 1. `scenes/main.tscn` contains `prototype.tscn` (2D) and `world_3d.tscn` (3D) with `scene_switcher.gd`. F3 toggles
-   the mode. `world_3d.tscn` declares the `environment_config.gd` ext_resource (id `5_env`). Node wiring for the
-   `$Environment` node was checked in the scene file only as an ext_resource; the in-scene node reference was not
-   separately verified in this audit.
+   the mode. `world_3d.tscn` declares the `environment_config.gd` ext_resource (id `5_env`). At Phase A the in-scene
+   node wiring was not checked. It is now checked by reading the scene file (static only, Phase D review): `World3D`
+   › `Environment` (script `environment_config.gd`) › `WorldEnvironment` (with an `Environment` sub-resource), and
+   `DirectionalLight3D` also under `Environment`. Runtime not verified.
 2. `EnvironmentConfig._ready()` applies the default region (`ng:state:od`, which is invalid, F1).
 3. `WorldController._ready()` applies its own table through `_configure_environment()` (F2, F3).
 4. Region change: `change_region()` → controller table only (F4).
 5. 2D→3D restore: region not delivered (F5).
+
+**Current path (Phase C, static inspection only; not runtime-verified):**
+
+- `EnvironmentConfig._ready()` applies the default region `ng:state:on`, which is a valid catalog ID.
+- `WorldController._ready()` calls `_configure_environment()`, which calls `apply_region_profile(region_id)`. The
+  controller's own table is removed.
+- Region change: `change_region()` → `_configure_environment()` → `apply_region_profile()` (F4, now in code).
+- 2D→3D restore: `scene_switcher.gd` still passes only `character` and `world`. The region is not delivered (F5, open).
 
 ## 7. Existing tests
 
@@ -150,10 +166,18 @@ scripts. The 2D client loads only `processed/akure-south-core.json`. No runtime 
   block and checks diversity (at least 3 climates, at least 4 terrains) across all states.
 - `services/world-api/test/geography.test.mjs`: 7 pass.
 - No test reads `regional-environment-profiles.json` or any GDScript visual table.
-- No GDScript test exists for `environment_config.gd` or `world_3d_controller.gd` region behaviour. Godot is not
-  available (F11), so none can be run.
+- The statement "no GDScript test exists" applied at Phase A only. Phase C added a headless GDScript test,
+  `game/tests/regional_visual_profiles.gd`. It has **NOT been executed**: Godot 4.7.2 is unavailable (F11). It is
+  not claimed to pass.
+- Phase C also added a static Node test, `services/world-api/test/regional-visual-profiles.test.mjs` (17 checks).
+  It reads the GDScript and scene files as text. It does not execute GDScript. Its result is an automated, static
+  result, not runtime evidence.
 
 ## 8. Per-region mapping table
+
+**Phase A snapshot.** This table records the resolution before Phase C. "Silent fallback to ng:state:od" describes the
+controller table that Phase C removed. Current resolution: every catalog region resolves to its explicit record or to its
+mapped biome preset (Section 14.5). The controller has no fallback table.
 
 Generated from the files by a read-only script. `Non-visual` is from `regional-environment-profiles.json`. `Visual`
 columns record whether a valid entry exists for that catalog ID in each GDScript file.
@@ -259,15 +283,18 @@ Current status as of this update. The superseded text from the previous update i
 
 ### 12.1 Player-visible outcome, stated plainly
 
-With D3 deferred, the 3D world still starts on its default region. In the current build that is Ondo, and the Ondo
-values equal the class defaults, so **the default startup view does not visibly change.** What changes:
+With D3 deferred, the 3D world still starts on its default region. In the current build that is Ondo. By static
+derivation, the Ondo values equal the class defaults, so the default startup view is not expected to change visibly.
+This is not visually confirmed. What changes, as coded:
 
-1. The WorldEnvironment lookup is fixed. Today `_apply_to_world_environment()` never finds the node (F13 below), so
-   no regional visual reaches the scene, including the default. After the fix, values reach the scene.
-2. When the region changes through `change_region()`, sky, fog, and ambient light change to that region's preset.
-   The player cannot trigger a region change yet, because D3 is deferred. This is a precondition for the player
-   outcome, not the outcome itself.
-3. Regions without a record show the Forest preset explicitly, with a warning, instead of Ondo's values by accident.
+1. The WorldEnvironment lookup is corrected in code (F13). At Phase A, `_apply_to_world_environment()` never found the
+   node, so no regional visual reached the scene. The scene file shows the node is a child of the script node, and the
+   code now looks it up there. Static inspection only. Runtime not verified.
+2. When the region changes through `change_region()`, the code applies sky, fog, and ambient light for that region's
+   preset. No game code supplies a region (F5, D3 deferred), so this is not reachable from play. Not runtime-verified.
+3. Regions without a direct record use their mapped biome preset (32 regions). Only a region with neither a record
+   nor a mapping applies the Forest preset, with one warning. No catalog region currently reaches that path. The
+   static Node test reports `fallback=0`.
 
 ### 12.2 Content model
 
@@ -321,9 +348,13 @@ every variable.
 ### 12.8 Exclusions (not done in Stage 29)
 
 - D3, the 2D-to-3D region restore, and the 2D-to-state mapping.
-- `time_of_day.gd` uses the same broken `get_parent().get_node_or_null("WorldEnvironment")` lookup (F13). It controls
-  day and night, so fixing it changes the day/night presentation, which is outside the profile scope. Reported as
-  outstanding.
+- `time_of_day.gd` (F13b, open) looks up `WorldEnvironment` and `DirectionalLight3D` on its parent, `World3D`. Both
+  nodes are children of `Environment`, so both lookups return `null`. The code's null guards skip the changes silently.
+  Day and night sun and ambient lighting therefore never apply today. Fixing the lookup is outside profile scope and
+  needs a design first. `_update_lighting()` runs every frame from `_process()`, and `_set_ambient_light()` writes
+  `ambient_light_color` and `ambient_light_energy` on the WorldEnvironment. The regional profile sets the same two
+  properties. A naive fix would therefore overwrite the regional ambient values every frame. One owner for ambient light
+  must be chosen before F13b is fixed.
 - Kaduna's visual `semi-arid` against the authoritative `tropical` (F9). The explicit record is preserved and the
   discrepancy is reported, not changed.
 - No catalog, `regional-environment-profiles.json`, server, database, save, protocol, or corpus change.
@@ -332,9 +363,10 @@ every variable.
 ### 12.9 Additional finding from implementation planning
 
 **F13. The WorldEnvironment lookup never resolves.** `world_3d.tscn` places `WorldEnvironment` under the
-`Environment` node. `EnvironmentConfig._apply_to_world_environment()` searches `get_parent()` (the `World3D` root)
-for `WorldEnvironment`, so it finds nothing and returns. No regional visual has reached the scene. The same mistake
-appears in `time_of_day.gd` (F13b, outstanding).
+`Environment` node. At Phase A, `EnvironmentConfig._apply_to_world_environment()` searched `get_parent()` (the `World3D`
+root) for `WorldEnvironment`, so it found nothing and returned. No regional visual reached the scene. Phase C corrects this
+lookup in `environment_config.gd` (static inspection only). The same mistake remains in `time_of_day.gd` (F13b, open). That
+file also looks up `DirectionalLight3D` on the same parent (Section 12.8).
 
 ## 13. Repository state incident (recorded during Phase C)
 
@@ -506,11 +538,16 @@ The status text in Section 10 before this update is preserved here in full:
 
 ### 14.12 Requirements not met or not verified
 
-- Godot 4.7.2 headless run: not done. Runtime claims are not made.
-- Visual validation: not done.
+- Evidence key used in this document: *static inspection* (file reads, `gdparse`, `gdlint`, grep); *automated* (Node
+  test runs with exit codes); *runtime* (Godot executed: **none**); *visual* (rendered output observed: **none**).
+- Godot 4.7.2 headless run: **NOT RUN**. The headless test `game/tests/regional_visual_profiles.gd` has not executed.
+  Runtime claims are not made.
+- Visual validation: **NOT DONE**.
 - PostgreSQL: not run.
-- F13b (`time_of_day.gd`): not fixed.
-- F5 (2D-to-3D restore key mismatch): deferred by D3.
+- F13b (`time_of_day.gd`): not fixed. It covers the `WorldEnvironment` and `DirectionalLight3D` lookups, and carries a
+  per-frame ambient conflict risk (Section 12.8).
+- F5 (2D-to-3D restore key mismatch): deferred by D3. Static inspection: `scene_switcher.gd` still passes only
+  `character` and `world`, so the region is not restored from play.
 - F9 (Kaduna `semi-arid` vs `tropical`): not changed.
 - F10 (generator `ng:state:fc` vs `ng:fct:abuja`): not changed. `update-environment-profiles.js` was not run.
 - F11 (Godot unavailable): unchanged.
