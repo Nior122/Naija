@@ -20,7 +20,6 @@ import type {
   SocialBlockRecord,
   SocialMuteRecord,
   SocialReportRecord,
-  SocialAdCampaignRecord,
   SocialTrendingTopicRecord,
   SocialAuditRecord,
   SocialContentTypeId,
@@ -29,8 +28,6 @@ import type {
   SocialNotificationTypeId,
   SocialReportCategoryId,
   SocialReportStatusId,
-  SocialAdCampaignStatusId,
-  SocialAccountStatusId,
 } from "./types.js";
 import { SocialCatalogService } from "./catalog.js";
 

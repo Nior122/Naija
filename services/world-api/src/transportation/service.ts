@@ -17,9 +17,7 @@ import type {
   TransportationFuelType,
   TransportationModeId,
   TransportationFacilityTypeId,
-  TransportationRoadTypeId,
   TransportationVehicleCategoryId,
-  TransportationTripStatus,
   TransportationCargoStatus,
 } from "./types.js";
 import { TransportationCatalogService } from "./catalog.js";

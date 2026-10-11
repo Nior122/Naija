@@ -6,7 +6,6 @@
  * Supports multiple partitions within busy cities.
  */
 
-import { randomUUID } from "node:crypto";
 
 export type RegionId = string;
 export type ServerInstanceId = string;

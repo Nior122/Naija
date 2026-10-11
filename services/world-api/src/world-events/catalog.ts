@@ -3,7 +3,6 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type {
   WorldEventCategory,
-  WorldEventType,
   WorldEventPriority,
   WorldEventConsumer,
   WorldEventProcessingConfig,

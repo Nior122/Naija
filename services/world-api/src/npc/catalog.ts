@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { NPCActivityType, NPCNeedType, NPCPersonalityTrait } from "./types.js";
+import type { NPCActivityType, NPCNeedType } from "./types.js";
 
 interface NPCRules {
   population: {

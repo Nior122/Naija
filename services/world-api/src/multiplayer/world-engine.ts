@@ -182,11 +182,11 @@ import type { IncidentCategoryId, DispatchPriorityId, MisconductCategoryId } fro
 import { MilitaryCatalogService, MilitaryService, initializeMilitaryWorldState, seedMilitaryWorld, militaryErrorMessage } from "../military/index.js";
 import type { ServiceBranchId, AssignmentTypeId, EquipmentCategoryId, NationalSecurityEventCategoryId } from "../military/types.js";
 import { CrimeCatalogService, CrimeService, initializeCrimeWorldState, seedCrimeWorld, crimeErrorMessage } from "../crime/index.js";
-import type { CrimeCategoryId, CrimeIncidentStatusId, ParticipantRoleId } from "../crime/types.js";
+import type { CrimeCategoryId, CrimeIncidentStatusId } from "../crime/types.js";
 import { CultureCatalogService, CultureService, initializeCultureWorldState, seedCultureWorld, cultureErrorMessage } from "../culture/index.js";
 import type { CommunityTypeId, InstitutionCategoryId, ProjectCategoryId, ProjectStatusId, ReligiousCategoryId } from "../culture/types.js";
 import { EntertainmentCatalogService, EntertainmentService, initializeEntertainmentWorldState, seedEntertainmentWorld, entertainmentErrorMessage } from "../entertainment/index.js";
-import type { ProductionStatusId, ContentStatusId, EventTypeId } from "../entertainment/types.js";
+import type { ProductionStatusId, EventTypeId } from "../entertainment/types.js";
 import { loadLifeCatalog, dateForWorldDay, isValidDate, worldClockSnapshot } from "../life/calendar.js";
 import {
   advanceWorldLife,

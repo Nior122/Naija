@@ -21,14 +21,12 @@ import type {
   NewsReportRecord,
   ControversyRecord,
   ContentModerationRecord,
-  EntertainmentCollaborationRecord,
   EntertainmentAuditRecord,
   ProductionStatusId,
   ContentStatusId,
   EventTypeId,
   ControversyStatusId,
   EventTypeStatusId,
-  ContractStatusId,
   EntertainmentProfileSnapshot,
 } from "./types.js";
 import { EntertainmentCatalogService } from "./catalog.js";

@@ -32,7 +32,6 @@ import type {
   ReligiousCategoryId,
   ProjectCategoryId,
   ProjectStatusId,
-  MembershipStatusId,
   EventStatusId,
   DisputeStatusId,
   CulturalProfileSnapshot,

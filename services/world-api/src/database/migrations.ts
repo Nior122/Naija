@@ -1,5 +1,5 @@
 import { database, type DatabaseConnection } from "./connection.js";
-import { SCHEMA_VERSION, CREATE_SCHEMA_SQL, MIGRATION_V2_UP_SQL, MIGRATION_V2_DOWN_SQL } from "./schema.js";
+import { CREATE_SCHEMA_SQL, MIGRATION_V2_UP_SQL, MIGRATION_V2_DOWN_SQL } from "./schema.js";
 
 /**
  * Database migration system for Naija: One World

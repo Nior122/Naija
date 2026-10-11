@@ -1,5 +1,4 @@
 import type { CalendarDate } from "../life/types.js";
-import type { Point2D } from "../multiplayer/types.js";
 import type {
   WorldEvent,
   WorldEventType,
@@ -12,7 +11,6 @@ import type {
   WorldEventDelivery,
   WorldEventEffect,
   WorldEventConsumer,
-  WorldEventProcessingConfig,
   WorldStateSnapshot,
   PersistentWorldEventMaps,
   WorldEventHistoryQuery,

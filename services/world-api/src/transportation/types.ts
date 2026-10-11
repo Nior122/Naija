@@ -1,4 +1,3 @@
-import type { CalendarDate } from "../life/types.js";
 import type { Point2D } from "../multiplayer/types.js";
 
 export type TransportationVehicleCategoryId = 
