@@ -9,11 +9,15 @@ extends SceneTree
 
 const SceneSwitcherScript = preload("res://3d_world/scripts/scene_switcher.gd")
 const WORLD_SCENE = preload("res://3d_world/scenes/world_3d.tscn")
+const CharacterStateScript = preload("res://scripts/domain/character_state.gd")
+const WorldClockScript = preload("res://scripts/domain/world_clock.gd")
 
 ## The documented default for a 3D world with no located region (controller export).
 const DEFAULT_REGION := "ng:state:on"
 const LOCATED_REGION := "ng:state:bo"
 const OTHER_REGION := "ng:state:la"
+## Not an explicit record: resolved through the forest biome mapping (owner decision D2).
+const MAPPED_REGION := "ng:state:ek"
 
 var _failures: Array[String] = []
 var _checks: int = 0
@@ -30,6 +34,8 @@ func _run() -> void:
 	_test_refused_regions_keep_located_region()
 	_test_missing_region_uses_documented_default()
 	_test_repeated_transitions_do_not_carry_region()
+	_test_mapped_region_resolves_to_its_profile()
+	_test_character_and_clock_round_trip()
 	if _failures.is_empty():
 		print("PASS: %d Stage 29 F5 handoff checks" % _checks)
 		quit(0)
@@ -187,3 +193,48 @@ func _test_repeated_transitions_do_not_carry_region() -> void:
 	_check(second.region_id == DEFAULT_REGION,
 		"A new world does not inherit the previous world's region")
 	_discard(second)
+
+
+func _test_mapped_region_resolves_to_its_profile() -> void:
+	# A region with no explicit record resolves through its biome, and the controller applies it.
+	var world = _new_world()
+	var config = world.environment_config
+	var resolved: Dictionary = config.resolve_region_profile(MAPPED_REGION)
+	_check(resolved.get("source", "") == "biome" and resolved.get("biome", "") == "forest",
+		"A mapped region resolves through its biome (ng:state:ek is forest)")
+	world.set_shared_state({"region_id": MAPPED_REGION})
+	_check(world.region_id == MAPPED_REGION, "A mapped region is accepted by the controller")
+	if resolved.has("profile"):
+		_check(config.climate == resolved["profile"].get("climate", ""),
+			"The mapped region's climate is applied from its resolved profile")
+	_discard(world)
+
+
+func _test_character_and_clock_round_trip() -> void:
+	# Real domain methods only: to_dictionary() and load_dictionary(). The clock is restored first,
+	# and the character uses its calendar date, as prototype_game.gd does.
+	var clock = WorldClockScript.new()
+	clock.day = 37
+	clock.minute_of_day = 14 * 60 + 5
+	var character = CharacterStateScript.new()
+	character.player_id = "round-trip-player"
+	character.geographic_location = {"state_id": LOCATED_REGION}
+	var clock_data: Dictionary = clock.to_dictionary()
+	var character_data: Dictionary = character.to_dictionary()
+
+	var restored_clock = WorldClockScript.new()
+	restored_clock.load_dictionary(clock_data)
+	_check(restored_clock.day == 37 and restored_clock.minute_of_day == 14 * 60 + 5,
+		"The clock restores its day and minute from to_dictionary()")
+	_check(restored_clock.calendar_date() == clock.calendar_date(),
+		"The restored clock has the same calendar date")
+
+	var restored_character = CharacterStateScript.new()
+	restored_character.load_dictionary(character_data, restored_clock.calendar_date())
+	_check(restored_character.player_id == "round-trip-player",
+		"The character restores its identity from to_dictionary()")
+	_check(restored_character.geographic_location.get("state_id", "") == LOCATED_REGION,
+		"The character restores its located state_id")
+	_check(SceneSwitcherScript.region_id_from_character(restored_character.to_dictionary())
+		== LOCATED_REGION,
+		"The handed region survives a character save round trip")

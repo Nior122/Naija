@@ -483,7 +483,7 @@ exactly the new Stage 29 file. The suite count is not the same as runtime eviden
 The Node Stage 29 suite is static. It reads `environment_config.gd` and the scene file as text, and compares them with
 the authoritative JSON. It does not run GDScript. Its `dist` build dependency is the same as the existing registry tests.
 
-### 14.7 Headless GDScript test (written, NOT RUN)
+### 14.7 Headless GDScript test (written; first run in section 16: PASS 43/43 after a test-side correction)
 
 `game/tests/regional_visual_profiles.gd` runs the real `EnvironmentConfig` script under `SceneTree`. It covers:
 preservation of the five records; lookup and mapping; invalid IDs; WorldEnvironment access; missing node (no crash,
@@ -630,17 +630,21 @@ F5 is not closed until those are run. Evidence labels: *static* (source reading 
 Not changed: `environment_config.gd`, the catalog, the profile data, the presets, the 32-region mapping, the scenes,
 `time_of_day.gd` (F13b), the save format, the identity or session code, and the world-api.
 
-**Behaviour change on the return path (3D to 2D).** Previously the 2D `set_shared_state()` failed at its first
-`from_dict()` call and restored nothing. It now restores the clock, character, position, location, playing state,
-online mode, and career profile captured on the way out. This is the intended contract, but it is **not
-runtime-verified**.
+**Return path (3D to 2D): corrected in the F5 acceptance review (section 16).** The earlier wording here said the
+2D `set_shared_state()` now restores the clock and character. That is not true for the path the switcher uses. The
+switcher instantiates a new 2D prototype and calls `set_shared_state()` straight after `add_child()`. At that point
+`clock` and `character` are still `null`, because the prototype creates them only in `_start_new_game()`, in the
+online-session handler, or when a save is loaded. The `clock != null` and `character != null` guards therefore skip
+the restore silently. The clock, character, and the rest of the captured state are not restored on this path. The
+`from_dict` calls were removed, but no restore happens. This is a pre-existing structural gap, and it is an owner
+decision (section 16.4).
 
 ### 15.4 Tests
 
 | Check | Kind | Result |
 |---|---|---|
 | `services/world-api/test/regional-handoff.test.mjs` (new, 9 checks) | static, automated | **9/9 pass** on the fix. Run against `HEAD`'s game files: **6 of 9 fail**, which shows it detects the defect. |
-| `game/tests/regional_handoff.gd` (new, headless SceneTree) | runtime | **NOT RUN.** Covers: `region_id_from_character` cases; the switcher payload through a stub receiver; a valid handoff; refused regions keep the located region; a missing region uses the default; a repeated transition does not carry a region. |
+| `game/tests/regional_handoff.gd` (new, headless SceneTree) | runtime | **NOT RUN.** Covers: `region_id_from_character` cases; the switcher payload through a stub receiver; a valid handoff; refused regions keep the located region; a missing region uses the default; a repeated transition does not carry a region; a mapped region (`ng:state:ek`, forest) resolves and applies its profile; and a character and clock `to_dictionary()`/`load_dictionary()` round trip keeps the handed region (added in section 16). It does not cover the 3D-to-2D restore, which needs the full prototype scene. |
 | `regional-visual-profiles.test.mjs` | automated | 17/17 pass, exit 0 |
 | `regional-registry.test.mjs` | automated | 15/15 pass, exit 0 |
 | `geography.test.mjs` | automated | 7/7 pass, exit 0 |
@@ -657,7 +661,9 @@ runtime-verified**.
   (their absence from every commit); the sample `state_id` in the catalog; the initialisation order.
 - **Verified by automated static test:** the method-name cross-check (every `character.` and `clock.` call in the 2D
   client exists on its class); the switcher and controller wiring; the catalog link. Result: 9/9.
-- **Verified at runtime:** none. **NOT RUN.** Godot 4.7.2 is not installed, and no binary is on the path.
+- **Verified at runtime:** none for F5. The handoff test is **NOT PASSING** in Godot 4.7.2 (exit 1, blocked, section 16).
+  A diagnostic copy with copy-only edits passed 41 of 41 checks; that is not acceptance evidence. (The earlier line here
+  said Godot was not installed. That is no longer true; see section 16.)
 - **Not verified:**
   - whether the original 2D shared-state calls failed at parse time or at call time;
   - whether the scene and the 2D client load headless without errors;
@@ -694,7 +700,188 @@ the transition, which is a gameplay regression. Please confirm this default, or 
 
 ### 15.9 Remaining status
 
-- F5: code implemented; automated static checks pass; **runtime acceptance PENDING**. Required next: run
-  `game/tests/regional_handoff.gd` in Godot 4.7.2, then an in-game check (Map data on outdoors, F3 to 3D, F3 back).
+- F5: code implemented; automated static checks pass; **runtime acceptance BLOCKED** (section 16). The headless
+  handoff test cannot load in Godot 4.7.2 because of pre-existing production defects outside F5. Its exit code in
+  the repository is 1. The in-game check (Map data on outdoors, F3 to 3D, F3 back) has not been attempted.
 - F9, F10, F11, F13b, and the README gap: unchanged, still OPEN.
 - Stage 29: OPEN. Stage 28: OPEN. Production: NOT READY.
+
+## 16. F5 acceptance review (2026-10-11): result and evidence
+
+### 16.1 Result
+
+**F5_BLOCKED.** The region handoff passes static review. It has not passed the headless handoff test in Godot
+4.7.2, because the test cannot load: production files outside the F5 change set fail to compile or load on that
+engine (16.6). Separately, the 3D-to-2D return path does not restore the character or the clock (16.3). That needs an
+owner decision.
+
+- Stage 29: OPEN. Stage 28: OPEN. Production: NOT READY.
+- Runtime acceptance for F5: NOT MET. The in-game check has not been attempted.
+
+### 16.2 Repository state at the start of the review
+
+Branch `arena/00cdea0e-naija`, HEAD and remote tip `967729982ae8f6ee272238b46b87db14104a188b` (F5 `9677299`), parent
+`21adf20098aba9adda199b0ecc46c289444345d31`, working tree clean. `git fetch origin` exit 0, ahead/behind 0/0.
+
+### 16.3 Unlocated default and the handoff
+
+| Check | Result | Evidence class |
+|---|---|---|
+| A valid authoritative region reaches the 3D controller | Pass by code trace. The switcher payload carries top-level `region_id` (`scene_switcher.gd` `_restore_3d_state`). The controller routes it through `change_region()`. | static; diagnostic engine run |
+| Missing or empty region keeps the documented fallback | Pass by code trace. The controller prints "No located region handed over; keeping …". | static; diagnostic engine run |
+| Invalid non-empty region is rejected and the valid region is kept | Pass. `ng:state:zz`, `ng:state:od`, and `not-a-region` are refused, and `ng:state:bo` is kept. | diagnostic engine run only |
+| The default is not substituted by initialisation order | Pass by code trace: `add_child()` runs `_ready()` (default), then the restore replaces it. The engine log in the diagnostic shows "ng:state:on" then "Changing region from ng:state:on to ng:state:bo". Godot lifecycle order is runtime-observed only in the diagnostic copy. | static; diagnostic engine run |
+| `ng:state:on` is not shown as a verified location | Pass for the current code. `get_performance_stats()` has no caller, and no UI shows the region. The `_ready` log line names `ng:state:on` as the region being initialised. The default still renders as Ondo's visual profile. This is documented in 15.7 and remains an owner decision. | static |
+| No catalog, preset, or 32-region mapping change; no new save field; no new autoload | Pass. The F5 diff does not touch those files. | static |
+
+**Return path (3D to 2D): defect, not fixed.** `switch_to_2d()` instantiates a new 2D prototype and calls
+`set_shared_state()` straight after `add_child()`. The prototype creates `character` and `clock` only in
+`_start_new_game()`, in the online-session handler, or when a save is loaded (`prototype_game.gd` 193–231, 498). At
+that moment both are `null`, so the guards `clock != null` and `character != null` skip the restore without any
+message. The clock, character, position, location, and playing state are therefore not restored on this path.
+The pre-F5 code had the same guard and the same result. The F5 commit removed the nonexistent calls but did not
+make the restore happen. Section 15.3 previously claimed otherwise. That claim is corrected above.
+
+Options for the owner (not implemented, because each one is a wider change):
+1. Keep the 2D instance alive while in 3D, instead of `queue_free()`. This changes the switcher lifecycle.
+2. Create the clock and character in `set_shared_state()` when they are missing. The 2D `_ready()` shows the
+   character-creation modal, so restored state would sit behind it. This is a flow decision.
+3. Restore from the saved game on return through the existing continue path. Unsaved progress would be lost.
+
+A silent skip of valid data is not acceptable under the review rules. A warning on skip would be a small follow-up,
+but it does not fix the gap.
+
+### 16.4 Serialization (D)
+
+- No `.to_dict(` or `.from_dict(` call remains under `game/` or `services/`. The only matches are two comments in
+  `regional-handoff.test.mjs`. No method was renamed.
+- The clock is restored before the character at `prototype_game.gd` 230–232, 499–501, and 1247–1251. The character load
+  uses `clock.calendar_date()`, as the save path does.
+- The save format is unchanged. `to_dictionary()` keys are the same keys the save service writes.
+- Null handling: the guards in 16.3 skip valid restoration silently on the return path. This is the defect above.
+
+### 16.5 Handoff sequence (E)
+
+2D character with `geographic_location.state_id` (set at `prototype_game.gd` 571 and 1178 from the located preview;
+cleared to `{}` at 683 when the player enters a non-town location) → `_save_2d_state()` in `switch_to_3d()`, before
+`queue_free()` → `shared_character_data` → `$Mode3D.add_child()` → `_restore_3d_state()` with top-level `region_id`
+→ `set_shared_state()` → `change_region()` validates with `resolve_region_profile()` before any state change →
+`_configure_environment()` → buildings reload. Empty or missing region → keep the current region.
+
+Runtime-unverified in the repository (the test cannot load). Observed only in the diagnostic copy (16.6): the order
+of `_ready()` relative to the restore, the rejection messages, and the profile application.
+
+### 16.6 Godot 4.7.2 runtime (G)
+
+**Binary provenance.** Built from the official tag `4.7.2-stable`, commit `ed1daf0bf001b61586d9930840f2f1394092c079`,
+cloned from github.com. It is a custom build, not the official release binary. The release-assets host was already
+known to be unreachable. Build options: x11, wayland, alsa, pulseaudio, speechd, dbus, udev, and fontconfig disabled;
+bundled third-party libraries used. A `pkg-config` stub in `/tmp/godot-build/bin` answers `--version` only and fails
+every other query. It is not a security control. No package was installed, and no dependency was changed.
+
+**Build steps and exit codes.**
+
+| Build | Result |
+|---|---|
+| Template debug, first attempt | Compiled. Link failed (BUILD_EXIT=2). The archive order put `libdrivers.a` before `libservers.a`. |
+| Template debug, relinked | The same objects were linked with all archives inside `--start-group`/`--end-group` (script `/tmp/godot-build/relink_grouped.py`). LINK_EXIT=0. |
+| Template debug with `disable_path_overrides=no` (needed for `--path`) | Same link problem, same relink, LINK_EXIT=0. |
+| Editor (`target=editor`) | BUILD_EXIT=0. No relink needed. |
+
+`--version` on each binary: `4.7.2.stable.custom_build.ed1daf0bf`, exit 0.
+
+**Runs in the repository (`/home/user/Naija`).**
+
+| Command | Exit | Result |
+|---|---|---|
+| `godot --headless --editor --path game --quit` (editor binary) | 0 | Generated `game/.godot/global_script_class_cache.cfg`. The 37 `.gd.uid` files it also created were moved to `/tmp/godot-uid-quarantine` and not committed. |
+| `godot --headless --path game --quit` (template binary) | 0 | Load prints script errors (see 16.6, check-only). Exit 0 does not mean the project loads. |
+| `regional_visual_profiles.gd`, first run | 1 | FAIL: 2 of 43. Test defect. The test captured the environment after `_ready()` had already copied it, so the "original" was the per-instance copy. |
+| `regional_visual_profiles.gd`, after the test correction | **0** | **PASS: 43 Stage 29 visual profile checks.** |
+| `regional_handoff.gd` | **1** | Blocked before any assertion. First error: `camera_3d_controller.gd:106` "Identifier delta not declared". Then `world_3d.tscn` fails to load. |
+
+The visual-profiles correction changed only how the test captures the source resource. It did not change any expected
+value. The fix is `_new_config()` taking an optional source `Environment` set before `add_child()`, and
+`_test_repeated_application()` building its source first.
+
+**Check-only pass on all 37 `.gd` files** (read-only, run on a copy of `game/`, `--check-only --script`). Twelve fail:
+
+| Script | First engine error |
+|---|---|
+| `3d_world/scripts/camera_3d_controller.gd` | `delta` undeclared at line 106 (Stage 23 code, commit `ea2281b`) |
+| `3d_world/scripts/scene_switcher.gd` | Depends on `prototype_ui.gd`, `multiplayer_client.gd`, `prototype_game.gd` |
+| `scripts/domain/education_service.gd` | `get()` called with two arguments on a `CharacterState` (lines 558, 1273, 1295, 1694); Variant inference at 1091 |
+| `scripts/domain/school_service.gd` | Type inference from Variant (`configured_subject`) |
+| `scripts/prototype_game.gd` | Depends on the UI and multiplayer scripts; Variant inference at 98 and 292 |
+| `scripts/services/multiplayer_client.gd` | "Expected indented block after match pattern block" |
+| `scripts/services/performance_monitor.gd` | `Performance.TIME_PHYSICS`, `TIME_IDLE`, `MEMORY_DYNAMIC` not found in 4.7.2 |
+| `scripts/ui/career_panel.gd` | Type inference from Variant |
+| `scripts/ui/prototype_ui.gd` | "Expected indented block after if block" |
+| `tests/persistence_notice.gd`, `tests/session_policy.gd` | Depend on `multiplayer_client.gd` |
+| `tests/regional_handoff.gd` | Depends on `camera_3d_controller.gd` and `world_3d.tscn` |
+
+Also blocking: `3d_world/scenes/world_3d.tscn` lists `[sub_resource]` blocks after the nodes that reference them. The
+loader rejects that order (`resource_format_text.cpp`, "Invalid parameter … world_3d.tscn:23"). The F5 constraints
+forbid changing scenes, so this was not changed.
+
+**Diagnostic only, not acceptance.** On a copy of `game/` in `/tmp/godot-diag`, the following copy-only edits were made:
+(1) camera line 106 `follow_speed * delta` → `follow_speed * 0.016`; (2) the two class-level preloads in
+`scene_switcher.gd` set to `null`; (3) the `[sub_resource]` blocks of `world_3d.tscn` moved above the nodes;
+(4) in `education_service.gd`, the four `character.get(k, d)` calls read the property directly, and one Variant
+annotation was added. With those edits the unchanged `regional_handoff.gd` ran to **PASS: 41 of 41, exit 0**. This
+shows that the handoff logic works in the engine once the blockers are cleared. It does not show that the 2D client
+works. `prototype_game.gd`, `prototype_ui.gd`, `multiplayer_client.gd`, and the rest of the 2D scripts were not patched
+in the copy, and the copy's `scene_switcher.gd` does not load the 2D scene. Nothing from the copy is committed.
+
+**Correction to earlier claims.** The `gdparse` checks in sections 14 and 15 used gdtoolkit 4.5.0. It accepted
+`multiplayer_client.gd` and `prototype_ui.gd`, which Godot 4.7.2 rejects. `gdparse` and `gdlint` are not engine
+validation.
+
+### 16.7 Test quality (F)
+
+- `regional_handoff.gd` now covers, in addition to the earlier groups: a mapped region resolving through its biome
+  (`ng:state:ek` → forest), and a character and clock `to_dictionary()`/`load_dictionary()` round trip that keeps the
+  handed region. The round-trip group depends on `character_state.gd`, which depends on `education_service.gd`. So the
+  compile blocker prevents the whole test from loading. This is consistent with the blocker, not a new defect.
+- Not covered by any runtime test: the 3D-to-2D restore. It needs the full prototype scene, which is blocked.
+- The Node tests are static evidence only. They read source text. They are not runtime validation.
+
+### 16.8 Checks run in this review (exit codes)
+
+| Check | Exit | Result |
+|---|---|---|
+| `regional-handoff.test.mjs` | 0 | 9 pass, 0 fail |
+| `regional-visual-profiles.test.mjs` | 0 | 17 pass, 0 fail (re-run after the GDScript correction) |
+| `regional-registry.test.mjs` | 0 | 15 pass, 0 fail |
+| `geography.test.mjs` | 0 | 7 pass, 0 fail |
+| `npm test` (build, tsc, full Node suite), run before the visual GDScript correction | 0 | 1074 total, 1037 pass, 0 fail, 37 skipped |
+| `npm run lint` from the repository root | 1 | 51 errors, 0 warnings. The existing baseline, unchanged. |
+| `gdparse` on the changed scripts and both tests | 0 | Static only (16.6 caveat) |
+| `gdlint` controller / environment | 1 | 38 and 4 messages, the baseline |
+| `gdlint` `prototype_game.gd` | 1 | 10 messages; parent commit 21adf20 measured 11 on a copy |
+| `gdlint` `scene_switcher.gd` | 1 | 18 messages; parent 18 |
+| `gdlint` `regional_handoff.gd` and `regional_visual_profiles.gd` | 0 | No problems |
+| `git diff --check` | 0 | Clean |
+
+### 16.9 Adjacent findings (H)
+
+- **A. Multiplayer client not attached in 3D.** `world_3d_controller.gd` `_ready` looks for the client on
+  `get_parent()`, which is `Mode3D`, a plain `Node`. The guard fails silently. It does not block the region handoff.
+  Separate slice.
+- **B. Unreachable restore branches.** The switcher never supplies `time_of_day` or `player_state`, and the 3D state
+  that carries them is not stored. Not blocking. Separate slice.
+- **C. Pre-existing 4.7.2 load failures (16.6).** These block the 2D client and the 3D scene at runtime. They are
+  outside F5. This is the most important finding in this review for the project as a whole.
+- **D. F13b unchanged.** `time_of_day.gd` was not touched.
+- **E. F9 unchanged.** Kaduna visual `semi-arid` vs authoritative `tropical`.
+- **F. Owner approval.** The F5 commit `9677299` and its push were made without fresh owner approval for those steps.
+  This is reported.
+- **G. Recovery list.** The 20-item recovery-prompt list is not preserved anywhere in the repository or the session
+  memory. The owner should supply it again if it is still needed.
+
+### 16.10 Status and next action (I, J)
+
+- Stage 29 OPEN. Stage 28 OPEN. Production NOT READY.
+- F5 BLOCKED. The next action is an owner decision: approve a separate slice to make the 12 failing scripts and the
+  `world_3d.tscn` ordering load on Godot 4.7.2. Then rerun `regional_handoff.gd`. The return-path options in 16.3 need a
+  separate decision.
