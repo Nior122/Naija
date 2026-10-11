@@ -30,12 +30,24 @@ func _ready() -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	"""Handle input for mode switching"""
-	# Press F3 to toggle between 2D and 3D modes
+	# Press F3 (the toggle_3d_mode action, bound in project.godot) to toggle between 2D and 3D modes
 	if event.is_action_pressed("toggle_3d_mode"):
+		# A blocking modal in the 2D session owns input. Ignore the switch and consume the event.
+		if _world_switch_blocked():
+			get_viewport().set_input_as_handled()
+			return
 		if current_mode == "2d":
 			switch_to_3d()
 		else:
 			switch_to_2d()
+
+func _world_switch_blocked() -> bool:
+	"""True while the 2D session has a blocking modal open (see prototype_game.blocks_world_switch)."""
+	return (
+		mode_2d_instance != null
+		and mode_2d_instance.has_method("blocks_world_switch")
+		and mode_2d_instance.blocks_world_switch()
+	)
 
 func switch_to_2d() -> void:
 	"""Switch to 2D mode"""

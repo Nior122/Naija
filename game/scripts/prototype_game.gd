@@ -1351,6 +1351,12 @@ func is_suspended() -> bool:
 	return _suspended
 
 
+# True while a blocking modal (for example the Load confirmation) owns input. The scene switcher asks
+# this before it changes worlds, so the world-switch key cannot bypass an open modal.
+func blocks_world_switch() -> bool:
+	return is_instance_valid(ui) and ui.is_modal_open()
+
+
 func get_multiplayer_client() -> Node:
 	"""Get the multiplayer client node"""
 	return multiplayer_client

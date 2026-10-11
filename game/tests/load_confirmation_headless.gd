@@ -6,6 +6,8 @@ extends SceneTree
 #   toggle_3d_mode is bound to physical F3, and checks that no action (before and after the scene starts) uses F3
 #   other than toggle_3d_mode, or uses F11.
 # - Physical F3 and F11 key events go to the unhandled-input path. F3 switches to 3D. F11 does not switch.
+# - While the Load confirmation is open, F3 (both the physical key and the bound InputMap event) does not switch
+#   worlds, creates no 3D world, and leaves the dialog open and usable. After Cancel, F3 works again.
 # - Continue on the start screen restores the saved life with no confirmation dialog.
 # - In-game Load asks for confirmation first. Cancel leaves the same character and clock objects, the unsaved
 #   money, the unsaved geography, and the unsaved life event unchanged. Confirm replaces the session with the
@@ -17,8 +19,9 @@ extends SceneTree
 # Buttons are activated by focusing the real Button and sending ui_accept, as ui_flow_headless does. Mouse input
 # is not used. Nothing is rendered, so no dialog layout, colour, or visual state is checked here.
 #
-# Save file: user://naija-stage1-save.json. The test backs it up (or writes a marker when no save existed), and it
-# refuses to run while its own backup or marker is present. The game clock is frozen during the test so that
+# Save file: user://naija-stage1-save.json. The test copies the original to its own backup and verifies the copy
+# before it removes the original. It restores and byte-compares the original at the end, and it refuses to run while
+# any save-slot test's backup or marker is present. The game clock is frozen during the test so that
 # autosaves cannot overwrite the values under test. A watchdog restores the save file if the run stalls.
 #
 # Run: godot --headless --path game --script res://tests/load_confirmation_headless.gd
@@ -75,32 +78,44 @@ func _backup_save() -> bool:
 		marker.store_string("No save file existed when this run started.")
 		marker.close()
 		return true
-	var bytes := FileAccess.get_file_as_bytes(SAVE_PATH)
+	var original := FileAccess.get_file_as_bytes(SAVE_PATH)
 	var file := FileAccess.open(BACKUP_PATH, FileAccess.WRITE)
 	if file == null:
 		return false
-	file.store_buffer(bytes)
+	file.store_buffer(original)
 	file.close()
+	# Verify the copy before the original is touched. A bad copy is this test's own file, so it is removed.
+	if FileAccess.get_file_as_bytes(BACKUP_PATH) != original:
+		DirAccess.open("user://").remove(BACKUP_PATH.trim_prefix("user://"))
+		return false
 	return true
 
 
-func _restore_save() -> void:
+# Returns true only when the original is back on disk byte for byte and this test's backup and marker are gone.
+# On a failed verification the backup is kept, because it may be the only copy.
+func _restore_save() -> bool:
 	var dir := DirAccess.open("user://")
 	if dir == null:
 		push_error("Could not open user:// to restore the save file. Backup remains at %s" % BACKUP_PATH)
-		return
+		return false
 	if _save_existed:
-		var bytes := FileAccess.get_file_as_bytes(BACKUP_PATH)
+		var backup_bytes := FileAccess.get_file_as_bytes(BACKUP_PATH)
 		var file := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
-		if file != null:
-			file.store_buffer(bytes)
-			file.close()
-	elif FileAccess.file_exists(SAVE_PATH):
-		dir.remove(SAVE_PATH.trim_prefix("user://"))
-	if FileAccess.file_exists(BACKUP_PATH):
+		if file == null:
+			push_error("Could not rewrite the save file. Backup remains at %s" % BACKUP_PATH)
+			return false
+		file.store_buffer(backup_bytes)
+		file.close()
+		if FileAccess.get_file_as_bytes(SAVE_PATH) != backup_bytes:
+			push_error("The restored save does not match the backup. Backup remains at %s" % BACKUP_PATH)
+			return false
 		dir.remove(BACKUP_PATH.trim_prefix("user://"))
+	elif FileAccess.file_exists(SAVE_PATH):
+		# No save existed when the run started, so this file was written by this run.
+		dir.remove(SAVE_PATH.trim_prefix("user://"))
 	if FileAccess.file_exists(NO_SAVE_MARKER):
 		dir.remove(NO_SAVE_MARKER.trim_prefix("user://"))
+	return not FileAccess.file_exists(BACKUP_PATH) and not FileAccess.file_exists(NO_SAVE_MARKER)
 
 
 func _write_raw_save(text: String) -> void:
@@ -260,8 +275,13 @@ func _scan_function_keys(label: String) -> void:
 
 func _run() -> void:
 	create_timer(WATCHDOG_SECONDS).timeout.connect(_on_watchdog)
-	if FileAccess.file_exists(BACKUP_PATH) or FileAccess.file_exists(NO_SAVE_MARKER):
-		print("FAIL: a backup or marker from an earlier run exists (%s or %s). Resolve it before rerunning." % [BACKUP_PATH, NO_SAVE_MARKER])
+	# Refuse while any save-slot test's backup or marker is present, so two runs never share the save slot.
+	var leftovers: Array[String] = []
+	for path in [BACKUP_PATH, NO_SAVE_MARKER, "user://naija-stage1-save.ui-flow-backup.json", "user://naija-stage1-save.ui-flow-no-save.marker", "user://naija-stage1-save.return-test-backup.json"]:
+		if FileAccess.file_exists(path):
+			leftovers.append(path)
+	if not leftovers.is_empty():
+		print("FAIL: a backup or marker from an earlier save-slot run exists: %s. Nothing was changed. Resolve it before rerunning." % str(leftovers))
 		quit(1)
 		return
 	if not _backup_save():
@@ -381,8 +401,73 @@ func _run() -> void:
 	_check(_count_nodes(_main) == nodes_before, "Repeated Load and Cancel add no nodes (%d before, %d after)" % [nodes_before, _count_nodes(_main)])
 	_check(_session_is_unsaved_and_intact(proto, character_ref, clock_ref), "Repeated Load and Cancel leave the unsaved session unchanged")
 
+	# ---- E2. World switching while the Load confirmation is open ----
+	# A blocking modal owns input. F3 (the toggle_3d_mode action) must not switch worlds while it is open.
+	# The dialog must stay open and usable, and the live session must not change.
+	await _open_load_confirmation(_main)
+	_check(proto.ui.is_modal_open(), "The Load confirmation is open before the F3 switch test")
+	_press_physical(KEY_F3)
+	await _frames(3)
+	_check(_main.current_mode == "2d", "F3 while the Load confirmation is open does not switch to 3D")
+	_check(_main.mode_3d_instance == null and _main.get_node("Mode3D").get_child_count() == 0, "F3 while the confirmation is open creates no 3D world")
+	_check(not proto.is_suspended() and proto.playing, "F3 while the confirmation is open does not suspend the 2D session")
+	_check(proto.ui.is_modal_open() and _find_button(_main, CONFIRM_TEXT) != null and _find_button(_main, CANCEL_TEXT) != null, "The confirmation stays open, with its buttons, after blocked F3")
+	_check(_session_is_unsaved_and_intact(proto, character_ref, clock_ref), "Blocked F3 leaves the unsaved session unchanged")
+	# The bound event itself (read from the InputMap), as a second route to the same action.
+	var bound_toggle: InputEventKey = InputMap.action_get_events("toggle_3d_mode")[0] as InputEventKey
+	var bound_down: InputEventKey = bound_toggle.duplicate() as InputEventKey
+	bound_down.pressed = true
+	root.push_unhandled_input(bound_down)
+	await _frames(3)
+	_check(_main.current_mode == "2d" and proto.ui.is_modal_open(), "The bound toggle_3d_mode event is also blocked while the confirmation is open")
+	var cancel_blocked := _find_button(_main, CANCEL_TEXT)
+	if cancel_blocked != null:
+		_activate(cancel_blocked)
+	await _frames(3)
+	_check(not proto.ui.is_modal_open() and proto.player.movement_enabled, "Cancel after blocked F3 closes the dialog and restores movement")
+	_check(_session_is_unsaved_and_intact(proto, character_ref, clock_ref), "Cancel after blocked F3 keeps the same session objects")
+	# Ordinary switching works again after the modal closes.
+	_press_physical(KEY_F3)
+	await _frames(3)
+	_check(_main.current_mode == "3d" and proto.is_suspended(), "After the modal closes, F3 switches to 3D again")
+	_press_physical(KEY_F3)
+	await _frames(3)
+	_check(_main.current_mode == "2d" and _main.mode_2d_instance == proto and not proto.is_suspended(), "After the modal closes, F3 returns to the same 2D session")
+	_check(_session_is_unsaved_and_intact(proto, character_ref, clock_ref), "The round trip after the modal leaves the unsaved session unchanged")
+	# Repeated: open, blocked F3, cancel, then one real switch and back. Counts must not grow.
+	var switch_connections: int = proto.ui.get_signal_connection_list("load_requested").size()
+	var switch_bindings: int = InputMap.action_get_events("toggle_3d_mode").size()
+	var switch_nodes := _count_nodes(_main)
+	var blocked_every_time := true
+	for cycle in CYCLES:
+		await _open_load_confirmation(_main)
+		_press_physical(KEY_F3)
+		await _frames(2)
+		if _main.current_mode != "2d" or _main.mode_3d_instance != null:
+			blocked_every_time = false
+		var cycle_cancel := _find_button(_main, CANCEL_TEXT)
+		if cycle_cancel != null:
+			_activate(cycle_cancel)
+		await _frames(2)
+		_press_physical(KEY_F3)
+		await _frames(3)
+		_press_physical(KEY_F3)
+		await _frames(3)
+		if _main.current_mode != "2d" or _main.mode_2d_instance != proto:
+			blocked_every_time = false
+	_check(blocked_every_time, "Every repeated open-F3-cancel cycle blocks the switch and then switches normally")
+	_check(proto.ui.get_signal_connection_list("load_requested").size() == switch_connections, "Repeated F3-under-modal cycles add no load_requested connections")
+	_check(InputMap.action_get_events("toggle_3d_mode").size() == switch_bindings, "Repeated F3-under-modal cycles add no input bindings")
+	_check(_count_nodes(_main) == switch_nodes, "Repeated F3-under-modal cycles add no nodes (%d before, %d after)" % [switch_nodes, _count_nodes(_main)])
+	_check(_main.get_node("Mode2D").get_child_count() == mode_2d_children_before and _main.get_node("Mode3D").get_child_count() == 0, "Repeated F3-under-modal cycles leave one 2D session and no 3D world")
+	_check(_session_is_unsaved_and_intact(proto, character_ref, clock_ref), "Repeated F3-under-modal cycles leave the unsaved session unchanged")
+
 	# ---- F. Confirm replaces the session with the saved copy ----
 	await _open_load_confirmation(_main)
+	# A blocked F3 first: the switch is refused, and Confirm must still use the validated load path afterwards.
+	_press_physical(KEY_F3)
+	await _frames(3)
+	_check(_main.current_mode == "2d" and proto.ui.is_modal_open(), "Before Confirm, a blocked F3 leaves the dialog open in 2D")
 	var confirm_now := _find_button(_main, CONFIRM_TEXT)
 	if confirm_now != null:
 		_activate(confirm_now)
@@ -458,8 +543,23 @@ func _run() -> void:
 	await _close_open_modal(proto.ui)
 	_check(_session_is_unsaved_and_intact(proto, character_ref, clock_ref), "A missing save file leaves the live session unchanged")
 
+	# ---- H. Save-service validation, direct (no UI) ----
+	# A missing character key must be rejected by the check itself. The check's fallback is null, not {}, because
+	# an {} fallback passes an "is Dictionary" test and then fails on the direct lookup.
+	var direct_cases := [
+		{"label": "a missing character key", "text": JSON.stringify({"version": 2, "clock": {"day": 1, "minute_of_day": 420}})},
+		{"label": "a missing clock key", "text": JSON.stringify({"version": 2, "character": {"name": "Ayo"}})},
+		{"label": "a character that is not an object", "text": JSON.stringify({"version": 2, "character": 5, "clock": {"day": 1, "minute_of_day": 420}})},
+	]
+	for case in direct_cases:
+		_write_raw_save(str(case["text"]))
+		var direct: Dictionary = SaveServiceScript.load_state()
+		_check(not bool(direct.get("ok", false)) and not direct.has("character"), "SaveService rejects %s without returning a character payload" % str(case["label"]))
+	_check(_session_is_unsaved_and_intact(proto, character_ref, clock_ref), "The direct save-service checks leave the live session unchanged")
+
 	# ---- restore the save file and report ----
-	_restore_save()
+	var save_restored := _restore_save()
+	_check(save_restored, "The save file is restored byte for byte and the test's backup is removed only after that check")
 	_check_restore()
 	var total := _checks
 	if _failures.is_empty():

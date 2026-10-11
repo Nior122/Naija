@@ -9,11 +9,18 @@ extends SceneTree
 #   It is sent to the viewport's unhandled-input path.
 # - Nothing here renders. The viewport image is null in this build, so visual results are not checked.
 #
-# Save file: user://naija-stage1-save.json. The test backs it up (or writes a marker when no save existed),
-# starts with no save, and restores the original (or removes the file) at the end. It refuses to run while a
-# backup or marker from an earlier run is present. A watchdog restores the save file if the run stalls. A hard
-# engine crash cannot be caught: the backup or marker stays on disk and blocks the next run until it is
-# resolved by hand.
+# Save file: user://naija-stage1-save.json. Before anything else, the test copies the original byte for byte to
+# its own backup and verifies the copy. Only then does it remove the original and start with no save. At the end
+# it writes the original back, reads it back, compares the bytes, and deletes its backup only after that
+# comparison matches. It refuses to run while any backup or marker from an earlier run of a save-slot test is
+# present (this test's, load_confirmation_headless's, or return_path's). A watchdog restores the save file if the
+# run stalls. A hard engine crash cannot be caught: the backup or marker stays on disk and blocks the next run until
+# it is resolved by hand. The test never deletes a file it did not create.
+#
+# Game clock: the 2D session's autosave runs on 15-game-minute boundaries. The test freezes the clock by setting the
+# session's own timing field (_seconds_per_game_minute) to a very large value, immediately after each session is
+# created and before any play starts. It asserts that game time does not move during the save-dependent steps, and
+# it restores the original rate on each live session before the final checks. It does not add delays or timeouts.
 #
 # Run: godot --headless --path game --script res://tests/ui_flow_headless.gd
 
@@ -22,6 +29,13 @@ const SaveServiceScript = preload("res://scripts/services/save_service.gd")
 
 const SAVE_PATH := "user://naija-stage1-save.json"
 const BACKUP_PATH := "user://naija-stage1-save.ui-flow-backup.json"
+# Backups and markers of the other save-slot tests. This test refuses to run while any of them is present, so two
+# runs never share the save slot.
+const OTHER_SAVE_SLOT_FILES: Array[String] = [
+	"user://naija-stage1-save.return-test-backup.json",
+	"user://naija-stage1-save.load-confirm-backup.json",
+	"user://naija-stage1-save.load-confirm-no-save.marker",
+]
 # Written when no save existed, so an interrupted run still blocks the next run.
 const NO_SAVE_MARKER := "user://naija-stage1-save.ui-flow-no-save.marker"
 const WATCHDOG_SECONDS := 240.0
@@ -60,33 +74,75 @@ func _backup_save() -> bool:
 			return false
 		marker.store_string("No save file existed when this run started.")
 		marker.close()
-		return true
-	var bytes := FileAccess.get_file_as_bytes(SAVE_PATH)
+		return FileAccess.file_exists(NO_SAVE_MARKER)
+	var original := FileAccess.get_file_as_bytes(SAVE_PATH)
 	var file := FileAccess.open(BACKUP_PATH, FileAccess.WRITE)
 	if file == null:
 		return false
-	file.store_buffer(bytes)
+	file.store_buffer(original)
 	file.close()
+	# Verify the copy before the original is removed. A bad copy is this test's own file, so it is removed.
+	if FileAccess.get_file_as_bytes(BACKUP_PATH) != original:
+		DirAccess.open("user://").remove(BACKUP_PATH.trim_prefix("user://"))
+		return false
 	return true
 
 
-func _restore_save() -> void:
+# Returns true only when the original is back on disk, byte for byte, and the test's own backup and marker are gone.
+# If verification fails, the backup is kept, because it may be the only copy.
+func _restore_save() -> bool:
 	var dir := DirAccess.open("user://")
 	if dir == null:
 		push_error("Could not open user:// to restore the save file. Backup remains at %s" % BACKUP_PATH)
-		return
+		return false
 	if _save_existed:
-		var bytes := FileAccess.get_file_as_bytes(BACKUP_PATH)
+		var backup_bytes := FileAccess.get_file_as_bytes(BACKUP_PATH)
 		var file := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
-		if file != null:
-			file.store_buffer(bytes)
-			file.close()
-	elif FileAccess.file_exists(SAVE_PATH):
-		dir.remove(SAVE_PATH.trim_prefix("user://"))
-	if FileAccess.file_exists(BACKUP_PATH):
+		if file == null:
+			push_error("Could not rewrite the save file. Backup remains at %s" % BACKUP_PATH)
+			return false
+		file.store_buffer(backup_bytes)
+		file.close()
+		if FileAccess.get_file_as_bytes(SAVE_PATH) != backup_bytes:
+			push_error("The restored save does not match the backup. Backup remains at %s" % BACKUP_PATH)
+			return false
 		dir.remove(BACKUP_PATH.trim_prefix("user://"))
+	elif FileAccess.file_exists(SAVE_PATH):
+		# No save existed when the run started, so this file was written by this run.
+		dir.remove(SAVE_PATH.trim_prefix("user://"))
 	if FileAccess.file_exists(NO_SAVE_MARKER):
 		dir.remove(NO_SAVE_MARKER.trim_prefix("user://"))
+	return not FileAccess.file_exists(BACKUP_PATH) and not FileAccess.file_exists(NO_SAVE_MARKER)
+
+
+# ---------- game clock control ----------
+
+# Each entry: {"session": Node, "rate": float}. Restored before the final checks.
+var _clock_restores: Array[Dictionary] = []
+
+
+func _freeze_clock(session: Node) -> void:
+	# Test-only: a very long real time per game minute stops the clock, so no 15-minute autosave can fire.
+	_clock_restores.append({"session": session, "rate": float(session._seconds_per_game_minute)})
+	session._seconds_per_game_minute = 1.0e9
+
+
+func _restore_clock() -> bool:
+	var all_restored := true
+	for entry in _clock_restores:
+		# The first session is freed during the Continue step. Check validity before any typed use.
+		var session = entry["session"]
+		if not is_instance_valid(session):
+			continue
+		session._seconds_per_game_minute = float(entry["rate"])
+		if not is_equal_approx(float(session._seconds_per_game_minute), float(entry["rate"])):
+			all_restored = false
+	_clock_restores.clear()
+	return all_restored
+
+
+func _game_minutes(session: Node) -> int:
+	return int(session.clock.day) * 1440 + int(session.clock.minute_of_day)
 
 
 func _on_watchdog() -> void:
@@ -171,8 +227,12 @@ func _read_save() -> Dictionary:
 
 func _run() -> void:
 	create_timer(WATCHDOG_SECONDS).timeout.connect(_on_watchdog)
-	if FileAccess.file_exists(BACKUP_PATH) or FileAccess.file_exists(NO_SAVE_MARKER):
-		print("FAIL: a backup or marker from an earlier run exists (%s or %s). Resolve it before rerunning." % [BACKUP_PATH, NO_SAVE_MARKER])
+	var leftovers: Array[String] = []
+	for path in [BACKUP_PATH, NO_SAVE_MARKER] + OTHER_SAVE_SLOT_FILES:
+		if FileAccess.file_exists(path):
+			leftovers.append(path)
+	if not leftovers.is_empty():
+		print("FAIL: a backup or marker from an earlier save-slot run exists: %s. Nothing was changed. Resolve it before rerunning." % str(leftovers))
 		quit(1)
 		return
 	if not _backup_save():
@@ -190,6 +250,8 @@ func _run() -> void:
 	root.add_child(_main)
 	await _frames(3)
 	var proto = _main.mode_2d_instance
+	# Freeze game time before any play starts, so no autosave can fire during the test (see the header).
+	_freeze_clock(proto)
 	_check(proto != null and _label_contains(proto.ui, CREATION_TEXT), "Startup shows character creation")
 	_check(_find_button(_main, "Begin your life") != null, "Startup offers 'Begin your life' (real button)")
 	_check(_find_button(_main, "Continue saved life") == null, "No 'Continue saved life' button without a save")
@@ -226,6 +288,7 @@ func _run() -> void:
 	proto.character.money = UNSAVED_MONEY
 	var character_ref = proto.character
 	var clock_ref = proto.clock
+	var minutes_at_unsaved := _game_minutes(proto)
 	var file_money_before_switch := int(_read_save().get("character", {}).get("money", -1))
 	_check(file_money_before_switch == SAVED_MONEY, "Unsaved money (%d) is not in the save file" % UNSAVED_MONEY)
 	var ui_create_connections: int = proto.ui.get_signal_connection_list("create_requested").size()
@@ -295,6 +358,7 @@ func _run() -> void:
 	_check(proto.character.money == UNSAVED_MONEY, "Unsaved money survives repeated round trips")
 
 	# ---- 8. Load saved progress through the real save modal ----
+	_check(_game_minutes(proto) == minutes_at_unsaved, "Game time did not move during the save-dependent steps (clock frozen, %d minutes at unsaved, %d now)" % [minutes_at_unsaved, _game_minutes(proto)])
 	var menu_load := _find_button(_main, "Save / Load")
 	if menu_load != null:
 		_activate(menu_load)
@@ -328,6 +392,7 @@ func _run() -> void:
 	root.add_child(_main)
 	await _frames(3)
 	var proto2 = _main.mode_2d_instance
+	_freeze_clock(proto2)
 	var continue_button := _find_button(_main, "Continue saved life")
 	_check(continue_button != null, "Startup offers 'Continue saved life' once a save exists")
 	_check(_label_contains(proto2.ui, CREATION_TEXT), "Startup card is shown before Continue")
@@ -340,8 +405,10 @@ func _run() -> void:
 	_observe("after Continue: name=%s money=%s location=%s" % [proto2.character.name, str(proto2.character.money), proto2.character.current_location])
 	await _close_open_modal(proto2.ui)
 
-	# ---- restore the save file and report ----
-	_restore_save()
+	# ---- restore the clock rate and the save file, then report ----
+	_check(_restore_clock(), "The game clock rate is restored on each live session")
+	var save_restored := _restore_save()
+	_check(save_restored, "The save file is restored byte for byte and the test's backup is removed only after that check")
 	_restore_check()
 	var total := _checks
 	if _failures.is_empty():

@@ -1421,8 +1421,8 @@ Evidence labels: **headless** means Godot `--headless` with simulated input. Not
 - `jump` (`character_3d.gd:48`): undefined. Not fixed.
 - `world_3d.tscn` `load_steps=6` mismatch: unchanged.
 - `load_dictionary` overwrites a supplied `life_history` when the DOB is invalid: unchanged.
-- **Code-reading observation, not verified at runtime**: `scene_switcher.gd` toggles the key without checking whether a 2D modal is open. A toggle during an open modal may therefore switch modes while the modal is shown. Not changed here.
-- **Test risk**: `ui_flow_headless.gd` does not freeze the clock. An autosave during its run could change a saved value. It has passed on every run so far, but it is not frozen the way the new test is. Not changed here.
+- **Superseded by section 21 (verified at runtime and fixed)**: `scene_switcher.gd` toggles the key without checking whether a 2D modal is open. A toggle during an open modal may therefore switch modes while the modal is shown. Fixed in section 21.
+- **Superseded by section 21 (fixed)**: `ui_flow_headless.gd` does not freeze the clock. An autosave during its run could change a saved value. It has passed on every run so far, but it is not frozen the way the new test is. Not changed here.
 
 ### 20.12 Scope protection
 
@@ -1435,3 +1435,109 @@ Evidence labels: **headless** means Godot `--headless` with simulated input. Not
 - Control and Load safety: complete for the headless and static scope above.
 - Rendered validation of the confirmation dialog, mouse interaction, and the F3 key on a real display: **not done**.
 - Stage 29 **OPEN** (rendered checks are still blocked). Stage 28 **OPEN**. Production **NOT READY**.
+
+## 21. Modal safety for world switching, and deterministic UI-flow tests (2026-10-11)
+
+Evidence labels: **headless** means Godot `--headless` with simulated input, and no rendering. **Static** means file reading or grep. The engine is the custom build `4.7.2.stable.custom_build.ed1daf0bf` (checked with `--version`, exit 0), not the official release. Nothing in this section was rendered, and no mouse input was used.
+
+### 21.1 Result
+
+- Overall: **MODAL_SAFETY_FIXED**, within the headless and static scope. The reported observation was verified at runtime and was a real defect. It is fixed, and it is covered by an automated test.
+- The UI-flow test is now deterministic: its game clock is frozen, its save restore is verified byte for byte, and its cross-test refusal covers the other save-slot tests.
+- Stage 29 remains **OPEN** until rendered validation is done. Stage 28 remains **OPEN**. Production remains **NOT READY**.
+
+### 21.2 Start state (preflight)
+
+- Branch `arena/00cdea0e-naija`. Local HEAD `cd1703c`, remote tip `cd1703c`, 0 ahead and 0 behind, tree clean, no stash.
+- F3 is the bound key (`project.godot`, physical keycode 4194334). The save-validation guard is present. The Load confirmation is present. The 2D session is retained and resumed.
+
+### 21.3 Findings: how a modal and the world-switch key interact (static trace, then headless runtime)
+
+- **Creation of the Load confirmation.** The "Load saved progress" button in the save menu calls `show_load_confirmation()` (`prototype_ui.gd`). That creates a modal through `_open_modal()`, which sets `_modal_open` and emits `modal_changed(true)`. Confirm calls `_close_modal()` and then emits `load_requested`. Cancel calls `_close_modal()`.
+- **Modal ownership.** The modal is represented by `PrototypeUI._modal_open`, read through `is_modal_open()`. `prototype_game.gd` uses it to block gameplay: `_unhandled_input` returns early, the clock does not advance, and `_on_modal_changed` disables movement.
+- **Path of `toggle_3d_mode`.** The action reaches `scene_switcher.gd`'s `_unhandled_input`. That handler checked only `current_mode`. It did not check any modal.
+- **Propagation.** The 2D session's `_unhandled_input` returned early while a modal was open, and it did not consume the event. The event therefore continued to `scene_switcher.gd`. The Button GUI does not consume F3.
+- **Dialog during a transition.** `suspend_session()` hides the 2D UI, and the modal lives inside that UI. The modal therefore stayed open but hidden in 3D. Returning to 2D showed it again, still open.
+- **Runtime confirmation (before the fix).** In `load_confirmation_headless.gd`, a physical F3 press while the confirmation was open switched to 3D, created a 3D world, and suspended the 2D session. The dialog's buttons were no longer visible. This produced 28 failing checks, most of them a cascade from the unexpected 3D state. The first three failures are the direct evidence. This is headless, not rendered.
+
+### 21.4 Production change
+
+- `game/3d_world/scripts/scene_switcher.gd`: `_unhandled_input` checks `_world_switch_blocked()` before it toggles. While the 2D session reports an open blocking modal, the handler consumes the event and returns. The switching code itself is unchanged.
+- `game/scripts/prototype_game.gd`: one new query, `blocks_world_switch()`, returns `is_instance_valid(ui) and ui.is_modal_open()`. It reuses the existing modal state. No second modal framework was added.
+- **Why the switcher, not the 2D session, does the check.** The switcher is the component that performs the transition. An explicit check there does not depend on the order in which `_unhandled_input` runs across the tree. The 2D session still ignores gameplay input while a modal is open, as before.
+- **Direction.** The check applies in both directions. In 3D, the 2D modal cannot be opened, because the 2D UI is hidden and its process is disabled. The check therefore cannot leave the user stuck in 3D.
+- **Scope.** The creation screen (`show_character_creation`) is not a modal in this framework, and F3 on that screen behaves as before. This is not changed here.
+
+### 21.5 Tests for the modal interaction (headless)
+
+`game/tests/load_confirmation_headless.gd`, section E2 (with a blocked F3 added to section F), 104 checks in total, exit 0. Each check runs through the real InputMap action and the real handlers:
+
+1. Opening the Load confirmation, through the HUD and save menu, with `ui_accept` activation.
+2. Physical F3 (`KEY_F3`) while the dialog is open. Also the bound `toggle_3d_mode` event, read from the InputMap and sent to the unhandled-input path.
+3. No transition: the mode stays `2d`, no 3D world is created, the 2D session is not suspended, and the dialog stays open with its Confirm and Cancel buttons. The unsaved session is unchanged.
+4. Cancel: the dialog closes, movement is restored, and the same character and clock objects remain, with unsaved money, geography, and life history.
+5. Confirm, after a blocked F3 in section F, still goes through the validated load path (the existing `load_requested` to `_continue_game`).
+6. After the modal closes, F3 switches to 3D and back to the same 2D session.
+7. Repeated open, blocked F3, cancel, and switch cycles (5 times): the signal-connection counts, the input-binding count, the node count, and the child counts all stay the same.
+
+These are headless tests. They do not show a rendered dialog, a visual lock, or a real key press in a window.
+
+### 21.6 UI-flow determinism (`game/tests/ui_flow_headless.gd`)
+
+- **The race was real.** A scratch copy of the previous `ui_flow_headless.gd` with the clock forced to fire 15-minute boundaries every few milliseconds failed twice in two runs. Both failures were the saved-money assertions. Load and Continue restored the unsaved value (999), not the saved one (1234). This shows the race is a real failure mode, not a theoretical one. The scratch copy was outside the repository and was discarded.
+- **How the clock is controlled.** The test reuses the session's own timing field, `_seconds_per_game_minute`, the same seam that `load_confirmation_headless.gd` uses. It sets the field to `1.0e9` immediately after each session is created, before any play starts. The original rate is recorded and restored on each live session before the final checks. The test also asserts that game time does not move during the save-dependent steps, comparing the minute count recorded at unsaved state with the minute count just before the Load step. This is a test-only write. No production hook was added, and no delay or timeout was used to hide the race.
+- **Save-file safety.** Before anything else, the test copies the original byte for byte to its own backup and verifies the copy. Only then does it remove the original. At the end, it writes the original back, reads it back, compares the bytes, and deletes its backup only after that comparison matches. A failed verification keeps the backup, because it may be the only copy. The test deletes only the backup and marker it created.
+- **Refusal.** The test refuses to run, exit 1, and changes nothing, while any backup or marker from a save-slot test is present. The list is this test's backup and marker, the load-confirmation backup and marker, and the return-path backup.
+- **Probes, outside the repository.**
+  - A foreign backup named `naija-stage1-save.return-test-backup.json` was planted in the user data folder. The test refused (exit 1), and the foreign file was left unchanged. The probe file was then removed, because I had created it.
+  - A valid sentinel save was planted. The test backed it up, removed it, ran (exit 0), and restored it with identical bytes. The sentinel was then removed, because I had created it, so the folder returned to its original state.
+
+### 21.7 Save and load regression (headless, no redesign)
+
+- The missing-character fix from section 20.7 is in the baseline. Its regression assertions are in `load_confirmation_headless.gd`, section H. They call `SaveService.load_state()` directly for a missing character key, a missing clock key, and a character that is not an object. Each must return `ok == false` with no character payload. This verifies the check itself, not the UI.
+- Section G still covers the UI-level cases. Each failure leaves the session unchanged.
+- No save format change. The save service's read path is unchanged except for the null fallback from section 20.7.
+- The disconnect ordering in `_continue_game` is unchanged from section 20.7. **Not runtime-tested**: there is no multiplayer server in this sandbox.
+
+### 21.8 Test counts and repeated-run evidence (exit codes are real)
+
+| Check | Before this section (`cd1703c`) | After this section |
+|---|---|---|
+| `load_confirmation_headless.gd` | 80/80, exit 0 | 104/104, exit 0 (3 final repeated runs, all 104/104, exit 0; an earlier set of 5 runs at 103 checks, before the blocked F3 in section F was added, also exit 0) |
+| `ui_flow_headless.gd` | 54/54, exit 0 | 57/57, exit 0 (10 repeated runs, all 57/57, exit 0, 0 script errors, no leftover save files) |
+| `return_path.gd` | 46/46, exit 0 | 46/46, exit 0 |
+| `regional_handoff.gd` | 41/41, exit 0 | 41/41, exit 0 |
+| `regional_visual_profiles.gd` | 43/43, exit 0 | 43/43, exit 0 |
+| `performance_metrics.gd` | 11/11, exit 0 | 11/11, exit 0 |
+| `player_movement`, `persistence_notice`, `session_policy` | exit 0 | exit 0 |
+| Main scene `--quit` | exit 0 | exit 0 |
+| `check-only` sweep | 41 files, 0 non-zero | 41 files, 0 non-zero |
+| `domain_smoke.gd` | exit 1; 4 failing (run: 4 of 93) | exit 1; 4 failing (run: 4 of 91) |
+| `save_restart --read` (after `--write`) | exit 1; 2 error lines | exit 1; 2 error lines |
+| `npm test` (static) | exit 0; 1074 total, 1037 pass, 0 fail, 37 skipped | exit 0; same counts |
+| `npm run lint` (static) | exit 1; 51 errors | exit 1; 51 errors, same files |
+| `git diff --check` | exit 0 | exit 0 |
+
+- Before any change, the baseline `save_restart --read` run reported 1 error line. That was my error: I ran `--read` without the `--write` step that creates the checkpoint. The corrected baseline is 2 lines, matching the earlier record.
+- The `domain_smoke` denominator varies between runs at the same code (91, 92, 93). The failing count is 4 in every run.
+
+### 21.9 Remaining limitations
+
+- **Rendered validation: not done.** No dialog layout, button appearance, text wrapping, visual movement lock, or fade was inspected. The custom build has only a headless display driver, so rendered checks are blocked (19.5).
+- **Mouse interaction: not tested.** Pushed mouse events do not reach Buttons in this headless build (19.2). Every activation here used focus and `ui_accept`.
+- **Real key press in a window: not tested.** The F3 checks send `InputEventKey` events to the viewport, not keystrokes from a keyboard.
+- **Live server: not tested.** The disconnect on an active online session at the commit point of `_continue_game` could not be exercised. There is no multiplayer server in this environment.
+- **Creation screen: not changed.** F3 on the character-creation screen, which is not a modal in this framework, behaves as before. This is a code observation, not a runtime test.
+- **`return_path.gd`: unchanged.** It does not freeze the clock, and it has its own backup without a verified restore. It was not changed in this task, because it must keep passing as it is. Its clock assertion (resume does not catch up) is not sensitive to autosave.
+- **Known failures, unchanged:** `domain_smoke.gd` (4 failing), `save_restart --read`, the 51 ESLint errors in `services/world-api`, the undefined `toggle_first_person` and `jump` actions, the `world_3d.tscn` `load_steps` mismatch, and the `load_dictionary` life-history overwrite.
+
+### 21.10 Scope protection
+
+- Not changed: the F3 binding, the 2D session-retention architecture, the region catalog, the 32-region mapping, visual presets, the save format, auth and session policy, Stage 28 safeguards, Stage 30 access, `time_of_day.gd`, F13b, the F9 to F11 roadmap items, the README, and the known failures listed above.
+- No world-data generator was run, and no production data was modified.
+
+### 21.11 Status
+
+- Modal safety for world switching: fixed, and verified headless.
+- UI-flow determinism: clock frozen, save restore verified, refusal widened. Verified over 10 repeated runs.
+- Stage 29 **OPEN** until rendered validation is complete. Stage 28 **OPEN**. Production **NOT READY**.
