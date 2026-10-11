@@ -153,7 +153,7 @@ export class EntertainmentService {
     return record;
   }
 
-  updateProfile(profileId: string, params: { stage_name?: string; biography?: string; professions?: string[] }, worldDate: CalendarDate): EntertainmentProfileRecord {
+  updateProfile(profileId: string, params: { stage_name?: string; biography?: string; professions?: string[] }): EntertainmentProfileRecord {
     const profile = this.maps.entertainmentProfiles[profileId];
     if (!profile) throw new Error("entertainment_profile_not_found");
     const rules = this.catalog.getRules();
@@ -508,7 +508,7 @@ export class EntertainmentService {
     return record;
   }
 
-  purchaseTicket(eventId: string, characterId: string, worldDate: CalendarDate): void {
+  purchaseTicket(eventId: string, characterId: string): void {
     const event = this.maps.entertainmentEvents[eventId];
     if (!event) throw new Error("entertainment_event_not_found");
     if (event.status !== "scheduled") throw new Error("entertainment_event_not_ticketable");
@@ -610,7 +610,7 @@ export class EntertainmentService {
     return record;
   }
 
-  acceptContract(contractId: string, characterId: string, worldDate: CalendarDate): EntertainmentContractRecord {
+  acceptContract(contractId: string, characterId: string): EntertainmentContractRecord {
     const contract = this.maps.entertainmentContracts[contractId];
     if (!contract) throw new Error("entertainment_contract_not_found");
     if (contract.accepting_character_id !== characterId) throw new Error("entertainment_not_contract_party");

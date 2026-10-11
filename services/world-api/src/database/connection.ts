@@ -1,6 +1,6 @@
 import type { LookupAddress } from "node:dns";
 import { Socket, type TcpSocketConnectOpts } from "node:net";
-import { Pool, type PoolConfig } from "pg";
+import { Pool, type PoolClient, type PoolConfig } from "pg";
 import { effectiveEnvironment, isLocalEnvironment, readRuntimeEnvironment, type RuntimeEnvironment } from "../runtime-environment.js";
 import { classifyPlaintextHost, resolvePlaintextAddresses, type LookupFunction } from "./host-policy.js";
 
@@ -271,7 +271,7 @@ export class DatabaseConnection {
   /**
    * Execute a query with parameters
    */
-  async query<T = any>(text: string, params?: any[]): Promise<T[]> {
+  async query<T = unknown>(text: string, params?: unknown[]): Promise<T[]> {
     if (!this.pool) {
       throw new Error("Database not connected. Call connect() first.");
     }
@@ -288,7 +288,7 @@ export class DatabaseConnection {
   /**
    * Execute a query and return a single row
    */
-  async queryOne<T = any>(text: string, params?: any[]): Promise<T | null> {
+  async queryOne<T = unknown>(text: string, params?: unknown[]): Promise<T | null> {
     const rows = await this.query<T>(text, params);
     const row = rows.length > 0 ? rows[0] : null;
     return row ?? null;
@@ -297,7 +297,7 @@ export class DatabaseConnection {
   /**
    * Execute a transaction
    */
-  async transaction<T>(callback: (client: any) => Promise<T>): Promise<T> {
+  async transaction<T>(callback: (client: PoolClient) => Promise<T>): Promise<T> {
     if (!this.pool) {
       throw new Error("Database not connected. Call connect() first.");
     }

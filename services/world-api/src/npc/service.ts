@@ -95,7 +95,7 @@ export class NPCService {
     employment_status?: "employed" | "unemployed" | "student" | "retired" | "seeking_work";
     education_level: string;
     personality_traits?: NPCPersonalityTrait[];
-  }, worldDate: CalendarDate): NPCProfile {
+  }): NPCProfile {
     const npcId = npcUid("npc");
     const now = new Date().toISOString();
     
@@ -341,7 +341,7 @@ export class NPCService {
   }
 
   // Simulation
-  processNPCTick(npcId: string, gameTime: CalendarDate): void {
+  processNPCTick(npcId: string): void {
     const npc = this.maps.npcProfiles[npcId];
     if (!npc) return;
 
@@ -355,7 +355,7 @@ export class NPCService {
     this.updateNeeds(npcId, elapsedHours);
 
     // Make decision based on current state
-    this.makeNPCDecision(npcId, gameTime);
+    this.makeNPCDecision(npcId);
 
     // Update simulation time
     this.maps.npcProfiles[npcId] = {
@@ -365,7 +365,7 @@ export class NPCService {
     };
   }
 
-  private makeNPCDecision(npcId: string, gameTime: CalendarDate): void {
+  private makeNPCDecision(npcId: string): void {
     const npc = this.maps.npcProfiles[npcId];
     const needs = this.maps.npcNeeds[npcId];
     if (!npc || !needs) return;
@@ -449,7 +449,7 @@ export class NPCService {
 
     // Process each active NPC
     for (const npc of activeNPCs) {
-      this.processNPCTick(npc.npc_id, gameTime);
+      this.processNPCTick(npc.npc_id);
     }
 
     // Update simulation state

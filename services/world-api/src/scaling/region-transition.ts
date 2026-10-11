@@ -132,7 +132,7 @@ class TransitionManager {
         transition: completedTransition,
         newSessionId,
       };
-    } catch (error) {
+    } catch {
       const failedTransition = this.transitions.get(transitionId)!;
       return {
         success: false,

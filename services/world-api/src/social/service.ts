@@ -416,7 +416,7 @@ export class SocialService {
     return follow;
   }
 
-  unfollow(followerCharacterId: string, targetCharacterId: string, worldDate: CalendarDate): void {
+  unfollow(followerCharacterId: string, targetCharacterId: string): void {
     const follow = Object.values(this.maps.socialFollows).find(
       (f) => f.follower_character_id === followerCharacterId && f.following_character_id === targetCharacterId
     );
@@ -477,7 +477,7 @@ export class SocialService {
     );
   }
 
-  rejectFollowRequest(requestId: string, worldDate: CalendarDate): void {
+  rejectFollowRequest(requestId: string): void {
     const request = this.maps.socialFollowRequests[requestId];
     if (!request) throw new Error("social_follow_request_not_found");
     if (request.status !== "pending") throw new Error("social_follow_request_not_pending");
@@ -683,7 +683,7 @@ export class SocialService {
   updatePost(postId: string, characterId: string, params: {
     content?: string;
     visibility?: SocialVisibilityId;
-  }, worldDate: CalendarDate): SocialPostRecord {
+  }): SocialPostRecord {
     const post = this.maps.socialPosts[postId];
     if (!post) throw new Error("social_post_not_found");
     if (post.author_character_id !== characterId) throw new Error("social_not_post_author");
@@ -719,7 +719,7 @@ export class SocialService {
     return post;
   }
 
-  deletePost(postId: string, characterId: string, worldDate: CalendarDate): void {
+  deletePost(postId: string, characterId: string): void {
     const post = this.maps.socialPosts[postId];
     if (!post) throw new Error("social_post_not_found");
     if (post.author_character_id !== characterId) throw new Error("social_not_post_author");
@@ -743,7 +743,7 @@ export class SocialService {
     }
   }
 
-  pinPost(postId: string, characterId: string, worldDate: CalendarDate): void {
+  pinPost(postId: string, characterId: string): void {
     const post = this.maps.socialPosts[postId];
     if (!post) throw new Error("social_post_not_found");
     if (post.author_character_id !== characterId) throw new Error("social_not_post_author");
@@ -1157,14 +1157,14 @@ export class SocialService {
       (f) => f.follower_character_id === blockerCharacterId && f.following_character_id === blockedCharacterId
     );
     if (followFromBlocker) {
-      this.unfollow(blockerCharacterId, blockedCharacterId, worldDate);
+      this.unfollow(blockerCharacterId, blockedCharacterId);
     }
 
     const followFromBlocked = Object.values(this.maps.socialFollows).find(
       (f) => f.follower_character_id === blockedCharacterId && f.following_character_id === blockerCharacterId
     );
     if (followFromBlocked) {
-      this.unfollow(blockedCharacterId, blockerCharacterId, worldDate);
+      this.unfollow(blockedCharacterId, blockerCharacterId);
     }
 
     const blockId = socialUid("sblock");

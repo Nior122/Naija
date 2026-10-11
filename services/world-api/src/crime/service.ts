@@ -57,12 +57,6 @@ function uid(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${_uidCounter.toString(36)}`;
 }
 
-function yearsSince(worldDate: CalendarDate, pastDate: CalendarDate): number {
-  let years = worldDate.year - pastDate.year;
-  if (worldDate.month < pastDate.month || (worldDate.month === pastDate.month && worldDate.day < pastDate.day)) years--;
-  return years;
-}
-
 function daysBetween(a: CalendarDate, b: CalendarDate): number {
   return Math.floor((Date.UTC(b.year, b.month - 1, b.day) - Date.UTC(a.year, a.month - 1, a.day)) / 86_400_000);
 }
@@ -457,7 +451,6 @@ export class CrimeService {
     if (params.duration_days < rules.rehabilitation_min_days || params.duration_days > rules.rehabilitation_max_days) throw new Error("crime_rehabilitation_duration_invalid");
 
     const id = uid("rehab");
-    const targetDate = { year: worldDate.year, month: worldDate.month, day: worldDate.day + params.duration_days };
     // Normalize date
     const target = new Date(Date.UTC(worldDate.year, worldDate.month - 1, worldDate.day + params.duration_days));
     const targetWorldDate: CalendarDate = { year: target.getUTCFullYear(), month: target.getUTCMonth() + 1, day: target.getUTCDate() };

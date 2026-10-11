@@ -1,4 +1,3 @@
-import type { CalendarDate } from "../life/types.js";
 import type {
   PersistentTransportationMaps,
   OwnedVehicleRecord,
@@ -336,7 +335,7 @@ export class TransportationService {
     vehicle_definition_id: string;
     facility_id?: string;
     purchase_price_ngn?: number;
-  }, worldDate: CalendarDate): OwnedVehicleRecord {
+  }): OwnedVehicleRecord {
     const vehicleDef = this.catalog.getVehicleDefinition(params.vehicle_definition_id);
     if (!vehicleDef) {
       throw new Error("transportation_vehicle_not_found");
@@ -387,7 +386,7 @@ export class TransportationService {
     to_owner_id: string;
     transfer_price_ngn?: number;
     reason: "purchase" | "sale" | "gift" | "inheritance" | "repossesion";
-  }, worldDate: CalendarDate): VehicleOwnershipHistoryRecord {
+  }): VehicleOwnershipHistoryRecord {
     const vehicle = this.maps.ownedVehicles[params.vehicle_id];
     if (!vehicle) {
       throw new Error("transportation_vehicle_not_found");
@@ -438,7 +437,7 @@ export class TransportationService {
     fuel_type: TransportationFuelType;
     liters: number;
     price_per_liter_ngn: number;
-  }, worldDate: CalendarDate): FuelPurchaseRecord {
+  }): FuelPurchaseRecord {
     const vehicle = this.maps.ownedVehicles[params.vehicle_id];
     if (!vehicle) {
       throw new Error("transportation_vehicle_not_found");
@@ -502,7 +501,7 @@ export class TransportationService {
     service_type: string;
     cost_ngn: number;
     notes?: string;
-  }, worldDate: CalendarDate): VehicleMaintenanceRecord {
+  }): VehicleMaintenanceRecord {
     const vehicle = this.maps.ownedVehicles[params.vehicle_id];
     if (!vehicle) {
       throw new Error("transportation_vehicle_not_found");
@@ -567,7 +566,7 @@ export class TransportationService {
     driver_character_id?: string;
     start_location_id: string;
     passengers?: { character_id: string; fare_paid_ngn: number }[];
-  }, worldDate: CalendarDate): TransportTripRecord {
+  }): TransportTripRecord {
     const route = this.maps.transportRoutes[params.route_id];
     if (!route) {
       throw new Error("transportation_route_not_found");
@@ -601,7 +600,7 @@ export class TransportationService {
     return trip;
   }
 
-  completeTrip(tripId: string, endLocationId: string, worldDate: CalendarDate): TransportTripRecord {
+  completeTrip(tripId: string, endLocationId: string): TransportTripRecord {
     const trip = this.maps.transportTrips[tripId];
     if (!trip) {
       throw new Error("transportation_trip_not_found");
@@ -644,7 +643,7 @@ export class TransportationService {
     transport_cost_ngn: number;
     expected_delivery_date?: string;
     notes?: string;
-  }, worldDate: CalendarDate): CargoShipmentRecord {
+  }): CargoShipmentRecord {
     const shipmentId = transportationUid("cargo");
     const now = new Date().toISOString();
 
@@ -789,7 +788,7 @@ export class TransportationService {
     license_class: string;
     validity_years: number;
     restrictions?: string[];
-  }, worldDate: CalendarDate): DriverLicenseRecord {
+  }): DriverLicenseRecord {
     const licenseId = transportationUid("license");
     const now = new Date();
     const expiryDate = new Date(now);

@@ -83,7 +83,7 @@ export class WorldEventService {
     this.catalog = catalog ?? new WorldEventCatalogService();
   }
 
-  createEvent(params: CreateWorldEventParams, gameDate: CalendarDate): WorldEvent {
+  createEvent(params: CreateWorldEventParams): WorldEvent {
     // Validate category
     if (!this.catalog.isValidCategory(params.category)) {
       throw new Error("world_event_invalid_category");

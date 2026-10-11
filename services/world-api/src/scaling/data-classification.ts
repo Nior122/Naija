@@ -270,8 +270,8 @@ export function requiresStrongConsistency(dataType: string): boolean {
  */
 export function getDataTypesInCategory(category: DataCategory): string[] {
   return Object.entries(DATA_CLASSIFICATIONS)
-    .filter(([_, classification]) => classification.category === category)
-    .map(([dataType, _]) => dataType);
+    .filter(([, classification]) => classification.category === category)
+    .map(([dataType]) => dataType);
 }
 
 /**

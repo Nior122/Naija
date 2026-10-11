@@ -4628,7 +4628,7 @@ export class MultiplayerWorld {
         case "purchase_ticket": {
           const eventId = typeof data.event_id === "string" ? data.event_id : "";
           if (!eventId) throw new Error("entertainment_event_not_found");
-          service.purchaseTicket(eventId, characterId, worldDate);
+          service.purchaseTicket(eventId, characterId);
           messageText = "Ticket purchased.";
           break;
         }
@@ -4657,7 +4657,7 @@ export class MultiplayerWorld {
         case "accept_contract": {
           const contractId = typeof data.contract_id === "string" ? data.contract_id : "";
           if (!contractId) throw new Error("entertainment_contract_not_found");
-          const contract = service.acceptContract(contractId, characterId, worldDate);
+          const contract = service.acceptContract(contractId, characterId);
           responseData.contract = contract;
           messageText = "Contract accepted.";
           break;
