@@ -37,12 +37,13 @@ func _run() -> void:
 		quit(1)
 
 
-func _new_config(with_world_env: bool) -> Node3D:
+func _new_config(with_world_env: bool, source_environment: Environment = null) -> Node3D:
 	var config: Node3D = EnvironmentConfigScript.new()
 	if with_world_env:
 		var world_env := WorldEnvironment.new()
 		world_env.name = "WorldEnvironment"
-		world_env.environment = Environment.new()
+		# The source must be set before the config enters the tree: _ready() copies it.
+		world_env.environment = source_environment if source_environment != null else Environment.new()
 		config.add_child(world_env)
 	root.add_child(config)
 	return config
@@ -119,10 +120,14 @@ func _test_missing_world_environment() -> void:
 
 
 func _test_repeated_application() -> void:
-	var config = _new_config(true)
-	var world_env: WorldEnvironment = config.get_node("WorldEnvironment")
 	# Per-instance copy: the resource this instance started with must never be written to.
-	var shared: Environment = world_env.environment
+	# The source is passed in before the node enters the tree, so it is the true original.
+	# Capturing it after _ready() would capture the per-instance copy instead.
+	var shared := Environment.new()
+	shared.background_color = Color(0.2, 0.3, 0.4)
+	shared.fog_density = 0.02
+	var config = _new_config(true, shared)
+	var world_env: WorldEnvironment = config.get_node("WorldEnvironment")
 	var shared_background: Color = shared.background_color
 	var shared_fog: float = shared.fog_density
 	config.apply_region_profile("ng:state:kd")
