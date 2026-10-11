@@ -186,7 +186,11 @@ godot --headless --editor --path game --quit
 godot --headless --path game --quit
 godot --headless --path game --script res://tests/domain_smoke.gd
 godot --headless --path game --script res://tests/player_movement.gd
+godot --headless --path game --script res://tests/input_bindings_headless.gd
+godot --headless --path game --script res://tests/save_guard_headless.gd
 ```
+
+`save_guard_headless.gd` tests the save-slot recovery guard on a test-only slot path. It must run when no other save-writing test is running, because it refuses to start while recovery material from any run exists.
 
 The local-save persistence check requires two separate Godot processes, with the writer exiting before the reader starts:
 
