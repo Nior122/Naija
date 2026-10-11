@@ -277,7 +277,7 @@ func _run() -> void:
 	create_timer(WATCHDOG_SECONDS).timeout.connect(_on_watchdog)
 	# Refuse while any save-slot test's backup or marker is present, so two runs never share the save slot.
 	var leftovers: Array[String] = []
-	for path in [BACKUP_PATH, NO_SAVE_MARKER, "user://naija-stage1-save.ui-flow-backup.json", "user://naija-stage1-save.ui-flow-no-save.marker", "user://naija-stage1-save.return-test-backup.json"]:
+	for path in [BACKUP_PATH, NO_SAVE_MARKER, "user://naija-stage1-save.ui-flow-backup.json", "user://naija-stage1-save.ui-flow-no-save.marker", "user://naija-stage1-save.return-test-backup.json", "user://naija-stage1-save.return-test-no-save.marker"]:
 		if FileAccess.file_exists(path):
 			leftovers.append(path)
 	if not leftovers.is_empty():

@@ -33,6 +33,7 @@ const BACKUP_PATH := "user://naija-stage1-save.ui-flow-backup.json"
 # runs never share the save slot.
 const OTHER_SAVE_SLOT_FILES: Array[String] = [
 	"user://naija-stage1-save.return-test-backup.json",
+	"user://naija-stage1-save.return-test-no-save.marker",
 	"user://naija-stage1-save.load-confirm-backup.json",
 	"user://naija-stage1-save.load-confirm-no-save.marker",
 ]

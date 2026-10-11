@@ -6,9 +6,13 @@ extends SceneTree
 # It runs the real SceneSwitcher (scenes/main.tscn), the 2D prototype, and the 3D world, and it
 # drives the real toggle_3d_mode action. Each check reads the live objects and nodes.
 #
-# The new-game and continue paths use the local save slot (user://naija-stage1-save.json). The test
-# backs up that file first and restores it at the end. It refuses to run if a backup from an
-# earlier run is still present, so it never overwrites the only copy of a save.
+# The new-game and continue paths use the local save slot (user://naija-stage1-save.json). Before any write,
+# the test reads the original bytes and copies them to its own backup, then reads the copy back and compares it.
+# The original is then overwritten by the test's own saves. At the end it writes the in-memory original back,
+# reads it back, and compares the bytes. The backup is removed only after that comparison matches.
+# If no save existed, a marker records that, and the test removes only the save it created, then the marker.
+# It refuses to run while any save-slot backup or marker from an earlier run is present (its own, or another
+# save-slot test's). A hard kill cannot be caught: recovery material then stays on disk and blocks the next run.
 #
 # Two calls reach private UI methods on purpose: _close_modal() closes the welcome notice, and the
 # new-game and continue steps call the real _start_new_game() and _continue_game(), as the UI does.
@@ -21,6 +25,15 @@ const SAVE_PATH := "user://naija-stage1-save.json"
 const SAVE_FILE := "naija-stage1-save.json"
 const BACKUP_PATH := "user://naija-stage1-save.return-test-backup.json"
 const BACKUP_FILE := "naija-stage1-save.return-test-backup.json"
+const NO_SAVE_MARKER := "user://naija-stage1-save.return-test-no-save.marker"
+const NO_SAVE_MARKER_FILE := "naija-stage1-save.return-test-no-save.marker"
+# Backups and markers of the other save-slot tests. This test refuses to run while any of them is present.
+const OTHER_SAVE_SLOT_FILES: Array[String] = [
+	"user://naija-stage1-save.ui-flow-backup.json",
+	"user://naija-stage1-save.ui-flow-no-save.marker",
+	"user://naija-stage1-save.load-confirm-backup.json",
+	"user://naija-stage1-save.load-confirm-no-save.marker",
+]
 
 const LOCATED_REGION := "ng:state:bo"
 ## The documented default for a 3D world with no located region (controller export).
@@ -35,6 +48,10 @@ var _failures: Array[String] = []
 var _checks: int = 0
 var _save_existed: bool = false
 var _main: Node = null
+# Original bytes, read before any write. Restore compares against this copy, not against the backup on disk.
+var _original_bytes: PackedByteArray = PackedByteArray()
+# True only after this run has written its backup (or its no-save marker). Before that, restore changes nothing.
+var _protected: bool = false
 
 
 func _initialize() -> void:
@@ -96,50 +113,99 @@ func _label_contains(node: Node, text: String) -> bool:
 	return false
 
 
+func _remove_own_file(file_name: String) -> void:
+	var dir := DirAccess.open("user://")
+	if dir != null:
+		dir.remove(file_name)
+
+
 func _backup_save() -> bool:
 	_save_existed = FileAccess.file_exists(SAVE_PATH)
 	if not _save_existed:
+		# Record that no save existed, so a later run can tell this run's save from user data.
+		var marker := FileAccess.open(NO_SAVE_MARKER, FileAccess.WRITE)
+		if marker == null:
+			return false
+		marker.store_string("No save file existed when this run started.")
+		marker.close()
+		if not FileAccess.file_exists(NO_SAVE_MARKER):
+			return false
+		_protected = true
 		return true
-	var bytes := FileAccess.get_file_as_bytes(SAVE_PATH)
-	var file := FileAccess.open(BACKUP_PATH, FileAccess.WRITE)
-	if file == null:
+	var original := FileAccess.open(SAVE_PATH, FileAccess.READ)
+	if original == null:
 		return false
-	file.store_buffer(bytes)
-	file.close()
+	_original_bytes = original.get_buffer(original.get_length())
+	original.close()
+	var backup := FileAccess.open(BACKUP_PATH, FileAccess.WRITE)
+	if backup == null:
+		return false
+	backup.store_buffer(_original_bytes)
+	backup.close()
+	# Read the copy back and compare it before the save file can be changed. This run's backup did not exist at start.
+	if FileAccess.get_file_as_bytes(BACKUP_PATH) != _original_bytes:
+		_remove_own_file(BACKUP_FILE)
+		return false
+	_protected = true
 	return true
 
 
-func _restore_save() -> void:
+# Returns true only when the original save is back on disk, byte for byte, and this run's backup and marker are gone.
+# On any failure the recovery material (backup or marker) is kept, and the failure is reported.
+func _restore_save() -> bool:
+	if not _protected:
+		return true  # This run has not changed anything yet.
 	var dir := DirAccess.open("user://")
 	if dir == null:
 		push_error("Could not open user:// to restore the save file. Backup remains at %s" % BACKUP_PATH)
-		return
+		return false
 	if _save_existed:
-		var bytes := FileAccess.get_file_as_bytes(BACKUP_PATH)
 		var file := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
-		if file != null:
-			file.store_buffer(bytes)
-			file.close()
-		dir.remove(BACKUP_FILE)
-	elif FileAccess.file_exists(SAVE_PATH):
-		dir.remove(SAVE_FILE)
+		if file == null:
+			push_error("Could not rewrite the save file. Backup remains at %s" % BACKUP_PATH)
+			return false
+		file.store_buffer(_original_bytes)
+		file.close()
+		if FileAccess.get_file_as_bytes(SAVE_PATH) != _original_bytes:
+			push_error("The restored save does not match the original bytes. Backup remains at %s" % BACKUP_PATH)
+			return false
+		if dir.remove(BACKUP_FILE) != OK or FileAccess.file_exists(BACKUP_PATH):
+			push_error("The save was restored, but the test backup could not be removed: %s" % BACKUP_PATH)
+			return false
+		return true
+	# No save existed when this run started (the marker records that), so a save present now was written by this run.
+	if FileAccess.file_exists(SAVE_PATH):
+		if dir.remove(SAVE_FILE) != OK or FileAccess.file_exists(SAVE_PATH):
+			push_error("Could not remove the save this run created. The marker remains at %s" % NO_SAVE_MARKER)
+			return false
+	if dir.remove(NO_SAVE_MARKER_FILE) != OK or FileAccess.file_exists(NO_SAVE_MARKER):
+		push_error("Could not remove the no-save marker: %s" % NO_SAVE_MARKER)
+		return false
+	return true
 
 
 func _on_watchdog() -> void:
 	# Restore the save file before quitting, so an interrupted run cannot leave test data behind.
-	_restore_save()
-	print("FAIL: watchdog expired after %d s; the test did not finish. The save file was restored." % int(WATCHDOG_SECONDS))
+	var restored := _restore_save()
+	if restored:
+		print("FAIL: watchdog expired after %d s; the test did not finish. The save file was restored." % int(WATCHDOG_SECONDS))
+	else:
+		print("FAIL: watchdog expired after %d s; the test did not finish, and the restore did not complete. Recovery material remains; see the errors above." % int(WATCHDOG_SECONDS))
 	quit(1)
 
 
 func _run() -> void:
 	create_timer(WATCHDOG_SECONDS).timeout.connect(_on_watchdog)
-	if FileAccess.file_exists(BACKUP_PATH):
-		print("FAIL: a backup from an earlier run exists at %s. Resolve it before rerunning." % BACKUP_PATH)
+	var leftovers: Array[String] = []
+	for path in [BACKUP_PATH, NO_SAVE_MARKER] + OTHER_SAVE_SLOT_FILES:
+		if FileAccess.file_exists(path):
+			leftovers.append(path)
+	if not leftovers.is_empty():
+		print("FAIL: a save-slot backup or marker from an earlier run exists: %s. Nothing was changed. Resolve it before rerunning." % str(leftovers))
 		quit(1)
 		return
 	if not _backup_save():
-		print("FAIL: could not back up the local save file. Nothing was changed.")
+		print("FAIL: could not back up the local save file. The save file was not changed. Check for a leftover backup or marker before rerunning.")
 		quit(1)
 		return
 
@@ -310,7 +376,7 @@ func _run() -> void:
 		and proto_ref.character.money == UNSAVED_MONEY,
 		"A continued session survives a 3D round trip")
 
-	_restore_save()
+	_check(_restore_save(), "The original save is restored byte for byte, and this run's backup and marker are removed")
 	if _failures.is_empty():
 		print("PASS: %d return-path checks" % _checks)
 		quit(0)
