@@ -59,7 +59,7 @@ func _is_suspended(proto: Node) -> bool:
 
 
 func _press_toggle() -> void:
-	# The same action the project binds to F3. The switcher handles it in _unhandled_input.
+	# The project action toggle_3d_mode (its key is set in project.godot). The switcher handles it in _unhandled_input.
 	var event := InputEventAction.new()
 	event.action = "toggle_3d_mode"
 	event.pressed = true
@@ -180,7 +180,7 @@ func _run() -> void:
 	# ---- 2D to 3D (Tests 1, 2, 3, 6) ----
 	var pre_clock: Dictionary = proto_ref.clock.to_dictionary()
 	_press_toggle()
-	_check(_main.current_mode == "3d", "F3 switches to 3D")
+	_check(_main.current_mode == "3d", "toggle_3d_mode switches to 3D")
 	_check(_main.mode_2d_instance == proto_ref and is_instance_valid(proto_ref),
 		"The 2D session is retained, not freed")
 	_check(_is_suspended(proto_ref) and proto_ref.process_mode == Node.PROCESS_MODE_DISABLED
@@ -216,7 +216,7 @@ func _run() -> void:
 	# ---- 3D to 2D (Tests 1, 3, 4, 5, 7) ----
 	var pos_before_return: Vector2 = proto_ref.player.position
 	_press_toggle()
-	_check(_main.current_mode == "2d", "F3 returns to 2D")
+	_check(_main.current_mode == "2d", "toggle_3d_mode returns to 2D")
 	_check(_main.mode_2d_instance == proto_ref, "Return resumes the same 2D session, not a new instance")
 	_check(not _is_suspended(proto_ref) and proto_ref.process_mode == Node.PROCESS_MODE_INHERIT
 		and proto_ref.visible and proto_ref.ui.visible,
