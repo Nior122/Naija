@@ -5,6 +5,11 @@ const WorldClockScript = preload("res://scripts/domain/world_clock.gd")
 const HouseholdFactoryScript = preload("res://scripts/domain/household_factory.gd")
 const SaveServiceScript = preload("res://scripts/services/save_service.gd")
 const RESTART_SAVE_PATH: String = "user://naija-stage1-restart-test.json"
+const SaveSlotGuardScript = preload("res://tests/support/save_slot_guard.gd")
+
+# Takes the shared save-test lock per phase, so no other save-writing test runs on the same user-data dir at the same
+# time. The write phase refuses to overwrite a restart file it did not create in this run. The read phase consumes it.
+var _guard := SaveSlotGuardScript.new()
 
 
 func _initialize() -> void:
@@ -26,7 +31,23 @@ func _run() -> void:
 		quit(2)
 
 
+# Releases the lock, then quits. A lock that cannot be released turns a passing phase into a failure.
+func _finish(code: int) -> void:
+	if not _guard.release_lock():
+		push_error("Could not release the save-test lock: %s" % _guard.message)
+		code = 1
+	quit(code)
+
+
 func _write_checkpoint() -> void:
+	if not _guard.acquire_lock("save_restart write"):
+		push_error("Save-test lock refused: %s" % _guard.message)
+		quit(1)
+		return
+	if FileAccess.file_exists(RESTART_SAVE_PATH):
+		push_error("Refusing to write: a restart file already exists at %s. It was not created by this phase; nothing was changed." % RESTART_SAVE_PATH)
+		_finish(1)
+		return
 	var character := CharacterStateScript.new()
 	character.create_new(
 		"Restart Student",
@@ -53,19 +74,23 @@ func _write_checkpoint() -> void:
 		push_error(
 			"Could not write restart checkpoint: %s" % str(result.get("error", "unknown error"))
 		)
-		quit(1)
+		_finish(1)
 		return
 	print("Wrote a checkpoint. Close this Godot process and run the read phase in a new process.")
-	quit(0)
+	_finish(0)
 
 
 func _read_checkpoint() -> void:
+	if not _guard.acquire_lock("save_restart read"):
+		push_error("Save-test lock refused: %s" % _guard.message)
+		quit(1)
+		return
 	var result: Dictionary = SaveServiceScript.load_state(RESTART_SAVE_PATH)
 	if not bool(result.get("ok", false)):
 		push_error(
 			"Could not load restart checkpoint: %s" % str(result.get("error", "unknown error"))
 		)
-		quit(1)
+		_finish(1)
 		return
 	var clock := WorldClockScript.new()
 	clock.load_dictionary(result["clock"])
@@ -141,9 +166,9 @@ func _read_checkpoint() -> void:
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(RESTART_SAVE_PATH))
 	if passed:
 		print("PASS: saved character state survived a fresh Godot process.")
-		quit(0)
+		_finish(0)
 	else:
-		quit(1)
+		_finish(1)
 
 
 func _expect(condition: bool, description: String) -> bool:

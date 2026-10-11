@@ -19,19 +19,21 @@ extends SceneTree
 # Buttons are activated by focusing the real Button and sending ui_accept, as ui_flow_headless does. Mouse input
 # is not used. Nothing is rendered, so no dialog layout, colour, or visual state is checked here.
 #
-# Save file: user://naija-stage1-save.json. The test copies the original to its own backup and verifies the copy
-# before it removes the original. It restores and byte-compares the original at the end, and it refuses to run while
-# any save-slot test's backup or marker is present. The game clock is frozen during the test so that
-# autosaves cannot overwrite the values under test. A watchdog restores the save file if the run stalls.
+# Save file: user://naija-stage1-save.json. The shared recovery protocol in tests/support/save_slot_guard.gd takes
+# a lock, copies the original byte for byte to its backup, and verifies the copy before the original is removed.
+# The test's own writes are recorded as they happen. At the end the original is written back, read back, and
+# compared byte for byte. Protocol files are removed only after that check. The protocol refuses to start while an
+# unresolved earlier run's files are present, and it recovers an interrupted run only when every byte it depends
+# on is proven. The game clock is frozen during the test so that autosaves cannot overwrite the values under
+# test. A watchdog restores the save file if the run stalls. See docs section 25.
 #
 # Run: godot --headless --path game --script res://tests/load_confirmation_headless.gd
 
 const MAIN_SCENE := preload("res://scenes/main.tscn")
 const SaveServiceScript = preload("res://scripts/services/save_service.gd")
+const SaveSlotGuardScript = preload("res://tests/support/save_slot_guard.gd")
 
 const SAVE_PATH := "user://naija-stage1-save.json"
-const BACKUP_PATH := "user://naija-stage1-save.load-confirm-backup.json"
-const NO_SAVE_MARKER := "user://naija-stage1-save.load-confirm-no-save.marker"
 const WATCHDOG_SECONDS := 240.0
 const CREATION_TEXT := "You are beginning your life"
 const SAVED_MONEY := 1234
@@ -48,7 +50,7 @@ const CYCLES := 5
 
 var _checks: int = 0
 var _failures: Array[String] = []
-var _save_existed: bool = false
+var _guard := SaveSlotGuardScript.new()
 var _main: Node = null
 
 
@@ -68,65 +70,7 @@ func _observe(label: String) -> void:
 
 
 # ---------- save file protection ----------
-
-func _backup_save() -> bool:
-	_save_existed = FileAccess.file_exists(SAVE_PATH)
-	if not _save_existed:
-		var marker := FileAccess.open(NO_SAVE_MARKER, FileAccess.WRITE)
-		if marker == null:
-			return false
-		marker.store_string("No save file existed when this run started.")
-		marker.close()
-		return true
-	# Read the original with an explicit open. get_file_as_bytes() returns an empty array on failure, so an
-	# unreadable save would otherwise be backed up as empty and then overwritten by the restore.
-	var source := FileAccess.open(SAVE_PATH, FileAccess.READ)
-	if source == null:
-		return false
-	var original := source.get_buffer(source.get_length())
-	source.close()
-	var file := FileAccess.open(BACKUP_PATH, FileAccess.WRITE)
-	if file == null:
-		return false
-	file.store_buffer(original)
-	file.close()
-	# Verify the copy before the original is touched. A bad copy is this test's own file, so it is removed.
-	if FileAccess.get_file_as_bytes(BACKUP_PATH) != original:
-		DirAccess.open("user://").remove(BACKUP_PATH.trim_prefix("user://"))
-		return false
-	return true
-
-
-# Returns true only when the original is back on disk byte for byte and this test's backup and marker are gone.
-# On a failed verification the backup is kept, because it may be the only copy.
-func _restore_save() -> bool:
-	var dir := DirAccess.open("user://")
-	if dir == null:
-		push_error("Could not open user:// to restore the save file. Backup remains at %s" % BACKUP_PATH)
-		return false
-	if _save_existed:
-		var backup_file := FileAccess.open(BACKUP_PATH, FileAccess.READ)
-		if backup_file == null:
-			push_error("Could not read the backup. The save file was not changed. Backup remains at %s" % BACKUP_PATH)
-			return false
-		var backup_bytes := backup_file.get_buffer(backup_file.get_length())
-		backup_file.close()
-		var file := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
-		if file == null:
-			push_error("Could not rewrite the save file. Backup remains at %s" % BACKUP_PATH)
-			return false
-		file.store_buffer(backup_bytes)
-		file.close()
-		if FileAccess.get_file_as_bytes(SAVE_PATH) != backup_bytes:
-			push_error("The restored save does not match the backup. Backup remains at %s" % BACKUP_PATH)
-			return false
-		dir.remove(BACKUP_PATH.trim_prefix("user://"))
-	elif FileAccess.file_exists(SAVE_PATH):
-		# No save existed when the run started, so this file was written by this run.
-		dir.remove(SAVE_PATH.trim_prefix("user://"))
-	if FileAccess.file_exists(NO_SAVE_MARKER):
-		dir.remove(NO_SAVE_MARKER.trim_prefix("user://"))
-	return not FileAccess.file_exists(BACKUP_PATH) and not FileAccess.file_exists(NO_SAVE_MARKER)
+# The save-slot protocol lives in tests/support/save_slot_guard.gd. See the header.
 
 
 func _write_raw_save(text: String) -> void:
@@ -134,11 +78,12 @@ func _write_raw_save(text: String) -> void:
 	if file != null:
 		file.store_string(text)
 		file.close()
+	_guard.observe()
 
 
 func _on_watchdog() -> void:
-	_restore_save()
-	print("FAIL: watchdog expired after %d s; the test did not finish. The save file was restored." % int(WATCHDOG_SECONDS))
+	_guard.finish()
+	print("FAIL: watchdog expired after %d s; the test did not finish. The save-slot protocol attempted restoration; check the messages above." % int(WATCHDOG_SECONDS))
 	quit(1)
 
 
@@ -147,6 +92,7 @@ func _on_watchdog() -> void:
 func _frames(count: int) -> void:
 	for i in count:
 		await process_frame
+		_guard.observe()
 
 
 func _find_button(node: Node, text: String) -> Button:
@@ -286,21 +232,15 @@ func _scan_function_keys(label: String) -> void:
 
 func _run() -> void:
 	create_timer(WATCHDOG_SECONDS).timeout.connect(_on_watchdog)
-	# Refuse while any save-slot test's backup or marker is present, so two runs never share the save slot.
-	var leftovers: Array[String] = []
-	for path in [BACKUP_PATH, NO_SAVE_MARKER, "user://naija-stage1-save.ui-flow-backup.json", "user://naija-stage1-save.ui-flow-no-save.marker", "user://naija-stage1-save.return-test-backup.json", "user://naija-stage1-save.return-test-no-save.marker"]:
-		if FileAccess.file_exists(path):
-			leftovers.append(path)
-	if not leftovers.is_empty():
-		print("FAIL: a backup or marker from an earlier save-slot run exists: %s. Nothing was changed. Resolve it before rerunning." % str(leftovers))
+	if not _guard.begin("load_confirmation_headless", SAVE_PATH):
+		print("FAIL: %s" % _guard.message)
 		quit(1)
 		return
-	if not _backup_save():
-		print("FAIL: could not back up the local save file. Nothing was changed.")
-		quit(1)
-		return
+	if _guard.recovered_previous_run:
+		print("NOTE: %s" % _guard.message)
 	if FileAccess.file_exists(SAVE_PATH):
 		DirAccess.open("user://").remove(SAVE_PATH.trim_prefix("user://"))
+	_guard.observe()
 
 	# ---- A. The configured key, read from project settings and from the InputMap before the scene starts ----
 	var setting: Variant = ProjectSettings.get_setting("input/toggle_3d_mode", {})
@@ -569,7 +509,7 @@ func _run() -> void:
 	_check(_session_is_unsaved_and_intact(proto, character_ref, clock_ref), "The direct save-service checks leave the live session unchanged")
 
 	# ---- restore the save file and report ----
-	var save_restored := _restore_save()
+	var save_restored := _guard.finish()
 	_check(save_restored, "The save file is restored byte for byte and the test's backup is removed only after that check")
 	_check_restore()
 	var total := _checks
@@ -583,8 +523,8 @@ func _run() -> void:
 
 func _check_restore() -> void:
 	var exists := FileAccess.file_exists(SAVE_PATH)
-	if _save_existed:
+	if _guard.original_existed():
 		_check(exists, "The original save file is restored")
 	else:
 		_check(not exists, "No save file is left behind when none existed before")
-	_check(not FileAccess.file_exists(BACKUP_PATH) and not FileAccess.file_exists(NO_SAVE_MARKER), "The temporary backup and marker are removed")
+	_check(not _guard.protocol_files_present(), "The protocol files (lock, manifest, backup) are removed")

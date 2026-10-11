@@ -8,9 +8,11 @@ const SchoolServiceScript = preload("res://scripts/domain/school_service.gd")
 const SaveServiceScript = preload("res://scripts/services/save_service.gd")
 const WorldMapScript = preload("res://scripts/world/world_map.gd")
 const TEST_SAVE_PATH: String = "user://naija-stage1-test-save.json"
+const SaveSlotGuardScript = preload("res://tests/support/save_slot_guard.gd")
 
 var _failures: Array[String] = []
 var _checks: int = 0
+var _guard := SaveSlotGuardScript.new()
 
 
 func _initialize() -> void:
@@ -18,6 +20,17 @@ func _initialize() -> void:
 
 
 func _run() -> void:
+	# Takes the shared save-test lock, so no other save-writing test runs on the same user-data dir at the same time.
+	if not _guard.acquire_lock("domain_smoke"):
+		print("FAIL: save-test lock refused: %s" % _guard.message)
+		quit(1)
+		return
+	if FileAccess.file_exists(TEST_SAVE_PATH):
+		# Refuse rather than overwrite a file this test did not create in this run.
+		print("FAIL: a file already exists at %s. It was not created by this run; nothing was changed." % TEST_SAVE_PATH)
+		_guard.release_lock()
+		quit(1)
+		return
 	_test_character_creation_and_household()
 	_test_needs_money_and_inventory()
 	_test_school_records()
@@ -25,6 +38,8 @@ func _run() -> void:
 	_test_clock()
 	_test_life_simulation()
 	_test_save_and_load()
+	if not _guard.release_lock():
+		_failures.append("The save-test lock could not be released: %s" % _guard.message)
 	if _failures.is_empty():
 		print("PASS: %d Stage 1–5 domain checks" % _checks)
 		quit(0)
