@@ -1141,7 +1141,7 @@ does not click the buttons.
 
 ### 18.9 Gaps and limits (stay open)
 
-- The F3 key was driven through `InputEventAction` in the test. No rendered window or real keyboard was used.
+- The toggle was driven through the `toggle_3d_mode` action (`InputEventAction`) in `return_path.gd`. No rendered window or real keyboard was used. The bound key is F11, not F3 (19.7).
 - No visual inspection of the 3D world or the HUD after return.
 - The Continue and Load buttons were not clicked. The handler they share was called directly.
 - The 3D world does not write character or economy data back. Its shared state carries only `region_id`, `time_of_day`,
@@ -1163,4 +1163,151 @@ does not click the buttons.
 
 - Return path (16.3, 17.5): **fixed in the repository; runtime tests pass; in-game validation pending** (18.9).
 - Performance monitor (17.6): **fixed**; magnitude not verified in headless mode (18.8).
+- Stage 29 OPEN. Stage 28 OPEN. Production NOT READY. F9, F10, F11, F13b, and the README gap keep their status.
+
+## 19. Stage 29 rendered validation and closure assessment (2026-10-11)
+
+Scope: the owner's closure mission. It tries the rendered checks that section 18 left open, runs the safe headless checks
+that remain, and assesses closure. It changes no game behavior, no production script, no input binding, and no data.
+
+### 19.1 Result
+
+**STAGE_29_RENDERED_VALIDATION_BLOCKED.** The rendered checks cannot run in this environment (19.2). Stage 29 stays OPEN.
+Stage 28 stays OPEN. Production stays NOT READY. Headless checks passed (19.4–19.6). They do not replace rendered evidence.
+
+### 19.2 Environment preflight (verified this session)
+
+| Item | Evidence | Class |
+|---|---|---|
+| Engine | `godot.linuxbsd.template_debug.x86_64 --version`: `4.7.2.stable.custom_build.ed1daf0bf`, exit 0. Custom build, not the official release | engine |
+| Display drivers in this build | `--help` lists only `headless` (dummy). `--display-driver x11` and `wayland` both fail: "Unknown display driver", exit 1 | engine |
+| Display server | `DISPLAY` and `WAYLAND_DISPLAY` unset. No Xvfb or other X server binary. No `/dev/dri` | environment |
+| Graphics libraries | No libGL, libEGL, libvulkan, or Mesa driver in `/usr/lib/x86_64-linux-gnu`. No X11 headers | environment |
+| Renderer, headless | `RenderingServer` reports no adapter. `root.get_texture().get_image()` returns null. `RenderingServer.frame_post_draw` never fires (a probe waiting on it hung for 120 s) | engine, runtime |
+| Mouse events | A pushed mouse click does not reach any `Button`, including a plain `Button` in an empty scene (probe, outside the repository) | runtime |
+| Keyboard activation | Focusing a `Button` and pushing `ui_accept` press and release fires its `pressed` signal through its own GUI input (probe) | runtime |
+| Package install | `sudo` is available, but the apt source is `deb.debian.org`, which is not on the sandbox allowlist. Nothing was installed and the host was not probed | environment |
+
+Conclusion: no rendered window, screenshot, real mouse click, or frame-time measurement is possible here. No screenshot,
+visual observation, or rendered timing value is claimed anywhere in this section.
+
+### 19.3 Repository baseline
+
+- Branch `arena/00cdea0e-naija`. Starting HEAD `b5430c8`, which matched `origin/arena/00cdea0e-naija`, 0 ahead and 0 behind.
+- The return-path fix is present: `suspend_session` and `resume_session` in `prototype_game.gd` and `scene_switcher.gd`.
+- Working tree before this task: clean.
+
+### 19.4 Headless UI flow (`game/tests/ui_flow_headless.gd`, new)
+
+**Class: GDScript runtime, headless, simulated input. Not a rendered test.** Buttons are activated by focusing the real
+`Button` and sending `ui_accept` (19.2). F-key input is the key event that `project.godot` binds to `toggle_3d_mode`, read
+from the InputMap at runtime. Mouse clicks are not used.
+
+Result: **PASS 52 of 52**, exit 0, on two repeat runs after the final edit. Zero SCRIPT ERROR. The user save slot is
+restored. The test is sensitive: on the pre-return-path code it fails "The same 2D instance is retained in 3D" and the
+process then aborts with SIGABRT, exit 134. Observed values:
+
+| Step | Real control used | Observed |
+|---|---|---|
+| Startup, no save | none | Creation card shown. "Begin your life" offered. No "Continue saved life" button |
+| New game | "Begin your life" | Play starts. Name Ayo, money 5000, location home. Creation closed |
+| Save | HUD "Save / Load" then "Save progress now" | Save file written and loadable. Holds the test value 1234 |
+| Unsaved progress | none (value set in memory) | Money 999 in memory, 1234 on disk |
+| Toggle to 3D | bound toggle key | 3D world present. Same 2D instance retained, suspended, `can_process()` false, HUD hidden, its HUD button not visible. No modal. Region `ng:state:on` (existing fallback) |
+| Return to 2D | bound toggle key | Same 2D instance resumed. HUD visible and its button reachable. Same character and clock objects. Money 999 kept. No creation, no modal. 3D world released |
+| Interactivity after return | HUD "Save / Load" then "Close" | Modal opens and closes |
+| Repeated round trips (3 more) | bound toggle key | One 2D session, no 3D world at rest. No added signal connections, no added input bindings, node count unchanged |
+| Load | HUD "Save / Load" then "Load saved progress" | Money 1234 (the saved value). Unsaved 999 discarded. The character is a new object. Name restored. No creation |
+| Continue | startup "Continue saved life" after a fresh main scene | Play starts. Money 1234. Name Ayo. No creation |
+
+The bound key is **F11** (`project.godot`, `physical_keycode` 4194342). See 19.7.
+
+### 19.5 Rendered checks: status
+
+| Check | Status |
+|---|---|
+| A. New game and baseline HUD, rendered | BLOCKED (19.2). Headless equivalent in 19.4 |
+| B. Real F3 or bound key 2D to 3D, rendered: the 3D world appears | BLOCKED. Headless: the 3D world is created and the 2D is suspended (19.4) |
+| C. Return to 2D, rendered: the returned HUD is visible | BLOCKED. Headless: `visible` is true and the HUD button is reachable (19.4) |
+| D. Repeated transitions, rendered | BLOCKED. Headless equivalent PASS (19.4) |
+| E. Continue, real UI click | BLOCKED as a click. Headless: activated through the real button with keyboard activation (19.4) |
+| F. Load, real UI click | BLOCKED as a click. Headless: activated through the real button with keyboard activation (19.4) |
+| Rendered frame times | BLOCKED (19.6) |
+
+### 19.6 Performance monitor: findings and limitations
+
+- `process_time_ms` reads `Performance.TIME_PROCESS` in milliseconds, and the code is right on that point (section 18.8).
+- Rendered measurement is blocked. In this headless build `TIME_PROCESS` stayed **0.0 in every one of 60 frames**, with a
+  real 5 ms busy loop per frame. `TIME_FPS` and `Engine.get_frames_per_second()` stayed **1.0** (probe, `perf_scene.gd`,
+  outside the repository). These headless values are not frame times. No timing claim is made from them.
+- `static_memory_mb` reads about 32 MB in this run (`MEMORY_STATIC`). This is a real Godot measurement. No dynamic-memory
+  value is reported.
+- Closure criterion 7 stays open until a rendered run records non-zero, varying frame times.
+
+### 19.7 Input binding discrepancy (new finding, not changed)
+
+- `project.godot` binds `toggle_3d_mode` to F11 (`physical_keycode` 4194342, confirmed by `OS.get_keycode_string`). F3 is
+  4194334. The binding was introduced in commit `c50356d` (Stage 24).
+- The code comment in `scene_switcher.gd` (line 33) says "Press F3". The Stage 23, 24, and 25 docs and
+  `ADVANCED_3D_WORLD_ARCHITECTURE.md` say F3. The task brief says F3.
+- Which key is intended is an owner decision. The binding was not changed, because a change would alter production input.
+  The headless UI test reads the bound key at runtime, so it follows whichever key is chosen.
+- Sections 15 to 18 use "F3" for the bound key in several places. That is inaccurate. The bound key is F11. Those sections are kept as history, and this note corrects them.
+
+### 19.8 Continue and Load: distinct controls, one handler
+
+- **Continue saved life** is on the startup character-creation card, shown only when a save exists. It emits
+  `continue_requested`.
+- **Load saved progress** is in the HUD "Save / Load" modal, shown only when a save exists. It emits `load_requested`.
+- Both are connected to `prototype_game.gd` `_continue_game()` (lines 66 and 71). **Two independent UI controls, one
+  implementation.** The headless test exercised both controls. It did not test two independent code paths.
+- `_continue_game()` reads the save file from disk and creates new character and clock objects. So Load during play
+  **replaces the live session with the saved one and discards unsaved progress**. This was observed (money 999 became
+  1234). Whether this is the intended meaning of "Load saved progress" is an owner decision. It is not a regression of the
+  return path, because Load is a deliberate action, not a world transition.
+
+### 19.9 Automated regression suite (exit codes and counts)
+
+| Command | Exit | Result | Baseline |
+|---|---|---|---|
+| `--version` | 0 | `4.7.2.stable.custom_build.ed1daf0bf` | same |
+| `return_path.gd` | 0 | PASS 46 of 46, 0 SCRIPT ERROR | same (labels corrected to `toggle_3d_mode`) |
+| `ui_flow_headless.gd` (new) | 0 | PASS 52 of 52, 0 SCRIPT ERROR | new |
+| `regional_handoff.gd` | 0 | PASS 41 of 41 | same |
+| `regional_visual_profiles.gd` | 0 | PASS 43 of 43 | same |
+| `performance_metrics.gd` | 0 | PASS 11 of 11 | same |
+| `player_movement.gd` | 0 | PASS 4 | same |
+| `persistence_notice.gd` | 0 | PASS 11 | same |
+| `session_policy.gd` | 0 | All checks passed | same |
+| Main project `--quit` | 0 | 0 SCRIPT ERROR | same |
+| Check-only sweep, 40 `.gd` files | 0 each | 40 of 40 pass | was 39 (the new UI test adds one) |
+| `domain_smoke.gd` | 1 | FAIL 4 of 92. Same four assertions as sections 17 and 18 | unchanged, pre-existing |
+| `save_restart.gd --write` / `--read` | 0 / 1 | Read fails: academic result; attendance and inventory | unchanged, pre-existing |
+| `npm test` | 0 | 1074 tests, 1037 pass, 0 fail, 37 skipped. Static | unchanged |
+| `npm run lint` | 1 | 51 errors. The reported baseline; not touched | unchanged |
+| `git diff --check` | 0 | clean | same |
+
+The same four `domain_smoke` assertions fail on the unmodified `HEAD` code (section 18.10). Those failures remain
+separately recorded and are not resolved here.
+
+### 19.10 Issues and limitations found in this validation
+
+1. The bound key is F11, not F3 (19.7). Owner decision.
+2. Load during play discards unsaved progress (19.8). Owner confirmation.
+3. Pushed mouse events never reach any `Button` in this headless build (19.2). Mouse-only UI paths are untested.
+4. `return_path.gd` has no marker for a hard engine crash. `ui_flow_headless.gd` writes one (a marker when no save existed,
+   otherwise a backup), so an interrupted run blocks the next run. Verified: the repaired run was refused while the marker
+   remained. The `return_path.gd` gap is unchanged.
+5. One interrupted run during this validation left test-written save data in the user data folder. The data was checked
+   (name Ayo, money 1234) and removed. No real save existed.
+
+### 19.11 Status
+
+- Rendered F3 or bound-key transition, both directions: **not verified** (blocked, 19.2).
+- Returned HUD visible and usable, rendered: **not verified** (blocked). Headless: verified.
+- Repeated transitions, no duplicate sessions or connections: **verified headless** (19.4).
+- Continue through its real UI: **verified headless** (keyboard activation), not as a mouse click.
+- Load through its real UI: **verified headless** (keyboard activation). Equivalence to Continue: **not equivalent**. They are
+  two controls that share one handler (19.8).
+- Performance monitor, rendered measurement: **blocked** (19.6).
 - Stage 29 OPEN. Stage 28 OPEN. Production NOT READY. F9, F10, F11, F13b, and the README gap keep their status.
