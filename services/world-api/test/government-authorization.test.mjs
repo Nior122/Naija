@@ -18,7 +18,9 @@ import { createIdentity, openPeer, resumeSession } from "./support/harness.mjs";
 const GOVERNMENT_SUSPENDED = "government_writes_suspended";
 const ELECTION_SUSPENDED = "election_writes_suspended";
 
-// Every government action the engine dispatches as a write (see governmentAction in world-engine.ts).
+// Every government action the engine dispatches as a write that is still SUSPENDED (see governmentAction in
+// world-engine.ts). The Stage 31 treasury routes (approve_budget, allocate_budget, spend_budget) are open and are tested
+// in government-treasury.test.mjs, so they are deliberately not listed here.
 const GOVERNMENT_WRITE_ACTIONS = [
   "appoint", "remove_official", "create_budget", "record_revenue", "record_expenditure",
   "create_project", "update_project", "fund_project", "publish_announcement",
@@ -195,7 +197,7 @@ for (const backendName of backendNames) {
   test(label("an office holder is refused too: the suspension is not a role check that a holder can pass"), async () => {
     const { backend, entry } = await session(backendName);
     const minister = await citizen(entry, backend, "Minister", 40);
-    appoint(backend, minister.characterId, "office:minister", "gov:federal");
+    appoint(backend, minister.characterId, "office:minister", "gov:min:finance");
     await assertEveryGovernmentWriteRefused(minister.peer, backend, "gov-holder");
   });
 
@@ -215,7 +217,7 @@ for (const backendName of backendNames) {
   test(label("a repeated requestId: both sends are refused, and the requestId is not recorded as processed"), async () => {
     const { backend, entry } = await session(backendName);
     const holder = await citizen(entry, backend, "Minister", 40);
-    appoint(backend, holder.characterId, "office:minister", "gov:federal");
+    appoint(backend, holder.characterId, "office:minister", "gov:min:finance");
     const before = fingerprint(backend.store.state);
     const budgetsBefore = Object.keys(backend.store.state.governmentBudgets).length;
     const first = await sendGovernment(holder.peer, budgetRequest("susp-repeat-1"));
@@ -243,7 +245,7 @@ for (const backendName of backendNames) {
     const { backend, entry } = await session(backendName);
     const holder = await citizen(entry, backend, "Minister", 40);
     const other = await citizen(entry, backend, "Attacker", 40);
-    const { appointmentId } = appoint(backend, holder.characterId, "office:minister", "gov:federal");
+    const { appointmentId } = appoint(backend, holder.characterId, "office:minister", "gov:min:finance");
     const before = fingerprint(backend.store.state);
     const reply = await sendGovernment(other.peer, governmentRequest("remove_official", "susp-remove", { appointment_id: appointmentId }));
     assert.equal(reply.code, GOVERNMENT_SUSPENDED);

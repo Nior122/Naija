@@ -97,6 +97,8 @@ import type { PropertyCatalog, PropertyCondition, PropertyListingType, PropertyR
 import { loadGovernmentCatalog } from "../government/catalog.js";
 import {
   appointOfficial,
+  allocateBudget,
+  approveBudget,
   createBudget,
   createProject,
   fundProject,
@@ -108,11 +110,13 @@ import {
   initializeGovernmentWorldState,
   processGovernmentWorldDate,
   publishAnnouncement,
+  reconcileGovernmentStructure,
   recordGovernmentExpenditure,
   recordGovernmentRevenue,
   removeOfficial,
   searchProjects,
   seedGovernmentWorld,
+  spendBudget,
   updateProjectStatus,
   governmentErrorMessage,
 } from "../government/service.js";
@@ -282,6 +286,17 @@ const ELECTION_READ_ACTIONS: ReadonlySet<string> = new Set([
   "check_eligibility",
   "audit_log",
   "my_history",
+]);
+/**
+ * Stage 31 (treasury): the only player-initiated government WRITES that are open. Each one is scoped by server-side
+ * office authority (authorizeOfficePermission), requires the top-level requestId for idempotent replay where money
+ * moves, and validates the whole request before writing. Every other government write stays suspended, including
+ * record_revenue, record_expenditure, create_budget, appoint, remove_official, and the project and announcement writes.
+ */
+const GOVERNMENT_TREASURY_ACTIONS: ReadonlySet<string> = new Set([
+  "approve_budget",
+  "allocate_budget",
+  "spend_budget",
 ]);
 const GOVERNMENT_WRITES_SUSPENDED_CODE = "government_writes_suspended";
 const ELECTION_WRITES_SUSPENDED_CODE = "election_writes_suspended";
@@ -1421,6 +1436,11 @@ export class MultiplayerWorld {
     processEconomyWorldDate(this.store.state, this.store.state.worldClock.world_date, this.now(), this.economyCatalog);
     processBusinessWorldDate(this.store.state, this.store.state.worldClock.world_date, this.now(), this.businessCatalog);
     processPropertyWorldDate(this.store.state);
+    // Reconcile first (Stage 31): fills in missing organisations, offices, and treasury accounts on older worlds. It is
+    // idempotent and changes nothing when the structure is already complete.
+    if (reconcileGovernmentStructure(this.store.state, this.store.state.worldClock.world_date, this.now(), this.governmentCatalog) > 0) {
+      this.dirty = true;
+    }
     processGovernmentWorldDate(this.store.state, this.store.state.worldClock.world_date, this.now());
     processElectionWorldDate(this.store.state, this.store.state.worldClock.world_date, this.now());
     processJusticeWorldDate(this.store.state, this.store.state.worldClock.world_date, this.now());
@@ -2665,7 +2685,7 @@ export class MultiplayerWorld {
       return;
     }
     const action = message.action;
-    if (!GOVERNMENT_READ_ACTIONS.has(action)) {
+    if (!GOVERNMENT_READ_ACTIONS.has(action) && !GOVERNMENT_TREASURY_ACTIONS.has(action)) {
       this.send(context, appendOptionalRequestId({
         type: "government.error", action, code: GOVERNMENT_WRITES_SUSPENDED_CODE,
         message: governmentErrorMessage(GOVERNMENT_WRITES_SUSPENDED_CODE),
@@ -2729,6 +2749,40 @@ export class MultiplayerWorld {
             date, now);
           data.appointment = appointment;
           messageText = `Official removed from office.`;
+          break;
+        }
+        case "approve_budget": {
+          const budget = approveBudget(state, characterId, requiredString("budget_id", 120),
+            requiredInteger("approved_amount_ngn", 1, this.governmentCatalog.rules.maximum_budget_amount_ngn),
+            date, now, this.governmentCatalog);
+          data.budget = budget;
+          messageText = `Budget ceiling set to ₦${budget.approved_amount_ngn.toLocaleString("en-NG")}.`;
+          break;
+        }
+        case "allocate_budget": {
+          // The request ID is the top-level requestId, so a retry of the same message replays the first result.
+          const result = allocateBudget(state, characterId, requiredString("budget_id", 120),
+            requiredInteger("amount_ngn", 1, this.governmentCatalog.rules.maximum_budget_amount_ngn),
+            requestId, date, now, this.governmentCatalog);
+          data.budget = result.budget;
+          data.replayed = result.replayed;
+          messageText = result.replayed ? "Allocation already recorded." : "Allocation recorded.";
+          break;
+        }
+        case "spend_budget": {
+          const destination = isRecord(payload.destination) ? payload.destination : {};
+          const result = spendBudget(state, characterId, requiredString("budget_id", 120),
+            requiredInteger("amount_ngn", this.governmentCatalog.rules.minimum_expenditure_amount_ngn,
+              this.governmentCatalog.rules.maximum_expenditure_amount_ngn),
+            { kind: typeof destination.kind === "string" ? destination.kind : "",
+              id: typeof destination.id === "string" ? destination.id : "" },
+            typeof payload.reason === "string" ? payload.reason : "",
+            requestId, date, now, this.governmentCatalog);
+          data.expenditure = result.expenditure;
+          data.replayed = result.replayed;
+          messageText = result.replayed
+            ? "Payment already recorded."
+            : `Payment of ₦${result.expenditure.amount_ngn.toLocaleString("en-NG")} recorded.`;
           break;
         }
         case "create_budget": {

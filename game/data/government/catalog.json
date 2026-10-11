@@ -74,18 +74,28 @@
     { "id": "exp:other", "label": "Other Expenditure" }
   ],
   "seed_offices": [
-    { "id": "office:president", "level": "federal", "label": "President of the Federal Republic of Nigeria", "unique": true, "description": "Head of state and government." },
-    { "id": "office:vice-president", "level": "federal", "label": "Vice President", "unique": true, "description": "Deputy to the President." },
-    { "id": "office:governor", "level": "state", "label": "State Governor", "unique": true, "description": "Chief executive of a state government." },
-    { "id": "office:deputy-governor", "level": "state", "label": "Deputy Governor", "unique": true, "description": "Deputy to the state governor." },
-    { "id": "office:lg-chairman", "level": "local", "label": "Local Government Chairman", "unique": true, "description": "Chief executive of a local government area." },
-    { "id": "office:minister", "level": "federal", "label": "Federal Minister", "unique": false, "description": "Head of a federal ministry." },
-    { "id": "office:commissioner", "level": "state", "label": "State Commissioner", "unique": false, "description": "Head of a state ministry." },
-    { "id": "office:agency-director", "level": "federal", "label": "Agency Director", "unique": false, "description": "Head of a federal government agency." },
-    { "id": "office:perm-secretary", "level": "federal", "label": "Permanent Secretary", "unique": false, "description": "Senior civil servant heading a ministry's administration." },
-    { "id": "office:director", "level": "state", "label": "Director of Department", "unique": false, "description": "Head of a department within a state ministry." }
+    { "id": "office:president", "level": "federal", "scope": "federal_government", "institution": "executive", "seed_organisation": "gov:federal", "label": "President of the Federal Republic of Nigeria", "unique": true, "description": "Head of state and government." },
+    { "id": "office:vice-president", "level": "federal", "scope": "federal_government", "institution": "executive", "seed_organisation": "gov:federal", "label": "Vice President", "unique": true, "description": "Deputy to the President." },
+    { "id": "office:governor", "level": "state", "scope": "state_government", "institution": "executive", "seed_organisation": null, "label": "State Governor", "unique": true, "description": "Chief executive of a state government." },
+    { "id": "office:deputy-governor", "level": "state", "scope": "state_government", "institution": "executive", "seed_organisation": null, "label": "Deputy Governor", "unique": true, "description": "Deputy to the state governor." },
+    { "id": "office:lg-chairman", "level": "local", "scope": "local_government", "institution": "executive", "seed_organisation": null, "label": "Local Government Chairman", "unique": true, "description": "Chief executive of a local government area." },
+    { "id": "office:minister", "level": "federal", "scope": "federal_ministry", "institution": "executive", "seed_organisation": "per_ministry", "label": "Federal Minister", "unique": false, "description": "Head of a federal ministry. Seeded once per ministry in federal_ministries." },
+    { "id": "office:commissioner", "level": "state", "scope": "state_ministry", "institution": "executive", "seed_organisation": null, "label": "State Commissioner", "unique": false, "description": "Head of a state ministry." },
+    { "id": "office:agency-director", "level": "federal", "scope": "federal_agency", "institution": "executive", "seed_organisation": null, "label": "Agency Director", "unique": false, "description": "Head of a federal government agency." },
+    { "id": "office:perm-secretary", "level": "federal", "scope": "federal_ministry", "institution": "executive", "seed_organisation": null, "label": "Permanent Secretary", "unique": false, "description": "Senior civil servant heading a ministry's administration." },
+    { "id": "office:director", "level": "state", "scope": "state_department", "institution": "executive", "seed_organisation": null, "label": "Director of Department", "unique": false, "description": "Head of a department within a state ministry." },
+    { "id": "office:electoral-commissioner", "level": "federal", "scope": "electoral_commission", "institution": "electoral", "seed_organisation": "gov:electoral", "label": "Electoral Commissioner", "unique": true, "description": "Administers elections independently of candidates and of the executive (rule E-1)." }
   ],
+  "independent_institutions": [
+    { "id": "electoral", "organisation_id": "gov:electoral", "institution": "electoral", "scope": "electoral_commission", "level": "federal", "label": "Independent Electoral Commission", "description": "Administers elections. Not under any ministry or the executive. Its authority covers elections only." }
+  ],
+  "office_permissions": {
+    "office:president": ["budget_approve", "budget_allocate", "budget_spend"],
+    "office:minister": ["budget_approve", "budget_allocate", "budget_spend"]
+  },
   "rules": {
+    "budget_approval_minimum_age_years": 25,
+    "ministry_budget_category_id": "bud:administration",
     "currency": "NGN",
     "currency_label": "Naira",
     "currency_symbol": "₦",

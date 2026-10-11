@@ -22,6 +22,33 @@ export type BudgetStatus = "draft" | "approved" | "active" | "closed";
 /** An office is active unless suspended. Suspension removes all office authority over it (see authority.ts). */
 export type OfficeStatus = "active" | "suspended";
 
+/**
+ * The kind of organisation an office may sit in (Stage 31, hierarchy). An office definition names exactly one scope,
+ * and it confers authority only over an organisation of that kind. Scopes with no organisation in the model
+ * (federal_agency, state_ministry, state_department) match nothing, so offices of those scopes fail closed.
+ */
+export type OfficeScope =
+  | "federal_government"
+  | "federal_ministry"
+  | "federal_agency"
+  | "electoral_commission"
+  | "state_government"
+  | "state_ministry"
+  | "state_department"
+  | "local_government";
+
+/** The branch of government an organisation or office belongs to. Legislative and judicial bodies are not modelled here. */
+export type Institution = "executive" | "electoral";
+
+/**
+ * Where an office definition is placed when the world is seeded. `per_ministry` creates one seat per federal ministry.
+ * `null` means no reliable organisation exists, so the office is not seeded (it cannot be placed).
+ */
+export type SeedOrganisation = "gov:federal" | "gov:electoral" | "per_ministry" | null;
+
+/** Money permissions. Approval, allocation, and spending are separate permissions. */
+export type TreasuryPermission = "budget_approve" | "budget_allocate" | "budget_spend";
+
 export interface GovernmentLevelDefinition {
   readonly id: GovernmentLevel;
   readonly label: string;
@@ -59,6 +86,9 @@ export interface ExpenditureCategoryDefinition {
 export interface OfficeDefinition {
   readonly id: string;
   readonly level: GovernmentLevel;
+  readonly scope: OfficeScope;
+  readonly institution: Institution;
+  readonly seed_organisation: SeedOrganisation;
   readonly label: string;
   readonly unique: boolean;
   readonly description: string;
@@ -98,6 +128,19 @@ export interface GovernmentRules {
   readonly appointment_statuses: readonly AppointmentStatus[];
   readonly budget_statuses: readonly BudgetStatus[];
   readonly federal_default_annual_budget_ngn: number;
+  /** Minimum age (years, on the world date) for directly holding budget-approval authority. Enforced server-side. */
+  readonly budget_approval_minimum_age_years: number;
+  readonly ministry_budget_category_id: string;
+}
+
+export interface IndependentInstitutionDefinition {
+  readonly id: string;
+  readonly organisation_id: string;
+  readonly institution: Institution;
+  readonly scope: OfficeScope;
+  readonly level: GovernmentLevel;
+  readonly label: string;
+  readonly description: string;
 }
 
 export interface GovernmentCatalog {
@@ -111,14 +154,40 @@ export interface GovernmentCatalog {
   readonly revenue_categories: readonly RevenueCategoryDefinition[];
   readonly expenditure_categories: readonly ExpenditureCategoryDefinition[];
   readonly seed_offices: readonly OfficeDefinition[];
+  readonly independent_institutions: readonly IndependentInstitutionDefinition[];
+  /** Permissions held by an office definition. An office confers a permission only within its own organisation. */
+  readonly office_permissions: Readonly<Record<string, readonly TreasuryPermission[]>>;
   readonly rules: GovernmentRules;
 }
 
 // ─── Persistent record types ──────────────────────────────────────
 
+/**
+ * The treasury account of one organisation. Its balance is changed only by the ledger functions in service.ts, and
+ * balance = total_credited_ngn - total_debited_ngn always (checked by tests and by the ledger consistency check).
+ */
+export interface TreasuryAccountRecord {
+  readonly account_id: string;
+  readonly organisation_id: string;
+  readonly level: GovernmentLevel;
+  /** The jurisdiction of the owning organisation (state ID, LGA ID, or null for federal). */
+  readonly jurisdiction_id: string | null;
+  balance_ngn: number;
+  total_credited_ngn: number;
+  total_debited_ngn: number;
+  status: "active";
+  readonly opened_world_date: CalendarDate;
+  readonly created_at: string;
+  updated_at: string;
+}
+
 export interface GovernmentOrganisationRecord {
   readonly organisation_id: string;
   level: GovernmentLevel;
+  /** Absent means executive (records written before Stage 31 have no field). */
+  institution?: Institution | null;
+  /** Absent means the organisation has no treasury account yet (created by reconciliation). */
+  treasury_account?: TreasuryAccountRecord | null;
   name: string;
   description: string;
   /** For state governments, the state ID (e.g. "ng:state:la"). For FCT, "ng:state:fc". For local, the LGA ID. For federal, null. */
@@ -170,6 +239,8 @@ export interface BudgetRecord {
   status: BudgetStatus;
   approved_at: string | null;
   approved_world_date: CalendarDate | null;
+  /** Absent on records written before Stage 31. */
+  approved_by_character_id?: string | null;
   created_at: string;
   created_world_date: CalendarDate;
   updated_at: string;
@@ -185,6 +256,10 @@ export interface GovernmentRevenueRecord {
   received_at: string;
   received_world_date: CalendarDate;
   idempotency_key: string;
+  /** Ledger fields (Stage 31). Absent on older records. */
+  account_id?: string | null;
+  actor_character_id?: string | null;
+  balance_after_ngn?: number | null;
 }
 
 export interface GovernmentExpenditureRecord {
@@ -199,6 +274,13 @@ export interface GovernmentExpenditureRecord {
   spent_at: string;
   spent_world_date: CalendarDate;
   idempotency_key: string;
+  /** Ledger fields (Stage 31). Absent on older records. */
+  account_id?: string | null;
+  actor_character_id?: string | null;
+  destination_kind?: "character" | "business" | "organisation" | null;
+  destination_id?: string | null;
+  request_fingerprint?: string | null;
+  balance_after_ngn?: number | null;
 }
 
 export interface GovernmentProjectRecord {

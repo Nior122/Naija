@@ -65,12 +65,16 @@ function seededOffice(state, definitionId) {
   return office;
 }
 
-/** A state government with a governor's office, placed correctly (state level, its own jurisdiction). */
+/**
+ * A state government with a governor's office, placed correctly: state level, its own jurisdiction, and the federal
+ * government as its parent (Stage 31 kind rule). The seed has no state organisations, so the test creates one.
+ */
 function addStateGovernment(state, stateId = "ng:state:fc") {
   const orgId = `gov:state:${stateId.split(":").pop()}`;
   state.governmentOrganisations[orgId] = {
     organisation_id: orgId, level: "state", name: "Test State Government", description: "Test.",
-    jurisdiction_id: stateId, parent_organisation_id: null, ministry_id: null, status: "active",
+    institution: "executive",
+    jurisdiction_id: stateId, parent_organisation_id: FEDERAL, ministry_id: null, status: "active",
     created_at: new Date(NOW).toISOString(), created_world_date: { ...DATE }, updated_at: new Date(NOW).toISOString(),
   };
   const officeId = `office:state-governor:${stateId.split(":").pop()}`;
@@ -237,11 +241,24 @@ test("a state office placed in the federal organisation confers nothing (level m
   const state = makeState();
   // The seeded world places the state governor in the federal organisation. Authority follows the organisation, so
   // without this check the governor would hold federal scope. It must not.
+  // The seed does not place a governor anywhere. A legacy-style record puts one in the federal organisation, the way
+  // a pre-Stage 31 world could have. It is created directly, so the test does not depend on the seed.
   const governor = addCitizen(state, "Governor");
-  const office = seededOffice(state, "office:governor");
-  assert.equal(office.organisation_id, FEDERAL, "premise: the seeded state office sits in the federal organisation");
-  appointOfficial(state, office.office_id, governor, "operator-seed", DATE, NOW);
-  const appointment = Object.values(state.governmentAppointments).find((a) => a.character_id === governor);
+  const officeId = "office:governor:legacy-federal";
+  state.governmentOffices[officeId] = {
+    office_id: officeId, definition_id: "office:governor", organisation_id: FEDERAL, label: "Governor (legacy)",
+    unique: true, created_at: new Date(NOW).toISOString(), updated_at: new Date(NOW).toISOString(),
+  };
+  // New appointments to a misplaced office are refused (Stage 31), so the appointment is written directly, as a legacy
+  // record would be. The resolver must still refuse it authority.
+  assert.throws(() => appointOfficial(state, officeId, governor, "operator-seed", DATE, NOW), /government_office_placement_invalid/);
+  const appointmentId = "appt-legacy-governor";
+  state.governmentAppointments[appointmentId] = {
+    appointment_id: appointmentId, office_id: officeId, character_id: governor, status: "active",
+    start_date: new Date(NOW).toISOString(), start_world_date: { ...DATE }, end_date: null, end_world_date: null,
+    end_reason: null, appointed_by: "operator-seed", created_at: new Date(NOW).toISOString(), updated_at: new Date(NOW).toISOString(),
+  };
+  const appointment = state.governmentAppointments[appointmentId];
   assert.equal(appointmentAuthorityState(state, appointment, DATE), "office_level_mismatch");
   assert.equal(authorizeGovernmentActor(state, governor, FEDERAL, DATE).code, "government_authority_none");
 });

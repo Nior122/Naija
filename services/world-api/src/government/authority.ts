@@ -21,11 +21,19 @@
  * (R-a and R-b in docs/STAGE_28_GOVERNMENT_AUTHORIZATION.md). Government mutations stay suspended at the engine until
  * those rules exist.
  */
-import { compareDates } from "../life/calendar.js";
+import { ageOnDate, compareDates, isValidDate } from "../life/calendar.js";
 import type { CalendarDate } from "../life/types.js";
 import type { PersistentWorldState } from "../multiplayer/types.js";
 import { loadGovernmentCatalog } from "./catalog.js";
-import type { AppointmentRecord, GovernmentCatalog, GovernmentLevel, GovernmentOfficeRecord, OfficeStatus } from "./types.js";
+import { officePlacement } from "./hierarchy.js";
+import type {
+  AppointmentRecord,
+  GovernmentCatalog,
+  GovernmentLevel,
+  GovernmentOfficeRecord,
+  OfficeStatus,
+  TreasuryPermission,
+} from "./types.js";
 
 /** Why one appointment does or does not confer authority on a given date. */
 export type AppointmentAuthorityState =
@@ -38,7 +46,11 @@ export type AppointmentAuthorityState =
   | "office_contested"
   | "organisation_inactive"
   | "office_definition_missing"
+  | "organisation_missing"
   | "office_level_mismatch"
+  | "office_institution_incompatible"
+  | "organisation_kind_unrecognised"
+  | "office_scope_incompatible"
   | "holder_missing"
   | "holder_deceased";
 
@@ -107,12 +119,15 @@ export function appointmentAuthorityState(
   const organisation = state.governmentOrganisations[office.organisation_id];
   if (!organisation || organisation.status !== "active") return "organisation_inactive";
 
-  // The office's level in the catalogue must match the level of the organisation it sits in. The seeded world places
-  // every office in the federal organisation, including state and local ones, so those appointments confer nothing
-  // until the placement is corrected (rule R-c). Failing closed here is deliberate.
-  const definition = catalog.seed_offices.find((d) => d.id === office.definition_id);
-  if (!definition) return "office_definition_missing";
-  if (definition.level !== organisation.level) return "office_level_mismatch";
+  // Placement (Stage 31): the office's definition must match the kind of organisation it sits in, including level,
+  // institution, and scope. Seeded records that do not fit (for example, a governor placed in the federal government)
+  // confer nothing. They are not rewritten. See hierarchy.ts and docs/STAGE_31_TREASURY_AUTHORITY.md.
+  const placement = officePlacement(state, office, catalog);
+  if (!placement.ok) {
+    if (placement.code === "office_definition_missing") return "office_definition_missing";
+    if (placement.code === "office_level_mismatch") return "office_level_mismatch";
+    return placement.code;
+  }
 
   const occupancy = officeOccupancy(state, office.office_id, date);
   if (occupancy === "contested") return "office_contested";
@@ -171,6 +186,72 @@ export function authorizeGovernmentActor(
   const inScope = grants.find((grant) => grant.organisation_id === organisationId);
   if (!inScope) return { ok: false, code: "government_authority_scope" };
   return { ok: true, grant: inScope };
+}
+
+/**
+ * The character's age on the date, from the trusted date of birth on the server record. Returns null when the
+ * character is unknown, has no valid birth date, or the birth date is after the date. Callers must refuse on null.
+ */
+export function characterAgeOn(state: PersistentWorldState, characterId: string, date: CalendarDate): number | null {
+  for (const player of Object.values(state.players)) {
+    if (player.character.character_id !== characterId) continue;
+    const birth = player.character.date_of_birth;
+    if (!isValidDate(birth)) return null;
+    try {
+      return ageOnDate(birth, date);
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+/**
+ * Decides whether the character may exercise a money permission over the organisation on the date.
+ *   - the character must hold an effective office over that organisation (authorizeGovernmentActor);
+ *   - one of those offices must carry the permission in the catalogue (office_permissions); permissions do not travel
+ *     between offices, and an office confers nothing outside its own organisation;
+ *   - budget approval additionally needs the server-verified minimum age (budget_approval_minimum_age_years). Other
+ *     permissions do not have that age rule.
+ * The request's own fields are never read. Refusal codes are stable: government_authority_none,
+ * government_authority_scope, government_permission_none, government_age_unknown, treasury_approval_age_ineligible.
+ */
+export type PermissionDecision =
+  | { readonly ok: true; readonly grant: OfficeAuthorityGrantLike }
+  | { readonly ok: false; readonly code: string };
+
+export interface OfficeAuthorityGrantLike {
+  readonly office_id: string;
+  readonly definition_id: string;
+  readonly organisation_id: string;
+  readonly appointment_id: string;
+  readonly character_id: string;
+}
+
+export function authorizeOfficePermission(
+  state: PersistentWorldState,
+  characterId: string,
+  organisationId: string,
+  permission: TreasuryPermission,
+  date: CalendarDate,
+  catalog: GovernmentCatalog = loadGovernmentCatalog(),
+): PermissionDecision {
+  const inOrganisation = effectiveOfficeGrants(state, characterId, date, catalog)
+    .filter((grant) => grant.organisation_id === organisationId);
+  if (inOrganisation.length === 0) {
+    const decision = authorizeGovernmentActor(state, characterId, organisationId, date, catalog);
+    return { ok: false, code: decision.ok ? "government_authority_scope" : decision.code };
+  }
+  const permitted = inOrganisation.find((grant) => (catalog.office_permissions[grant.definition_id] ?? []).includes(permission));
+  if (!permitted) return { ok: false, code: "government_permission_none" };
+  if (permission === "budget_approve") {
+    const age = characterAgeOn(state, characterId, date);
+    if (age === null) return { ok: false, code: "government_age_unknown" };
+    if (age < catalog.rules.budget_approval_minimum_age_years) {
+      return { ok: false, code: "treasury_approval_age_ineligible" };
+    }
+  }
+  return { ok: true, grant: permitted };
 }
 
 /** Type guard for the optional office status field. Absent or null means active (the seeded state has no field). */

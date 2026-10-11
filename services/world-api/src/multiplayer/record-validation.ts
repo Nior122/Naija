@@ -498,6 +498,37 @@ export function validatePropertyRecords(maps: PersistentPropertyMaps): RecordVal
 
 // ─── Government ───────────────────────────────────────────────────────────────
 
+const SHA256_HEX = /^[0-9a-f]{64}$/;
+const DESTINATION_KINDS = new Set(["character", "business", "organisation"]);
+
+function isNonNegativeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
+/**
+ * Optional ledger fields (Stage 31) are checked only when present. An absent field is left absent, so a legacy
+ * record is not rewritten on load (see RecordValidator.expect, which normalises absent nullable fields).
+ */
+function optionalIdentifier(value: unknown): boolean {
+  return value === undefined || value === null || isIdentifier(value);
+}
+
+function validTreasuryAccount(value: unknown, organisation: Rec): boolean {
+  if (!isRecord(value)) return false;
+  return value.account_id === `treasury:${String(organisation.organisation_id)}` &&
+    value.organisation_id === organisation.organisation_id &&
+    value.level === organisation.level &&
+    value.jurisdiction_id === organisation.jurisdiction_id &&
+    isNonNegativeInteger(value.balance_ngn) &&
+    isNonNegativeInteger(value.total_credited_ngn) &&
+    isNonNegativeInteger(value.total_debited_ngn) &&
+    value.total_debited_ngn <= value.total_credited_ngn &&
+    value.status === "active" &&
+    isRecord(value.opened_world_date) &&
+    typeof value.created_at === "string" &&
+    typeof value.updated_at === "string";
+}
+
 export function validateGovernmentRecords(maps: PersistentGovernmentMaps): RecordValidationResult {
   const v = new RecordValidator("government");
   const orgs = maps.governmentOrganisations as unknown as RecordMap;
@@ -517,6 +548,8 @@ export function validateGovernmentRecords(maps: PersistentGovernmentMaps): Recor
     v.worldDate(r, "created_world_date");
     v.timestamp(r, "updated_at");
     v.noParentCycle(orgs ?? {}, r, "parent_organisation_id", String(r.organisation_id));
+    v.invariant("treasury_account", r.treasury_account === undefined || validTreasuryAccount(r.treasury_account, r),
+      "must be a valid treasury account of this organisation when present");
   });
 
   v.records("governmentOffices", offices, "office_id", (r) => {
@@ -555,6 +588,8 @@ export function validateGovernmentRecords(maps: PersistentGovernmentMaps): Recor
     v.num(r, "allocated_amount_ngn", { min: 0 });
     v.num(r, "spent_amount_ngn", { min: 0 });
     v.oneOf(r, "status", BUDGET_STATUSES);
+    v.invariant("approved_by_character_id", optionalIdentifier(r.approved_by_character_id),
+      "must be an identifier when present");
     v.timestamp(r, "approved_at", true);
     v.worldDate(r, "approved_world_date", true);
     v.timestamp(r, "created_at");
@@ -571,6 +606,11 @@ export function validateGovernmentRecords(maps: PersistentGovernmentMaps): Recor
     v.timestamp(r, "received_at");
     v.worldDate(r, "received_world_date");
     v.nonEmptyText(r, "idempotency_key");
+    v.invariant("account_id", r.account_id === undefined || r.account_id === `treasury:${String(r.organisation_id)}`,
+      "must be the treasury account of its organisation when present");
+    v.invariant("actor_character_id", optionalIdentifier(r.actor_character_id), "must be an identifier when present");
+    v.invariant("balance_after_ngn", r.balance_after_ngn === undefined || isNonNegativeInteger(r.balance_after_ngn),
+      "must be a non-negative integer when present");
   });
 
   v.records("governmentExpenditure", maps.governmentExpenditure as unknown as RecordMap, "expenditure_id", (r) => {
@@ -584,6 +624,18 @@ export function validateGovernmentRecords(maps: PersistentGovernmentMaps): Recor
     v.timestamp(r, "spent_at");
     v.worldDate(r, "spent_world_date");
     v.nonEmptyText(r, "idempotency_key");
+    v.invariant("account_id", r.account_id === undefined || r.account_id === `treasury:${String(r.organisation_id)}`,
+      "must be the treasury account of its organisation when present");
+    v.invariant("actor_character_id", optionalIdentifier(r.actor_character_id), "must be an identifier when present");
+    v.invariant("destination_kind", r.destination_kind === undefined || r.destination_kind === null ||
+      (typeof r.destination_kind === "string" && DESTINATION_KINDS.has(r.destination_kind)),
+      "must be character, business, or organisation when present");
+    v.invariant("destination_id", optionalIdentifier(r.destination_id), "must be an identifier when present");
+    v.invariant("request_fingerprint", r.request_fingerprint === undefined || r.request_fingerprint === null ||
+      (typeof r.request_fingerprint === "string" && SHA256_HEX.test(r.request_fingerprint)),
+      "must be a sha256 hex digest when present");
+    v.invariant("balance_after_ngn", r.balance_after_ngn === undefined || isNonNegativeInteger(r.balance_after_ngn),
+      "must be a non-negative integer when present");
   });
 
   v.records("governmentProjects", projects, "project_id", (r) => {
@@ -621,6 +673,24 @@ export function validateGovernmentRecords(maps: PersistentGovernmentMaps): Recor
     v.worldDate(r, "created_world_date");
     v.timestamp(r, "updated_at");
   });
+
+  // Cross-record check (Stage 31): each treasury balance equals its credited ledger rows minus its debited rows.
+  // A mismatch refuses the load rather than silently trusting either side.
+  const revenueRows = Object.values(maps.governmentRevenue ?? {});
+  const expenditureRows = Object.values(maps.governmentExpenditure ?? {});
+  for (const organisation of Object.values(maps.governmentOrganisations ?? {})) {
+    const account = organisation.treasury_account;
+    if (!account || !validTreasuryAccount(account, organisation as unknown as Rec)) continue;
+    const credits = revenueRows.filter((row) => row.account_id === account.account_id)
+      .reduce((sum, row) => sum + Number(row.amount_ngn), 0);
+    const debits = expenditureRows.filter((row) => row.account_id === account.account_id)
+      .reduce((sum, row) => sum + Number(row.amount_ngn), 0);
+    if (account.total_credited_ngn !== credits || account.total_debited_ngn !== debits ||
+      account.balance_ngn !== credits - debits) {
+      v.issueAt("governmentOrganisations", String(organisation.organisation_id), "treasury_account",
+        "balance and totals must equal the credited and debited ledger rows of this account");
+    }
+  }
 
   v.records("governmentEvents", maps.governmentEvents as unknown as RecordMap, "event_id", (r) => {
     v.ref(r, "organisation_id", "governmentOrganisations", orgs);

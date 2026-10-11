@@ -8,6 +8,7 @@ import { afterEach, test } from "node:test";
 import WebSocket from "ws";
 import { createApiServer } from "../dist/app.js";
 import { loadGovernmentCatalog, validateGovernmentCatalogForTest } from "../dist/government/catalog.js";
+import { auditGovernmentStructure } from "../dist/government/hierarchy.js";
 import {
   initializeGovernmentWorldState,
   seedGovernmentWorld,
@@ -176,9 +177,36 @@ test("seedGovernmentWorld creates federal government, ministries, offices, and b
   const offices = Object.values(world.state.governmentOffices);
   assert.ok(offices.length >= 5);
 
+  // Stage 31: the federal budget is approved. Each ministry gets a draft budget with nothing approved, so no ministry
+  // can spend until a ceiling is approved by its own office holder (see government-treasury.test.mjs).
   const budgets = Object.values(world.state.governmentBudgets);
-  assert.equal(budgets.length, 1);
-  assert.ok(budgets[0].approved_amount_ngn > 0);
+  const federalBudgets = budgets.filter((b) => b.organisation_id === federal.organisation_id);
+  assert.equal(federalBudgets.length, 1);
+  assert.ok(federalBudgets[0].approved_amount_ngn > 0);
+  const ministryBudgets = budgets.filter((b) => b.organisation_id !== federal.organisation_id);
+  assert.ok(ministryBudgets.length >= 10);
+  for (const budget of ministryBudgets) {
+    assert.equal(budget.status, "draft");
+    assert.equal(budget.approved_amount_ngn, 0);
+    assert.equal(budget.spent_amount_ngn, 0);
+  }
+
+  // Every seeded treasury account starts at zero (there is no funding source yet; see the Stage 31 document).
+  const accounts = Object.values(world.state.governmentOrganisations).map((o) => o.treasury_account).filter(Boolean);
+  assert.ok(accounts.length >= 10);
+  for (const account of accounts) {
+    assert.equal(account.balance_ngn, 0);
+    assert.equal(account.account_id, `treasury:${account.organisation_id}`);
+  }
+
+  // Only placements that are reliable are seeded. A governor, LG chairman, or director needs a state or local
+  // organisation, and the seed has none, so those offices are not created.
+  const definitions = Object.values(world.state.governmentOffices).map((o) => o.definition_id);
+  assert.ok(definitions.includes("office:president"));
+  assert.ok(definitions.includes("office:vice-president"));
+  assert.ok(!definitions.includes("office:governor"));
+  assert.ok(!definitions.includes("office:lg-chairman"));
+  assert.deepEqual(auditGovernmentStructure(world.state, catalog).unresolved, [], "every seeded office is placed");
 });
 
 test("appointOfficial assigns an eligible character to an office", () => {

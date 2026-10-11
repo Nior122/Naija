@@ -1,5 +1,10 @@
 # Stage 30: Government, Election, and Judicial Authority Foundation
 
+> **Stage 31 update.** The budget and treasury rows of sections 1 and 9, and section 10, are superseded. Stage 31
+> implements treasury ownership: three treasury routes are open behind the resolver and the office permission table, and
+> everything else that moves money stays suspended. The seed placement and the hierarchy rule also changed. See
+> `docs/STAGE_31_TREASURY_AUTHORITY.md`. The sections below are kept as the record of Stage 30.
+
 Date: 2026-10-11. Branch: `arena/00cdea0e-naija`. Starts from `51fab81`.
 
 Status: **FOUNDATION ONLY.** This stage establishes the office-authority model, the appointment and term rules, the
@@ -17,7 +22,7 @@ run the regional-profile generator or resolve the Kaduna classification or the l
 |---|---|---|---|
 | 1 | Authority and office records | Pure office-authority resolver (`src/government/authority.ts`). Optional office `status` (`active` / `suspended`) with validation. Undefined or null means active, so legacy records need no migration. | Relational government tables. Not needed: state stays in the existing JSON state. |
 | 2 | Appointment and succession foundations | `appointOfficial` refuses suspended offices. Term expiry is processed on identity resume and checked on every authority call. `expireElapsedTerms` is idempotent. `setGovernmentOfficeStatus` is a trusted function with no route. | Succession rules (no owner rule). Player appointment routes (suspended, R-a). |
-| 3 | Budget and treasury ownership | Nothing changed. `create_budget`, `record_revenue`, and `record_expenditure` stay suspended. The resolver gives a future budget route the authority check it would need. | Owner table for budgets (R-b), budget age rule (R-f), treasury account model. No unrestricted transfer exists or was added. |
+| 3 | Budget and treasury ownership | Nothing changed in Stage 30. (Stage 31: see `STAGE_31_TREASURY_AUTHORITY.md`. Approval, allocation, and spending are open behind server authority; revenue and `create_budget` stay suspended.) | Funding source for treasuries. Payment credit to economy accounts. Owner confirmation of R-b and R-f. |
 | 4 | Election bodies, elections, candidates, results | E-2: no self-approval, self-certification, or self-publication (`elections_self_approval_refused`, `elections_self_certification_refused`). E-4: one transfer per election (`elections_office_already_transferred`). | Electoral authority office (E-1 / R-d). Any route. Election validity: the process is not implemented end-to-end, so no election is legally valid yet. |
 | 5 | Court, appeal, enforcement checks | J-2 standing ends with the appointment. J-8 party conflict (`justice_judge_conflicted`). Judges cannot submit evidence in their own case (J-4, existing). Standing refusals are indistinguishable from a missing case. | Appeal assignment (J-5, suspended). Enforcement and arrest (P-3, suspended). Fines (J-6, suspended). |
 
@@ -156,7 +161,9 @@ run, the later run wins.
 
 ## 10. Next highest-value stage
 
-Treasury ownership, once R-b and R-f are decided: a defined treasury account per organisation, budget creation and
+(Superseded by Stage 31. The treasury now exists. The next stage is the funding and payee-credit design in `STAGE_31_TREASURY_AUTHORITY.md` section 10.)
+
+Original recommendation, kept for the record. Treasury ownership, once R-b and R-f are decided: a defined treasury account per organisation, budget creation and
 spending gated by the resolver plus the owning office, an atomic ledger entry for each movement, a refusal that leaves
 the treasury unchanged, and tests on both backends. This is the largest remaining gap in the priority order, and it is
 the one that carries money. It must not be started on the default rules alone.

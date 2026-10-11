@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { INSTITUTIONS, OFFICE_SCOPES, SCOPE_LEVEL, TREASURY_PERMISSIONS } from "./hierarchy.js";
 import type { GovernmentCatalog } from "./types.js";
 
 const CATALOG_FILE = "game/data/government/catalog.json";
@@ -35,7 +36,8 @@ function validateCatalog(value: unknown): GovernmentCatalog {
     !Array.isArray(value.government_levels) || !Array.isArray(value.federal_ministries) ||
     !Array.isArray(value.project_categories) || !Array.isArray(value.budget_categories) ||
     !Array.isArray(value.revenue_categories) || !Array.isArray(value.expenditure_categories) ||
-    !Array.isArray(value.seed_offices)) {
+    !Array.isArray(value.seed_offices) || !Array.isArray(value.independent_institutions) ||
+    !isRecord(value.office_permissions)) {
     throw new Error("Government catalogue is incomplete or has an unsupported schema/world.");
   }
   const catalog = value as unknown as GovernmentCatalog;
@@ -60,6 +62,46 @@ function validateCatalog(value: unknown): GovernmentCatalog {
   }
   if (rules.project_statuses.length < 3) {
     throw new Error("Government rules must define at least 3 project statuses.");
+  }
+  if (!Number.isSafeInteger(rules.budget_approval_minimum_age_years) ||
+    rules.budget_approval_minimum_age_years < rules.minimum_office_holder_age || rules.budget_approval_minimum_age_years > 100) {
+    throw new Error("Government rules have an invalid budget-approval minimum age.");
+  }
+  if (!catalog.budget_categories.some((c) => c.id === rules.ministry_budget_category_id)) {
+    throw new Error("Government rules name an unknown ministry budget category.");
+  }
+
+  // Hierarchy (Stage 31): every office names a scope that matches its level, an institution, and a seed placement.
+  const seedIds = new Set<string>();
+  for (const office of catalog.seed_offices) {
+    seedIds.add(office.id);
+    if (!OFFICE_SCOPES.includes(office.scope) || SCOPE_LEVEL[office.scope] !== office.level) {
+      throw new Error(`Government office ${office.id} has a scope that does not match its level.`);
+    }
+    if (!INSTITUTIONS.includes(office.institution)) throw new Error(`Government office ${office.id} has an unknown institution.`);
+    if ((office.institution === "electoral") !== (office.scope === "electoral_commission")) {
+      throw new Error(`Government office ${office.id} mixes an electoral institution with another scope.`);
+    }
+    if (office.seed_organisation === "per_ministry" && office.scope !== "federal_ministry") {
+      throw new Error(`Government office ${office.id} can be seeded per ministry only with a ministry scope.`);
+    }
+    if (office.seed_organisation !== null && !["gov:federal", "gov:electoral", "per_ministry"].includes(office.seed_organisation)) {
+      throw new Error(`Government office ${office.id} has an unknown seed organisation.`);
+    }
+  }
+  const institutionIds = new Set<string>();
+  for (const institution of catalog.independent_institutions) {
+    if (institutionIds.has(institution.id)) throw new Error("Independent institutions have a duplicate ID.");
+    institutionIds.add(institution.id);
+    if (!institution.organisation_id.startsWith("gov:") || institution.level !== "federal") {
+      throw new Error(`Independent institution ${institution.id} must be a federal government organisation.`);
+    }
+  }
+  for (const [officeId, permissions] of Object.entries(catalog.office_permissions)) {
+    if (!seedIds.has(officeId)) throw new Error(`Office permissions name an unknown office definition: ${officeId}.`);
+    for (const permission of permissions) {
+      if (!TREASURY_PERMISSIONS.includes(permission)) throw new Error(`Office ${officeId} has an unknown permission.`);
+    }
   }
 
   return catalog;

@@ -26,7 +26,8 @@ import type {
 import type { PersistentPlayer, PersistentWorldState } from "../multiplayer/types.js";
 import type { CalendarDate } from "../life/types.js";
 import { compareDates } from "../life/calendar.js";
-import { isOfficeSuspended } from "./authority.js";
+import { authorizeOfficePermission, isOfficeSuspended } from "./authority.js";
+import { officePlacement } from "./hierarchy.js";
 import type { OfficeStatus } from "./types.js";
 
 function cloneDate(date: CalendarDate): CalendarDate {
@@ -110,6 +111,7 @@ export function seedGovernmentWorld(
   state.governmentOrganisations[federalId] = {
     organisation_id: federalId,
     level: "federal",
+    institution: "executive",
     name: "Federal Government of Nigeria",
     description: "The national government of the Federal Republic of Nigeria.",
     jurisdiction_id: null,
@@ -127,6 +129,7 @@ export function seedGovernmentWorld(
     state.governmentOrganisations[ministryId] = {
       organisation_id: ministryId,
       level: "federal",
+      institution: "executive",
       name: ministry.label,
       description: ministry.description,
       jurisdiction_id: null,
@@ -139,18 +142,22 @@ export function seedGovernmentWorld(
     };
   }
 
-  // Create federal offices
+  // Independent institutions (the electoral commission). They sit under no ministry and no executive office.
+  for (const institution of catalog.independent_institutions) {
+    createIndependentInstitution(state, institution, date, now);
+  }
+
+  // Office seats are created only where the catalogue names a reliable organisation (seed_organisation). Other
+  // definitions have no organisation to sit in yet, so no record is created for them (see docs/STAGE_31_TREASURY_AUTHORITY.md).
   for (const officeDef of catalog.seed_offices) {
-    const officeId = `office:${officeDef.id}`;
-    state.governmentOffices[officeId] = {
-      office_id: officeId,
-      definition_id: officeDef.id,
-      organisation_id: federalId,
-      label: officeDef.label,
-      unique: officeDef.unique,
-      created_at: timestamp,
-      updated_at: timestamp,
-    };
+    if (officeDef.seed_organisation === null) continue;
+    if (officeDef.seed_organisation === "per_ministry") {
+      for (const ministry of catalog.federal_ministries) {
+        createOfficeSeat(state, officeDef, `gov:${ministry.id}`, `:${ministry.id}`, date, now);
+      }
+    } else {
+      createOfficeSeat(state, officeDef, officeDef.seed_organisation, "", date, now);
+    }
   }
 
   // Create federal budget
@@ -175,6 +182,149 @@ export function seedGovernmentWorld(
   appendGovernmentEvent(state, federalId, "government_created",
     "Federal Government of Nigeria established.", date, now,
     { ministry_count: catalog.federal_ministries.length });
+
+  reconcileGovernmentStructure(state, date, now, catalog);
+}
+
+function createIndependentInstitution(
+  state: PersistentWorldState,
+  institution: GovernmentCatalog["independent_institutions"][number],
+  date: CalendarDate,
+  now: number,
+): void {
+  if (state.governmentOrganisations[institution.organisation_id]) return;
+  const timestamp = new Date(now).toISOString();
+  state.governmentOrganisations[institution.organisation_id] = {
+    organisation_id: institution.organisation_id,
+    level: institution.level,
+    institution: institution.institution,
+    name: institution.label,
+    description: institution.description,
+    jurisdiction_id: null,
+    parent_organisation_id: null,
+    ministry_id: null,
+    status: "active",
+    created_at: timestamp,
+    created_world_date: cloneDate(date),
+    updated_at: timestamp,
+  };
+}
+
+/** Creates one vacant office seat, unless the seat already exists. Returns true when a record was created. */
+function createOfficeSeat(
+  state: PersistentWorldState,
+  definition: GovernmentCatalog["seed_offices"][number],
+  organisationId: string,
+  idSuffix: string,
+  _date: CalendarDate,
+  now: number,
+): boolean {
+  const officeId = `office:${definition.id.slice("office:".length)}${idSuffix}`;
+  if (state.governmentOffices[officeId]) return false;
+  const timestamp = new Date(now).toISOString();
+  state.governmentOffices[officeId] = {
+    office_id: officeId,
+    definition_id: definition.id,
+    organisation_id: organisationId,
+    label: definition.label,
+    unique: definition.unique,
+    created_at: timestamp,
+    updated_at: timestamp,
+  };
+  return true;
+}
+
+/**
+ * Brings a world up to the current structure without changing any existing record (Stage 31). Idempotent. It adds
+ * only what is missing: a seat for each reliably placed office definition whose organisation exists, an independent
+ * institution's organisation, a treasury account for each organisation, and a draft budget for each federal ministry
+ * for the current fiscal year. Existing records, including legacy placements, are never moved or rewritten.
+ * Returns the number of records created.
+ */
+export function reconcileGovernmentStructure(
+  state: PersistentWorldState,
+  date: CalendarDate,
+  now: number,
+  catalog: GovernmentCatalog = loadGovernmentCatalog(),
+): number {
+  initializeGovernmentWorldState(state);
+  if (Object.keys(state.governmentOrganisations).length === 0) {
+    seedGovernmentWorld(state, date, now, catalog);
+    return 0;
+  }
+  let created = 0;
+  for (const institution of catalog.independent_institutions) {
+    if (!state.governmentOrganisations[institution.organisation_id]) {
+      createIndependentInstitution(state, institution, date, now);
+      created += 1;
+    }
+  }
+  for (const officeDef of catalog.seed_offices) {
+    if (officeDef.seed_organisation === null) continue;
+    if (officeDef.seed_organisation === "per_ministry") {
+      for (const ministry of catalog.federal_ministries) {
+        if (state.governmentOrganisations[`gov:${ministry.id}`] &&
+          createOfficeSeat(state, officeDef, `gov:${ministry.id}`, `:${ministry.id}`, date, now)) created += 1;
+      }
+    } else if (state.governmentOrganisations[officeDef.seed_organisation] &&
+      createOfficeSeat(state, officeDef, officeDef.seed_organisation, "", date, now)) {
+      created += 1;
+    }
+  }
+  for (const organisation of Object.values(state.governmentOrganisations)) {
+    if (!organisation.treasury_account) {
+      ensureTreasuryAccount(organisation, date, now);
+      created += 1;
+    }
+  }
+  for (const ministry of catalog.federal_ministries) {
+    const organisationId = `gov:${ministry.id}`;
+    const budgetId = `bud:${ministry.id}:${date.year}`;
+    if (!state.governmentOrganisations[organisationId] || state.governmentBudgets[budgetId]) continue;
+    const timestamp = new Date(now).toISOString();
+    state.governmentBudgets[budgetId] = {
+      budget_id: budgetId,
+      organisation_id: organisationId,
+      fiscal_year: date.year,
+      fiscal_period_label: `${date.year}`,
+      category_id: catalog.rules.ministry_budget_category_id,
+      approved_amount_ngn: 0,
+      allocated_amount_ngn: 0,
+      spent_amount_ngn: 0,
+      status: "draft",
+      approved_at: null,
+      approved_world_date: null,
+      created_at: timestamp,
+      created_world_date: cloneDate(date),
+      updated_at: timestamp,
+    };
+    created += 1;
+  }
+  if (created > 0) {
+    appendGovernmentEvent(state, "gov:federal", "structure_reconciled",
+      `Government structure reconciled: ${created} record(s) added.`, date, now, { records_added: created });
+  }
+  return created;
+}
+
+/** The treasury account of an organisation, created empty if it does not exist yet. Balance changes go through the ledger. */
+function ensureTreasuryAccount(organisation: GovernmentOrganisationRecord, date: CalendarDate, now: number) {
+  if (organisation.treasury_account) return organisation.treasury_account;
+  const timestamp = new Date(now).toISOString();
+  organisation.treasury_account = {
+    account_id: `treasury:${organisation.organisation_id}`,
+    organisation_id: organisation.organisation_id,
+    level: organisation.level,
+    jurisdiction_id: organisation.jurisdiction_id,
+    balance_ngn: 0,
+    total_credited_ngn: 0,
+    total_debited_ngn: 0,
+    status: "active",
+    opened_world_date: cloneDate(date),
+    created_at: timestamp,
+    updated_at: timestamp,
+  };
+  return organisation.treasury_account;
 }
 
 // ─── Appointment management ───────────────────────────────────────
@@ -192,6 +342,8 @@ export function appointOfficial(
   if (!office) throw new Error("government_office_not_found");
   // A suspended office cannot be filled (Stage 30). Suspension is an administrative state with no player route.
   if (isOfficeSuspended(office)) throw new Error("government_office_suspended");
+  // An office that does not fit its organisation cannot be filled (Stage 31). Legacy placements are left as they are.
+  if (!officePlacement(state, office, catalog).ok) throw new Error("government_office_placement_invalid");
 
   const player = characterForId(state, characterId);
   if (!player) throw new Error("government_character_not_found");
@@ -329,6 +481,32 @@ export function getBudgetAvailable(state: PersistentWorldState, budgetId: string
 
 // ─── Revenue and Expenditure ──────────────────────────────────────
 
+// ─── Revenue, expenditure, and treasury ledger (Stage 31) ─────────
+//
+// Every change to a treasury balance is a ledger row in the existing revenue (credit) or expenditure (debit) records,
+// written in the same synchronous step as the balance. Every function here validates the whole request before its
+// first write, so a rejected request changes nothing (no balance, no ledger row, no budget, no event).
+//
+// Authority is decided by authorizeOfficePermission (authority.ts), never by a field in the request. The
+// request-supplied fields are the target (budget, destination, amount, reason) and an idempotency key.
+
+const TREASURY_DESTINATION_KINDS = ["character", "business", "organisation"] as const;
+const MAX_REQUEST_ID_LENGTH = 80;
+const REQUEST_ID_PATTERN = /^[A-Za-z0-9._:-]+$/;
+
+function isRequestId(value: unknown): value is string {
+  return typeof value === "string" && value.length >= 1 && value.length <= MAX_REQUEST_ID_LENGTH &&
+    REQUEST_ID_PATTERN.test(value);
+}
+
+function fingerprintOf(parts: readonly (string | number | null)[]): string {
+  return createHash("sha256").update(JSON.stringify(parts)).digest("hex");
+}
+
+/**
+ * Trusted intake: money received into an organisation's treasury account. It has no player route. When a source
+ * reference is given, a repeated intake with the same source is recorded once.
+ */
 export function recordGovernmentRevenue(
   state: PersistentWorldState,
   organisationId: string,
@@ -342,38 +520,126 @@ export function recordGovernmentRevenue(
 ): GovernmentRevenueRecord {
   const org = state.governmentOrganisations[organisationId];
   if (!org) throw new Error("government_organisation_not_found");
-  if (amountNgn < catalog.rules.minimum_revenue_amount_ngn || amountNgn > catalog.rules.maximum_revenue_amount_ngn) {
+  if (org.status !== "active") throw new Error("government_organisation_inactive");
+  if (!Number.isSafeInteger(amountNgn) || amountNgn < catalog.rules.minimum_revenue_amount_ngn || amountNgn > catalog.rules.maximum_revenue_amount_ngn) {
     throw new Error("government_revenue_amount_invalid");
   }
   const revCat = catalog.revenue_categories.find((c) => c.id === categoryId);
   if (!revCat) throw new Error("government_revenue_category_invalid");
 
-  const idemKey = createHash("sha256").update(`gov-rev:${organisationId}:${categoryId}:${amountNgn}:${now}`).digest("hex");
-  const existing = Object.values(state.governmentRevenue).find((r) => r.idempotency_key === idemKey);
-  if (existing) return existing;
+  const reference = sourceReference === null || sourceReference.trim() === "" ? null : sourceReference.trim();
+  const idemKey = reference === null
+    ? createHash("sha256").update(`gov-rev:${randomUUID()}`).digest("hex")
+    : createHash("sha256").update(`gov-rev:${organisationId}:${categoryId}:${amountNgn}:${reference}`).digest("hex");
+  if (reference !== null) {
+    const existing = Object.values(state.governmentRevenue).find((r) => r.idempotency_key === idemKey);
+    if (existing) return existing;
+  }
 
+  const account = ensureTreasuryAccount(org, date, now);
   const timestamp = new Date(now).toISOString();
+  account.balance_ngn += amountNgn;
+  account.total_credited_ngn += amountNgn;
+  account.updated_at = timestamp;
   const revenue: GovernmentRevenueRecord = {
     revenue_id: `gov-rev-${randomUUID()}`,
     organisation_id: organisationId,
     category_id: categoryId,
     amount_ngn: amountNgn,
     description: description.trim() || revCat.label,
-    source_reference: sourceReference,
+    source_reference: reference,
     received_at: timestamp,
     received_world_date: cloneDate(date),
     idempotency_key: idemKey,
+    account_id: account.account_id,
+    actor_character_id: null,
+    balance_after_ngn: account.balance_ngn,
   };
   state.governmentRevenue[revenue.revenue_id] = revenue;
   org.updated_at = timestamp;
 
   appendGovernmentEvent(state, organisationId, "revenue_recorded",
     `Revenue of ₦${amountNgn.toLocaleString("en-NG")} recorded (${revCat.label}).`, date, now,
-    { revenue_id: revenue.revenue_id, amount_ngn: amountNgn, category_id: categoryId });
+    { revenue_id: revenue.revenue_id, amount_ngn: amountNgn, category_id: categoryId, account_id: account.account_id,
+      balance_after_ngn: account.balance_ngn });
 
   return revenue;
 }
 
+/**
+ * Writes one expenditure and its debit. Callers must have validated the request (amount, budget, funds, authority).
+ * It is the only place a treasury balance is reduced by spending.
+ */
+function postExpenditure(
+  state: PersistentWorldState,
+  org: GovernmentOrganisationRecord,
+  input: {
+    budgetId: string | null;
+    categoryId: string;
+    amountNgn: number;
+    description: string;
+    projectId: string | null;
+    recipientReference: string | null;
+    actorCharacterId: string | null;
+    destinationKind: "character" | "business" | "organisation" | null;
+    destinationId: string | null;
+    idempotencyKey: string;
+    requestFingerprint: string | null;
+    categoryLabel: string;
+  },
+  date: CalendarDate,
+  now: number,
+): GovernmentExpenditureRecord {
+  const account = ensureTreasuryAccount(org, date, now);
+  const timestamp = new Date(now).toISOString();
+  account.balance_ngn -= input.amountNgn;
+  account.total_debited_ngn += input.amountNgn;
+  account.updated_at = timestamp;
+
+  const expenditure: GovernmentExpenditureRecord = {
+    expenditure_id: `gov-exp-${randomUUID()}`,
+    organisation_id: org.organisation_id,
+    budget_id: input.budgetId,
+    project_id: input.projectId,
+    category_id: input.categoryId,
+    amount_ngn: input.amountNgn,
+    description: input.description,
+    recipient_reference: input.recipientReference,
+    spent_at: timestamp,
+    spent_world_date: cloneDate(date),
+    idempotency_key: input.idempotencyKey,
+    account_id: account.account_id,
+    actor_character_id: input.actorCharacterId,
+    destination_kind: input.destinationKind,
+    destination_id: input.destinationId,
+    request_fingerprint: input.requestFingerprint,
+    balance_after_ngn: account.balance_ngn,
+  };
+  state.governmentExpenditure[expenditure.expenditure_id] = expenditure;
+
+  if (input.budgetId) {
+    const budget = state.governmentBudgets[input.budgetId];
+    if (budget) {
+      budget.spent_amount_ngn = budgetSpent(state, input.budgetId);
+      budget.updated_at = timestamp;
+      if (budget.status === "approved") budget.status = "active";
+    }
+  }
+  org.updated_at = timestamp;
+
+  appendGovernmentEvent(state, org.organisation_id, "expenditure_recorded",
+    `Expenditure of ₦${input.amountNgn.toLocaleString("en-NG")} recorded (${input.categoryLabel}).`, date, now,
+    { expenditure_id: expenditure.expenditure_id, amount_ngn: input.amountNgn, category_id: input.categoryId,
+      budget_id: input.budgetId, account_id: account.account_id, actor_character_id: input.actorCharacterId,
+      destination_kind: input.destinationKind, destination_id: input.destinationId,
+      balance_after_ngn: account.balance_ngn });
+  return expenditure;
+}
+
+/**
+ * Trusted expenditure path, with no actor and no route. It applies the same budget, funds, and organisation-scope
+ * checks as spendBudget, but it does not check office authority, because it has no actor. It is for system work only.
+ */
 export function recordGovernmentExpenditure(
   state: PersistentWorldState,
   organisationId: string,
@@ -389,59 +655,244 @@ export function recordGovernmentExpenditure(
 ): GovernmentExpenditureRecord {
   const org = state.governmentOrganisations[organisationId];
   if (!org) throw new Error("government_organisation_not_found");
-  if (amountNgn < catalog.rules.minimum_expenditure_amount_ngn || amountNgn > catalog.rules.maximum_expenditure_amount_ngn) {
+  if (org.status !== "active") throw new Error("government_organisation_inactive");
+  if (!Number.isSafeInteger(amountNgn) || amountNgn < catalog.rules.minimum_expenditure_amount_ngn || amountNgn > catalog.rules.maximum_expenditure_amount_ngn) {
     throw new Error("government_expenditure_amount_invalid");
   }
   const expCat = catalog.expenditure_categories.find((c) => c.id === categoryId);
   if (!expCat) throw new Error("government_expenditure_category_invalid");
 
-  // Validate budget availability
   if (budgetId) {
     const budget = state.governmentBudgets[budgetId];
     if (!budget) throw new Error("government_budget_not_found");
-    if (budget.organisation_id !== organisationId && budget.organisation_id !== org.parent_organisation_id) {
-      throw new Error("government_budget_wrong_organisation");
-    }
-    const available = getBudgetAvailable(state, budgetId);
-    if (available < amountNgn) throw new Error("government_insufficient_budget");
+    // Exact organisation only. A ministry may not spend from its parent's budget, and a parent may not spend from a
+    // ministry's budget, because neither implies authority over the other (Stage 31, jurisdiction rule).
+    if (budget.organisation_id !== organisationId) throw new Error("government_budget_wrong_organisation");
+    if (budget.status === "draft") throw new Error("government_budget_not_approved");
+    if (budget.status === "closed") throw new Error("government_budget_closed");
+    if (getBudgetAvailable(state, budgetId) < amountNgn) throw new Error("government_insufficient_budget");
   }
+  const funds = org.treasury_account?.balance_ngn ?? 0;
+  if (funds < amountNgn) throw new Error("treasury_insufficient_funds");
 
-  const idemKey = createHash("sha256").update(`gov-exp:${organisationId}:${categoryId}:${amountNgn}:${now}`).digest("hex");
-  const existing = Object.values(state.governmentExpenditure).find((e) => e.idempotency_key === idemKey);
-  if (existing) return existing;
+  return postExpenditure(state, org, {
+    budgetId, categoryId, amountNgn, description: description.trim() || expCat.label, projectId, recipientReference,
+    actorCharacterId: null, destinationKind: null, destinationId: null,
+    idempotencyKey: createHash("sha256").update(`gov-exp:${randomUUID()}`).digest("hex"),
+    requestFingerprint: null, categoryLabel: expCat.label,
+  }, date, now);
+}
+
+/**
+ * Approves a budget ceiling (budget_approve). The amount is absolute, so a retried request yields the same state.
+ * Approval needs the server-verified minimum age (authorizeOfficePermission). It is not allocation or spending.
+ */
+export function approveBudget(
+  state: PersistentWorldState,
+  actorCharacterId: string,
+  budgetId: string,
+  approvedAmountNgn: number,
+  date: CalendarDate,
+  now: number,
+  catalog: GovernmentCatalog = loadGovernmentCatalog(),
+): BudgetRecord {
+  const budget = state.governmentBudgets[budgetId];
+  if (!budget) throw new Error("government_budget_not_found");
+  const org = state.governmentOrganisations[budget.organisation_id];
+  if (!org) throw new Error("government_organisation_not_found");
+  // Authority is decided first, so a refused caller learns nothing about the budget's amounts.
+  const permission = authorizeOfficePermission(state, actorCharacterId, org.organisation_id, "budget_approve", date, catalog);
+  if (!permission.ok) throw new Error(permission.code);
+  if (org.status !== "active") throw new Error("government_organisation_inactive");
+  if (budget.status === "closed") throw new Error("government_budget_closed");
+  if (!Number.isSafeInteger(approvedAmountNgn) || approvedAmountNgn < 1 ||
+    approvedAmountNgn > catalog.rules.maximum_budget_amount_ngn) {
+    throw new Error("government_budget_amount_invalid");
+  }
+  if (approvedAmountNgn < budget.allocated_amount_ngn) throw new Error("treasury_approval_below_allocation");
 
   const timestamp = new Date(now).toISOString();
-  const expenditure: GovernmentExpenditureRecord = {
-    expenditure_id: `gov-exp-${randomUUID()}`,
-    organisation_id: organisationId,
-    budget_id: budgetId,
-    project_id: projectId,
-    category_id: categoryId,
-    amount_ngn: amountNgn,
-    description: description.trim() || expCat.label,
-    recipient_reference: recipientReference,
-    spent_at: timestamp,
-    spent_world_date: cloneDate(date),
-    idempotency_key: idemKey,
-  };
-  state.governmentExpenditure[expenditure.expenditure_id] = expenditure;
+  const previous = budget.approved_amount_ngn;
+  budget.approved_amount_ngn = approvedAmountNgn;
+  if (budget.status === "draft") budget.status = "approved";
+  budget.approved_at = timestamp;
+  budget.approved_world_date = cloneDate(date);
+  budget.approved_by_character_id = actorCharacterId;
+  budget.updated_at = timestamp;
+  org.updated_at = timestamp;
+  appendGovernmentEvent(state, org.organisation_id, "budget_approved",
+    `Budget ceiling set to ₦${approvedAmountNgn.toLocaleString("en-NG")}.`, date, now,
+    { budget_id: budgetId, previous_amount_ngn: previous, approved_amount_ngn: approvedAmountNgn,
+      actor_character_id: actorCharacterId });
+  return budget;
+}
 
-  // Update budget spent amount
-  if (budgetId) {
-    const budget = state.governmentBudgets[budgetId];
-    if (budget) {
-      budget.spent_amount_ngn = budgetSpent(state, budgetId);
-      budget.updated_at = timestamp;
-    }
+/**
+ * Allocates part of an approved budget to its purposes (budget_allocate). Allocation commits money within the
+ * ceiling but moves no cash. Retries with the same request ID and the same amount change nothing.
+ */
+export function allocateBudget(
+  state: PersistentWorldState,
+  actorCharacterId: string,
+  budgetId: string,
+  amountNgn: number,
+  requestId: string | undefined,
+  date: CalendarDate,
+  now: number,
+  catalog: GovernmentCatalog = loadGovernmentCatalog(),
+): { budget: BudgetRecord; replayed: boolean } {
+  if (!isRequestId(requestId)) throw new Error("treasury_request_id_required");
+  const budget = state.governmentBudgets[budgetId];
+  if (!budget) throw new Error("government_budget_not_found");
+  const org = state.governmentOrganisations[budget.organisation_id];
+  if (!org) throw new Error("government_organisation_not_found");
+  const permission = authorizeOfficePermission(state, actorCharacterId, org.organisation_id, "budget_allocate", date, catalog);
+  if (!permission.ok) throw new Error(permission.code);
+
+  const idemKey = createHash("sha256").update(`gov-alloc:${actorCharacterId}:${requestId}`).digest("hex");
+  const fingerprint = fingerprintOf([budgetId, amountNgn]);
+  const earlier = Object.values(state.governmentEvents).find(
+    (e) => e.type === "budget_allocated" && e.details.idempotency_key === idemKey,
+  );
+  if (earlier) {
+    if (earlier.details.request_fingerprint === fingerprint) return { budget, replayed: true };
+    throw new Error("treasury_idempotency_conflict");
   }
 
+  if (!Number.isSafeInteger(amountNgn) || amountNgn < 1 || amountNgn > catalog.rules.maximum_budget_amount_ngn) {
+    throw new Error("government_budget_amount_invalid");
+  }
+  if (org.status !== "active") throw new Error("government_organisation_inactive");
+  if (budget.status === "draft") throw new Error("government_budget_not_approved");
+  if (budget.status === "closed") throw new Error("government_budget_closed");
+  if (budget.allocated_amount_ngn + amountNgn > budget.approved_amount_ngn) throw new Error("government_budget_over_approval");
+
+  const timestamp = new Date(now).toISOString();
+  budget.allocated_amount_ngn += amountNgn;
+  budget.updated_at = timestamp;
   org.updated_at = timestamp;
+  appendGovernmentEvent(state, org.organisation_id, "budget_allocated",
+    `₦${amountNgn.toLocaleString("en-NG")} allocated within the approved budget.`, date, now,
+    { budget_id: budgetId, amount_ngn: amountNgn, allocated_total_ngn: budget.allocated_amount_ngn,
+      actor_character_id: actorCharacterId, idempotency_key: idemKey, request_fingerprint: fingerprint });
+  return { budget, replayed: false };
+}
 
-  appendGovernmentEvent(state, organisationId, "expenditure_recorded",
-    `Expenditure of ₦${amountNgn.toLocaleString("en-NG")} recorded (${expCat.label}).`, date, now,
-    { expenditure_id: expenditure.expenditure_id, amount_ngn: amountNgn, category_id: categoryId, budget_id: budgetId });
+/**
+ * Spends from an allocated budget to a destination, debiting the organisation's treasury account (budget_spend).
+ *
+ * Checks, in order, all before the first write:
+ *   1. a request ID (the idempotency key, scoped to the actor);
+ *   2. the actor's office authority over the budget's own organisation, with the budget_spend permission;
+ *   3. a retry of the same request returns the original expenditure (replayed), and a different payload with the
+ *      same request ID is refused;
+ *   4. amount, reason, organisation status, and budget status;
+ *   5. the destination is a real character, business, or organisation, and the actor has no direct interest in it;
+ *   6. enough allocated budget left, and enough money in the treasury account.
+ * The actor, the destination owner, and the organisation all come from server records. No request field grants authority.
+ */
+export function spendBudget(
+  state: PersistentWorldState,
+  actorCharacterId: string,
+  budgetId: string,
+  amountNgn: number,
+  destination: { readonly kind: string; readonly id: string },
+  reason: string,
+  requestId: string | undefined,
+  date: CalendarDate,
+  now: number,
+  catalog: GovernmentCatalog = loadGovernmentCatalog(),
+): { expenditure: GovernmentExpenditureRecord; replayed: boolean } {
+  if (!isRequestId(requestId)) throw new Error("treasury_request_id_required");
+  const budget = state.governmentBudgets[budgetId];
+  if (!budget) throw new Error("government_budget_not_found");
+  const org = state.governmentOrganisations[budget.organisation_id];
+  if (!org) throw new Error("government_organisation_not_found");
 
-  return expenditure;
+  const permission = authorizeOfficePermission(state, actorCharacterId, org.organisation_id, "budget_spend", date, catalog);
+  if (!permission.ok) throw new Error(permission.code);
+
+  const destinationKind = destination.kind as "character" | "business" | "organisation";
+  const destinationId = typeof destination.id === "string" ? destination.id : "";
+  const reasonText = typeof reason === "string" ? reason.trim() : "";
+  const fingerprint = fingerprintOf([budgetId, amountNgn, destinationKind, destinationId, reasonText]);
+  const idemKey = createHash("sha256").update(`gov-spend:${actorCharacterId}:${requestId}`).digest("hex");
+  const earlier = Object.values(state.governmentExpenditure).find((e) => e.idempotency_key === idemKey);
+  if (earlier) {
+    if (earlier.request_fingerprint === fingerprint) return { expenditure: earlier, replayed: true };
+    throw new Error("treasury_idempotency_conflict");
+  }
+
+  if (!Number.isSafeInteger(amountNgn) || amountNgn < catalog.rules.minimum_expenditure_amount_ngn ||
+    amountNgn > catalog.rules.maximum_expenditure_amount_ngn) {
+    throw new Error("government_expenditure_amount_invalid");
+  }
+  if (reasonText.length === 0 || reasonText.length > 200) throw new Error("treasury_reason_invalid");
+  if (org.status !== "active") throw new Error("government_organisation_inactive");
+  if (budget.status === "draft") throw new Error("government_budget_not_approved");
+  if (budget.status === "closed") throw new Error("government_budget_closed");
+
+  if (!(TREASURY_DESTINATION_KINDS as readonly string[]).includes(destinationKind) || destinationId.length === 0 ||
+    destinationId.length > 120) {
+    throw new Error("treasury_destination_invalid");
+  }
+  let destinationLabel = destinationId;
+  if (destinationKind === "character") {
+    const payee = Object.values(state.players).find((p) => p.character.character_id === destinationId);
+    if (!payee) throw new Error("treasury_destination_not_found");
+    if (destinationId === actorCharacterId) throw new Error("treasury_conflict_of_interest");
+    destinationLabel = payee.character.name;
+  } else if (destinationKind === "business") {
+    const business = state.businesses?.[destinationId];
+    if (!business) throw new Error("treasury_destination_not_found");
+    // A payment to a business the actor owns directly benefits the actor, so it is refused, not routed elsewhere.
+    if (business.owner_character_id === actorCharacterId) throw new Error("treasury_conflict_of_interest");
+    destinationLabel = business.name;
+  } else if (!state.governmentOrganisations[destinationId]) {
+    throw new Error("treasury_destination_not_found");
+  }
+
+  if (getBudgetAvailable(state, budgetId) < amountNgn) throw new Error("government_insufficient_budget");
+  const funds = org.treasury_account?.balance_ngn ?? 0;
+  if (funds < amountNgn) throw new Error("treasury_insufficient_funds");
+
+  const expenditure = postExpenditure(state, org, {
+    budgetId, categoryId: budget.category_id, amountNgn, description: reasonText, projectId: null,
+    recipientReference: destinationLabel, actorCharacterId, destinationKind, destinationId,
+    idempotencyKey: idemKey, requestFingerprint: fingerprint,
+    categoryLabel: catalog.budget_categories.find((c) => c.id === budget.category_id)?.label ?? budget.category_id,
+  }, date, now);
+  return { expenditure, replayed: false };
+}
+
+/**
+ * Read-only ledger check (Stage 31). For each treasury account: balance = credits - debits, the totals match the
+ * ledger rows, and no balance is negative. For each budget: 0 <= spent <= allocated <= approved. Returns the list of
+ * problems; an empty list means the ledger agrees with the balances.
+ */
+export function auditTreasuryLedger(state: PersistentWorldState): string[] {
+  const problems: string[] = [];
+  for (const organisation of Object.values(state.governmentOrganisations)) {
+    const account = organisation.treasury_account;
+    if (!account) continue;
+    const credits = Object.values(state.governmentRevenue)
+      .filter((r) => r.account_id === account.account_id).reduce((sum, r) => sum + r.amount_ngn, 0);
+    const debits = Object.values(state.governmentExpenditure)
+      .filter((e) => e.account_id === account.account_id).reduce((sum, e) => sum + e.amount_ngn, 0);
+    if (account.total_credited_ngn !== credits) problems.push(`${account.account_id}: credits do not match the ledger`);
+    if (account.total_debited_ngn !== debits) problems.push(`${account.account_id}: debits do not match the ledger`);
+    if (account.balance_ngn !== credits - debits) problems.push(`${account.account_id}: balance does not match the ledger`);
+    if (account.balance_ngn < 0) problems.push(`${account.account_id}: negative balance`);
+  }
+  for (const budget of Object.values(state.governmentBudgets)) {
+    const spent = budgetSpent(state, budget.budget_id);
+    if (budget.spent_amount_ngn !== spent) problems.push(`${budget.budget_id}: spent does not match the ledger`);
+    if (budget.spent_amount_ngn < 0 || budget.spent_amount_ngn > budget.allocated_amount_ngn) {
+      problems.push(`${budget.budget_id}: spent is outside the allocated amount`);
+    }
+    if (budget.allocated_amount_ngn > budget.approved_amount_ngn) problems.push(`${budget.budget_id}: allocated exceeds approved`);
+  }
+  return problems;
 }
 
 // ─── Projects ─────────────────────────────────────────────────────
@@ -1084,6 +1535,28 @@ export function governmentErrorMessage(code: string): string {
     government_funding_amount_invalid: "Funding amount must be at least 1 Naira.",
     government_announcement_title_invalid: "Announcement title must be 1–200 characters.",
     government_announcement_body_invalid: "Announcement body must be 1–5000 characters.",
+    government_office_placement_invalid: "This office does not fit its organisation and cannot be filled.",
+    government_permission_none: "Your office does not carry this permission.",
+    government_age_unknown: "Your age could not be verified for this action.",
+    treasury_approval_age_ineligible: "Budget approval requires the office holder to be at least 25 years old.",
+    treasury_approval_below_allocation: "The approved ceiling cannot be lower than the amount already allocated.",
+    treasury_request_id_required: "A request ID is required for this treasury action.",
+    treasury_idempotency_conflict: "This request ID was already used for a different treasury action.",
+    treasury_reason_invalid: "A reason of 1–200 characters is required.",
+    treasury_destination_invalid: "Invalid payment destination.",
+    treasury_destination_not_found: "Payment destination not found.",
+    treasury_conflict_of_interest: "You cannot direct public money to yourself or to a business you own.",
+    treasury_insufficient_funds: "The organisation's treasury does not hold enough money for this payment.",
+    government_budget_not_approved: "This budget has not been approved yet.",
+    government_budget_closed: "This budget is closed.",
+    government_budget_over_approval: "This allocation would exceed the approved budget.",
+    government_organisation_inactive: "This organisation is not active.",
+    office_level_mismatch: "This office does not match the level of its organisation.",
+    office_institution_incompatible: "This office does not belong to the institution of its organisation.",
+    office_scope_incompatible: "This office's scope does not cover its organisation.",
+    organisation_kind_unrecognised: "This organisation is not a recognised kind.",
+    organisation_missing: "The organisation for this office does not exist.",
+    office_definition_missing: "The office definition for this seat no longer exists.",
     government_action_invalid: "Invalid government action.",
     government_action_unknown: "Unknown government action.",
   };

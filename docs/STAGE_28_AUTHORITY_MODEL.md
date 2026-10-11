@@ -1,5 +1,10 @@
 # Stage 28 Authority Model (D-04)
 
+> **Stage 31 update.** The G-4, G-7, R-b, R-c, and R-f rows below have been partly decided and implemented. See
+> `docs/STAGE_31_TREASURY_AUTHORITY.md`. `approve_budget`, `allocate_budget`, and `spend_budget` are now open behind
+> server-side office authority. `record_revenue`, `record_expenditure`, `create_budget`, and every other write named
+> below remain suspended. Each row's status column shows the Stage 31 position where it changed.
+
 Status update (2026-10-11, authority mission): the rule-by-rule implementation and test map is in `docs/STAGE_29_REGIONAL_VISUAL_PROFILES_AUDIT.md` section 28. No rule below was changed by that work. Rows marked SUSPENDED stay suspended, because the owner decisions they depend on are still open.
 
 Status update (Stage 30, hybrid governance foundation): the rows below marked "Stage 30" are implemented in the trusted service layer and tested. None of them re-opens a player route. Every government and election write is still refused at the engine, so no row marked SUSPENDED is enabled. The stage record is `docs/STAGE_30_GOVERNMENT_ELECTION_AUTHORITY.md`.
@@ -20,10 +25,10 @@ Principles (apply to every family):
 | G-1 Initial officials | Seeded by server world initialisation only. No player route can create initial officials. | Seeding exists; initial seeding is not a player route. |
 | G-2 Who appoints | An office is filled by (a) certified election transfer (`transfer_office` flow, server-side, one per certified result), or (b) an appointing official whose office is named as the appointing authority for that office in the government definition. Platform-level appointment is not a player action. | `appoint` and `remove_official` SUSPENDED (see STAGE_28_GOVERNMENT_AUTHORIZATION.md). Rule (b) needs the appointing-office table, which is a DECISION. Stage 30: `appointOfficial` refuses a suspended office (`government_office_suspended`). Authority is granted only by an effective appointment (resolver `authorizeGovernmentActor`). |
 | G-3 Removal | Only the appointing office, or a certified election replacing the holder. | Suspended with G-2. Stage 30: an appointment ends at its term end (`appointment_ended`, idempotent). The holder loses authority at that point, and the resolver checks the term on every call, not only when the term is processed. A suspended office keeps its holder but confers no authority (`office_suspended`, reversible by `office_reinstated`). |
-| G-4 Budgets, revenue, expenditure | Only the holder of the office that owns the budget (its ministry or government level) may create or record against it. Spending must not exceed the approved amount. A refused request changes no treasury. | `create_budget`, `record_revenue`, `record_expenditure` SUSPENDED. Stage 30: no treasury change. The owning-office table is R-b (DECISION), and the budget age rule is R-f (DECISION). Stage 30 provides only the authority check that a future budget route would call. |
+| G-4 Budgets, revenue, expenditure | Only the holder of the office that owns the budget (its ministry or government level) may create or record against it. Spending must not exceed the approved amount. A refused request changes no treasury. | Stage 31: `approve_budget`, `allocate_budget`, `spend_budget` are OPEN, scoped to the exact organisation by `office_permissions` and the server's authority check. Spending is capped by the allocated budget and the treasury balance, and is idempotent by request ID. `record_revenue`, `record_expenditure`, and `create_budget` remain SUSPENDED (revenue has no funding source; `create_budget` is a trusted seeding path). The owning-office table is partly decided: president and minister (catalogue, pending owner confirmation). The budget age rule (R-f) applies to approval only, at 25. |
 | G-5 Projects | Proposed by any eligible citizen; approved and funded only by the owning office. A proposer cannot approve or fund their own project. | `create_project`, `update_project`, `fund_project` SUSPENDED. |
 | G-6 Announcements | Only the holder of a communications or executive office. | `publish_announcement` SUSPENDED. |
-| G-7 Public financial eligibility | An official holding a budget or fund authority must not hold a conflicting interest in the recipient (for example, an appointing official may not be the recipient). Checked server-side. | Not implemented. DECISION: definition of "conflicting interest". |
+| G-7 Public financial eligibility | An official holding a budget or fund authority must not hold a conflicting interest in the recipient (for example, an appointing official may not be the recipient). Checked server-side. | Stage 31: narrow rule implemented. A payment to the actor, or to a business the actor owns, is refused (`treasury_conflict_of_interest`). The broader definition of "conflicting interest" is still a DECISION. |
 | G-8 Reads | `view_federal`, `view_state`, `view_local`, `search_projects`, `announcements`, `my_appointments` remain open. | Open. |
 
 ## 2. Elections
@@ -83,11 +88,11 @@ Principles (apply to every family):
 | Rule | Question | Status after Stage 30 |
 |---|---|---|
 | R-a Who may appoint, and to which offices | Appointing authority per office | NOT DECIDED. Only the trusted appointment path fills offices. A suspended office cannot be filled. No appointing-office table exists. |
-| R-b Which offices control budgets, projects, and announcements | Owning-office table | NOT DECIDED. G-4 to G-6 stay SUSPENDED. |
-| R-c Hierarchy | May a federal office act for a ministry, state, or locality? | DEFAULT: exact organisation scope only. No hierarchy is assumed. Seed data places all 10 offices, including state and local definitions, in `gov:federal`, so those offices grant nothing (`office_level_mismatch`). No state or local organisation exists. |
+| R-b Which offices control budgets, projects, and announcements | Owning-office table | Stage 31: budgets, by catalogue `office_permissions` (president and minister, pending owner confirmation). Projects and announcements stay SUSPENDED. |
+| R-c Hierarchy | May a federal office act for a ministry, state, or locality? | DEFAULT: exact organisation scope only (kept). Stage 31: the seed places each office only where it reliably fits (president, vice-president, one minister per ministry, electoral commissioner). State and local offices are not seeded, because no state or local organisation exists. Legacy placements grant nothing. |
 | R-d Election authority | Who administers an election | NOT DECIDED. E-1 open. Stage 30 adds no electoral authority office. |
 | R-e Self-dealing | May a candidate approve or certify their own election? | DEFAULT, not an owner decision: no, under the adopted minimal rule E-2. Implemented in the service layer. The owner must confirm it. |
-| R-f Age for budgets | Minimum age for budget authority | NOT DECIDED. Office holders are 18+ by catalogue. No budget age rule exists. |
+| R-f Age for budgets | Minimum age for budget authority | Stage 31: 25 for budget APPROVAL only (`budget_approval_minimum_age_years`), from the mission rule. Not applied to allocation or spending. Owner confirmation needed. |
 
 ## Open decisions (need the user)
 
