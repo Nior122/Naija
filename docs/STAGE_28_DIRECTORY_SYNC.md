@@ -79,9 +79,9 @@ reported as failed, no directory sync performed) matches a failing directory `fs
 | State | Crash restart loads | Graceful restart (shutdown flush) loads |
 |---|---|---|
 | S-cap | previous world | not tested |
-| S0 | previous world; outage changes lost | live world if the flush succeeds; otherwise previous world |
+| S0 | previous world; outage changes lost | live world if the flush succeeds (tested, 3 phases); otherwise previous world |
 | S1 | previous world; outage changes lost | same as S0 |
-| S2 | **new world** (includes changes reported as failed) | live world (same as the new file) |
+| S2 | **new world** (includes changes reported as failed) | live world, same as the new file (tested) |
 | S2 then power loss | previous world **may** return; uncertain | — |
 | S3 | the successful save | the successful save |
 
@@ -112,7 +112,7 @@ Not guaranteed:
 
 ## 4. Engine-level fault-injection tests
 
-`services/world-api/test/directory-sync-states.test.mjs` (new, file backend, 3 tests, one per phase). Each test:
+`services/world-api/test/directory-sync-states.test.mjs` (new, file backend, 6 tests). Three test the crash-style restart (one per phase; each restores the failed-save bytes, because a stop would otherwise overwrite them). Three test a graceful stop with the disk working again (one per phase): shutdown writes the live world, and a restart loads it. Each crash-style test:
 
 1. Creates an owner and a second player online on separate sockets. Records the saved money of the owner.
 2. Waits until every write has committed (`quiet()`, using the fault-store counters). `session.resume` replies before its
@@ -128,7 +128,7 @@ Not guaranteed:
 7. Stops the server, restores the failed-save bytes (so the shutdown flush cannot overwrite them), and restarts from the file.
    Asserts the loaded money matches S0/S2, and that the owner's token still resumes.
 
-Results: 3/3 in each of four runs (`/tmp/s28/dirsync-2.log`, rc=0, and three repeat runs, each rc=0).
+Results: the three crash-style tests passed in each of four earlier runs (`/tmp/s28/dirsync-2.log`, rc=0, and three repeat runs). The graceful-stop tests were added after those runs. The file with all six tests: 6/6, rc=0 (`/tmp/s28/dirsync-3.log`).
 
 Existing store-level tests (G5, `test/file-save-durability.test.mjs`): normal save; failure before the temporary file (previous file
 identical); failure after sync (previous file identical; temporary removed); failure after rename (new file loads); next save

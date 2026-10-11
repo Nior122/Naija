@@ -160,3 +160,53 @@ for (const scenario of SCENARIOS) {
     }
   });
 }
+
+for (const scenario of SCENARIOS) {
+  test(`graceful stop after a failed save at ${scenario.phase}: with the disk working, shutdown writes the live world, and a restart loads it`, async () => {
+    const world = fileWorld();
+    const started = await startCreationServer({ store: world.store }, { identityBudget: budget });
+    let owner;
+    let other;
+    let restarted;
+    let startedStopped = false;
+    try {
+      owner = await openPeerFrom(started.websocketUrl, "127.0.0.1");
+      const ownerIdentity = await createIdentity(owner, "Owner");
+      const ownerId = ownerIdentity.playerId;
+      assert.equal((await resumeSession(owner, ownerIdentity.sessionToken)).type, "session.ready");
+      await quiet(world.store);
+      const baseline = moneyIn(world.store.state, ownerId);
+
+      other = await openPeerFrom(started.websocketUrl, "127.0.0.2");
+      const otherIdentity = await createIdentity(other, "Other");
+      assert.equal((await resumeSession(other, otherIdentity.sessionToken)).type, "session.ready");
+      await quiet(world.store);
+
+      world.store.state.players[ownerId].character.money = baseline + MARKER_CHANGE;
+      world.armed.phase = scenario.phase;
+      await other.close();
+      other = undefined;
+      const failure = await nextMatching(owner, (message) => message.type === "error" && message.code === "persistence_failed");
+      assert.equal(failure.code, "persistence_failed");
+      assert.equal(world.armed.phase, null, "the armed fault was used by the failing save");
+
+      // The disk is working again (the fault was one-shot). Stop the server: the shutdown flush writes the live world.
+      await owner.close();
+      owner = undefined;
+      await started.stop();
+      startedStopped = true;
+      assert.equal(moneyIn(savedState(world.file), ownerId), baseline + MARKER_CHANGE, "shutdown saved the live world");
+      assert.deepEqual(temporaryFiles(world.directory), [], "no temporary file is left behind");
+
+      const restartedStore = new WorldStore(world.file, Date.now());
+      restarted = await startCreationServer({ store: restartedStore }, { identityBudget: budget });
+      assert.equal(moneyIn(restartedStore.state, ownerId), baseline + MARKER_CHANGE, "the restart loads the shutdown-saved world");
+      assert.deepEqual(orphanProblems(savedState(world.file)), []);
+    } finally {
+      if (other) await other.close();
+      if (owner) await owner.close();
+      if (restarted) await restarted.stop();
+      if (!startedStopped) await started.stop().catch(() => {});
+    }
+  });
+}

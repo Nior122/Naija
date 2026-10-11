@@ -57,6 +57,18 @@ Tests: `persistence-failure-audit.test.mjs` ("G1: while saves are refused…"), 
 `persistence-failure-audit-postgres.test.mjs` ("G1: health() reports fail…"). The old characterization tests that
 asserted the gap were replaced, not loosened.
 
+**Known flake in the G1 readiness assertion (not fixed; cause identified, not reproduced).** The G1 test's last step
+asserts that `/health` is not 503 after a successful save. `/health` also runs a `memory` check (`src/monitoring.ts`,
+`checkMemory`), which reports `fail` when `heapUsed / heapTotal` is above 90%. That ratio depends on garbage-collection timing,
+not on the heap limit. In one of five full PostgreSQL runs (`/tmp/s28/final-test-pg.log`, 1019 pass, 1 fail, rc=1) the
+final assertion failed with `memory: fail, "Heap usage critical: 91.8%"`, and the `persistence` check was `pass`. Four later
+full PostgreSQL runs passed. Ten isolated G1 runs, six parallel G1 runs, and a 20-iteration probe (recovered-state heap
+48% to 71%) did not reproduce it. The health semantics were **not** changed to make the test pass. Options, for review: make the
+memory check use the heap limit (a health-semantics change, needs approval), or assert the `persistence` check directly in the
+test (a test change that narrows what it checks, needs approval). Until one is chosen, a clean full run is not claimed as
+proof that the flake is gone.
+
+
 Mutation check: in the built output, a failing save was forced to report `pass`. `persistence-recovery-signal.test.mjs`
 then failed 3 of 4 tests (the audit test was not re-run for this mutant).
 

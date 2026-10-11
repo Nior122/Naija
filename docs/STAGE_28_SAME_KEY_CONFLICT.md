@@ -85,22 +85,26 @@ until resolved": by the time the new identity is created, the earlier identity i
 no second identity exists at any point. The conservative alternative (refuse once more after a successful resolution) is a
 one-line change and is not made here.
 
-Other paths that resolve a pending key: any successful save of the live world (a different player's save, a tick, a
-disconnect). This is also tested.
+Other paths that resolve a pending key, without any client action: any successful save of the live world. Creating the
+pending identity sets the dirty flag, so the tick save removes it from the file within about one second (measured at
+965 ms on the file backend and 990 ms on PostgreSQL, `test/identity-pending-policy.test.mjs`). A different player's save
+does the same. A disconnect sets the dirty flag, so it is resolved by the next such save, not by its own save. A graceful
+shutdown also writes the live world, which removes the identity. These paths are tested, and see section 6a for what they mean.
 
 ## 4. Budget
 
 - A generic failed creation consumes no budget.
 - A conflict whose compensating save fails holds one per-IP slot while the key is unresolved. The slot is released when the
-  key resolves. It is not released by a restart, because restart drops the pending map.
+  key resolves. A restart resets the per-process per-IP counter (the existing limitation in section 8), so the slot is not held after a restart.
 - A rejected or refused request consumes nothing.
 - The global R4 count is derived from saved identities, so an unresolved identity in the saved file counts there too. It is
   removed when resolution removes it from the file.
 
 ## 5. Sessions and tokens
 
-- A pending identity was never given a token, so no token holder exists for it. The token hash that the saved file holds
-  for it is not valid for the player.
+- A pending identity was never given a token, so no token holder exists for it. The token is generated on the server and
+  sent only in a successful reply, so no client has it. The saved record holds only a SHA-256 hash of that token, which
+  nobody can present (`test/identity-pending-policy.test.mjs`, the token test).
 - A pending key never disconnects, rotates, or takes over another player's session. Tested in
   `session ownership: an unresolved conflict for one key does not disconnect, rotate, or take over another player's session`.
 - `resumeSession` on a token that is already online still returns `player_already_connected` and closes the new socket. No
@@ -112,10 +116,48 @@ This is the existing model, and it is why tests resume the owner explicitly befo
 
 ## 6. Restart (residual, reported)
 
-The pending map is in memory. A restart drops it. The identity that was in the saved file is then recovered by key through the
-existing recovery path (`recoverIdentity`), which issues a new token. This is the documented residual: the outcome after a
-restart is "recovered by key", not "refused". Changing this would need a persisted pending marker, which is a schema and
-persistence change and is not made here.
+The pending map is in memory. Its effect on a restart depends on how the process stops. Both cases are tested.
+
+- **Crash** (the saved file still holds the identity, because nothing wrote the live world after the conflict): the
+  restarted server recovers that identity by key through `recoverIdentity`, with the original `playerId`, and issues a new
+  token. Tested in `after a server restart the saved identity is the key's identity`.
+- **Graceful stop** (`shutdown()` writes the live world, which does not hold the identity): the saved file drops it, and
+  the key then gets a **new** identity after the restart. Tested as a CHARACTERIZATION in
+  `test/identity-pending-policy.test.mjs`.
+
+So a restart does not reliably give "refused" or "recovered by key". It gives whichever of the two the stop type produces.
+A persisted pending marker would be needed to make this uniform. That is a schema and persistence change and is not made here.
+
+## 6a. Open policy conflict (decision required before push)
+
+The approved requirement says the saved identity must be **preserved**, and that a retry must **not replace** it with a
+new identity. The approved requirement also says there must be **no automatic merge into live state** and **no broad write
+block**. In the current code these cannot all hold together:
+
+- Any successful save removes an unacknowledged identity from the file. That save is the tick (about one second after the
+  conflict), another player's save, or a graceful stop. None of them needs the client to retry.
+- Keeping the identity would mean either (a) merging it into live state at conflict time, which is the forbidden merge, or
+  (b) refusing every save while it is unresolved, which is a broad write block. A save that writes the file without the
+  identity while the live world does not hold it would need an overlay format, which is a persistence redesign.
+- So after the next successful save the identity is gone, and a retry creates a **different** identity. The current tests
+  pin that (`once persistence works...` asserts `created.playerId !== unresolvedId`). This conflicts with "avoid replacement".
+
+The options for the owner to choose from:
+
+- **A. Keep discard-by-next-save, and say so.** Amend the approved wording to: an unacknowledged identity is discarded by the
+  next successful save, and the retry creates a new identity. No duplicate exists in any write. Smallest change; the
+  replacement is documented, not hidden.
+- **B. Adopt on retry through a conflict-checked merge.** The retry merges the pending identity into live state only when
+  the merge is conflict-free, then recovers it by key. This needs the merge exception to be approved, and it does not cover
+  identities discarded by saves that happen before the retry (the tick and other players' saves). Those would still need
+  either (A) or an eager adoption, which is the forbidden merge.
+- **C. Overlay persistence.** Keep the unacknowledged identity in the saved file while the live world stays unchanged.
+  This matches the wording most closely, but it is a persistence and schema redesign, and it is not in scope for Stage 28.
+
+Until one option is chosen, the push is on HOLD. No code change has been made for this conflict.
+
+Test status of this section: the file and PostgreSQL characterization tests pass, and they pin the current behaviour, not
+the approved wording.
 
 ## 7. Tests
 
@@ -137,6 +179,12 @@ state, and budget counters. The file backend always runs; PostgreSQL runs only w
 - a conflict whose compensating save succeeds is rejected with no identity and consumes no budget
 - another player's successful save resolves the unresolved identity; the key then creates a normal identity
 - after a server restart the saved identity is the key's identity: recovery, with no second identity
+
+`test/identity-pending-policy.test.mjs` (file, plus PostgreSQL when configured; CHARACTERIZATION tests pin current behaviour):
+- the tick drops the unresolved identity within about a second with no client action, and releases its slot
+- a retry writes the live world first; no write ever holds two identities for the key
+- a graceful restart drops the unresolved identity from the file, so the key then gets a new identity
+- the pending reply carries no token, and the saved record holds only a hash
 
 `test/identity-budget.test.mjs`:
 - R4 budget: an unresolved merge conflict keeps the saved identity, which holds the per-IP budget until it is resolved
