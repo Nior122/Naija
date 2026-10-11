@@ -1047,6 +1047,11 @@ export class MilitaryService {
 
 export function militaryErrorMessage(code: string): string {
   const messages: Record<string, string> = {
+    military_enlistment_suspended: "Enlistment is suspended until military authority rules are in place.",
+    military_training_suspended: "Military training is suspended until military authority rules are in place.",
+    military_promotion_suspended: "Promotions are suspended until military authority rules are in place.",
+    military_appointment_suspended: "Command appointments are suspended until military authority rules are in place.",
+    military_assignment_suspended: "Assignments are suspended until military authority rules are in place.",
     military_branch_invalid: "Invalid service branch.",
     military_org_not_found: "Military organization not found.",
     military_org_cycle_detected: "Organizational cycle detected.",

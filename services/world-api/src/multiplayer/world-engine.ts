@@ -164,6 +164,7 @@ import {
   fileCase,
   getCase,
   getCharacterCases,
+  viewCaseForCharacter,
   submitEvidence,
   issueJudgment,
   payFine,
@@ -252,6 +253,80 @@ const GEOGRAPHIC_INTEREST_RADIUS_CHUNKS = 1;
 const GEOGRAPHIC_INTEREST_RADIUS_METERS = 1500;
 const MINUTES_PER_DAY = 1440;
 const STARTING_MONEY = 5000;
+/**
+ * TEMPORARY CONTAINMENT (Stage 28, government and election authorization).
+ *
+ * Player-initiated government and election WRITES are suspended until permanent authorization rules are defined.
+ * This is a server-side, deny-by-default gate: only the read actions listed here may run for players. Every other
+ * action name (known write, unlisted, unknown, or malformed) is refused with `government_writes_suspended` or
+ * `election_writes_suspended` before any payload is parsed, any state is read or changed, and before
+ * `markRequestProcessed` or `touchPlayer` run. Internal paths (world seeding at init and identity creation) do not
+ * go through this gate. Remove or narrow these sets only together with the permanent authorization rules.
+ */
+const GOVERNMENT_READ_ACTIONS: ReadonlySet<string> = new Set([
+  "view_federal",
+  "view_state",
+  "view_local",
+  "search_projects",
+  "announcements",
+  "my_appointments",
+]);
+const ELECTION_READ_ACTIONS: ReadonlySet<string> = new Set([
+  "list_parties",
+  "political_profile",
+  "list_elections",
+  "view_election",
+  "list_candidates",
+  "view_campaign",
+  "check_eligibility",
+  "audit_log",
+  "my_history",
+]);
+const GOVERNMENT_WRITES_SUSPENDED_CODE = "government_writes_suspended";
+const ELECTION_WRITES_SUSPENDED_CODE = "election_writes_suspended";
+
+/**
+ * TEMPORARY CONTAINMENT (Stage 28 hardening, slice 1: justice and financial routes).
+ *
+ * Player-initiated mutations listed here are refused before payload parsing, before any state is read or changed, and
+ * before `markRequestProcessed` or `touchPlayer` run. Each code is stable and documented in
+ * docs/STAGE_28_FOUNDATION_HARDENING.md.
+ *  - decide_appeal: appeal decisions need an authorized, independently assigned judge. No appointment or assignment
+ *    route exists, so decisions stay disabled (decision D-01).
+ *  - pay_fine: a payment must debit the payer and credit the treasury atomically. No economy linkage exists, so
+ *    payments stay disabled (decision D-02).
+ *  - create_criminal_record (crime family): a conviction must come from a final judgment. No such pathway exists, so
+ *    record creation stays disabled (decision D-03).
+ * Trusted service functions (judgment, appeal, fine, and record creation used by seeding and tests) are not affected.
+ */
+const JUSTICE_SUSPENDED_ACTIONS: ReadonlyMap<string, string> = new Map([
+  ["decide_appeal", "justice_appeal_decision_suspended"],
+  ["pay_fine", "justice_fine_payment_suspended"],
+]);
+const CRIME_SUSPENDED_ACTIONS: ReadonlyMap<string, string> = new Map([
+  ["create_criminal_record", "crime_record_creation_suspended"],
+  // Linking an incident to a case or police record is an authority act with no ownership or authority check yet.
+  ["link_to_justice", "crime_link_suspended"],
+  ["link_to_police", "crime_link_suspended"],
+]);
+/**
+ * D-04 containment. Military and police mutations take IDs from the request and do not yet check the actor's
+ * authority over the target (enlistment, training, promotion, command appointment, assignment, arrest). Each stays
+ * unavailable until the authority model in docs/STAGE_28_AUTHORITY_MODEL.md is implemented with negative tests.
+ * Reads (profiles, branch and course lists, rank history, arrest and incident lists) remain open.
+ */
+const MILITARY_SUSPENDED_ACTIONS: ReadonlyMap<string, string> = new Map([
+  ["enlist", "military_enlistment_suspended"],
+  ["enroll_training", "military_training_suspended"],
+  ["complete_training", "military_training_suspended"],
+  ["promote", "military_promotion_suspended"],
+  ["create_appointment", "military_appointment_suspended"],
+  ["assign", "military_assignment_suspended"],
+]);
+const POLICE_SUSPENDED_ACTIONS: ReadonlyMap<string, string> = new Map([
+  ["execute_arrest", "police_arrest_suspended"],
+]);
+
 const IDEMPOTENT_COMMANDS = new Set([
   "world.travel",
   "world.bus",
@@ -399,6 +474,13 @@ const IDENTITY_LIMITED_CODE = "identity_creation_limited";
 const IDENTITY_PENDING_CODE = "identity_creation_pending";
 const IDENTITY_PENDING_MESSAGE =
   "The identity for this key is not confirmed as saved yet. Requests with this key are refused until the world saves successfully.";
+/**
+ * Stable code (D-05): a creation key alone never transfers or re-issues an existing identity. Key-only recovery is
+ * refused before any token rotation, save, or budget use. The existing identity and any session are unchanged.
+ */
+const IDENTITY_RECOVERY_UNAVAILABLE_CODE = "identity_recovery_unavailable";
+const IDENTITY_RECOVERY_UNAVAILABLE_MESSAGE =
+  "Identity recovery is not available with a creation key alone. Your existing identity and session are unchanged.";
 
 /**
  * Why a new identity was refused by the R4 budget. A retry time is given only for the per-IP and global windows,
@@ -1093,7 +1175,10 @@ export class MultiplayerWorld {
     const existingPlayerId = this.playerByCreationKeyHash.get(creationKeyHash);
     const existingPlayer = existingPlayerId ? this.store.state.players[existingPlayerId] : undefined;
     if (existingPlayerId && existingPlayer) {
-      await this.recoverIdentity(context, existingPlayerId, existingPlayer, requestId);
+      // D-05: key-only recovery is refused until the verified, cancellable recovery procedure exists. This happens
+      // before any token rotation, save, or budget use, so the identity, its record, and its sessions are untouched.
+      // `recoverIdentity` is kept for that future procedure and is intentionally not reached from here.
+      this.sendError(context, IDENTITY_RECOVERY_UNAVAILABLE_CODE, IDENTITY_RECOVERY_UNAVAILABLE_MESSAGE, requestId);
       return;
     }
     // R4: a recovery above is not a new identity and never uses the budget. A refusal changes nothing.
@@ -2512,6 +2597,13 @@ export class MultiplayerWorld {
       return;
     }
     const action = message.action;
+    if (!GOVERNMENT_READ_ACTIONS.has(action)) {
+      this.send(context, appendOptionalRequestId({
+        type: "government.error", action, code: GOVERNMENT_WRITES_SUSPENDED_CODE,
+        message: governmentErrorMessage(GOVERNMENT_WRITES_SUSPENDED_CODE),
+      }, requestId));
+      return;
+    }
     const payload = isRecord(message.payload) ? message.payload : {};
     const state = this.store.state;
     const characterId = player.character.character_id;
@@ -2708,6 +2800,13 @@ export class MultiplayerWorld {
   ): Promise<void> {
     const data = message;
     const action = typeof data.action === "string" ? data.action : "";
+    if (!ELECTION_READ_ACTIONS.has(action)) {
+      this.send(context, appendOptionalRequestId({
+        type: "election.error", action, code: ELECTION_WRITES_SUSPENDED_CODE,
+        message: electionsErrorMessage(ELECTION_WRITES_SUSPENDED_CODE),
+      }, requestId));
+      return;
+    }
     const characterId = player.character.character_id;
     const date = this.store.state.worldClock.world_date;
     const now = this.now();
@@ -2989,6 +3088,14 @@ export class MultiplayerWorld {
       }, requestId));
       return;
     }
+    const suspendedCode = JUSTICE_SUSPENDED_ACTIONS.get(action);
+    if (suspendedCode) {
+      this.send(context, appendOptionalRequestId({
+        type: "justice.error", action, code: suspendedCode,
+        message: justiceErrorMessage(suspendedCode),
+      }, requestId));
+      return;
+    }
     const characterId = player.character.character_id;
     const date = this.store.state.worldClock.world_date;
     const now = this.now();
@@ -3084,8 +3191,8 @@ export class MultiplayerWorld {
         }
         case "view_case": {
           const caseId = requiredString("case_id", data.case_id);
-          const caseSnap = getCase(this.store.state, caseId);
-          if (!caseSnap) throw new Error("justice_case_not_found");
+          // Parties only: a non-party gets justice_case_not_found, the same as a missing case.
+          const caseSnap = viewCaseForCharacter(this.store.state, caseId, characterId);
           responseData.case = caseSnap;
           messageText = "Case loaded.";
           break;
@@ -3195,6 +3302,14 @@ export class MultiplayerWorld {
       }, requestId));
       return;
     }
+    const suspendedPoliceCode = POLICE_SUSPENDED_ACTIONS.get(action);
+    if (suspendedPoliceCode) {
+      this.send(context, appendOptionalRequestId({
+        type: "police.error", action, code: suspendedPoliceCode,
+        message: policeErrorMessage(suspendedPoliceCode),
+      }, requestId));
+      return;
+    }
 
     const characterId = player.character.character_id;
     const worldDate = this.store.state.worldClock.world_date;
@@ -3229,9 +3344,18 @@ export class MultiplayerWorld {
         case "apply_recruitment": {
           const stationId = typeof data.station_id === "string" ? data.station_id : "";
           if (!stationId) throw new Error("police_station_required");
-          const education = typeof data.education === "string" ? data.education : player.character.education_level;
+          // Education comes from the character's authoritative record only; a client-supplied value is ignored.
+          const education = player.character.education_level;
           const birthDate = player.character.date_of_birth ?? { year: worldDate.year - 20, month: 1, day: 1 };
-          const app = policeService.applyForRecruitment({ character_id: characterId, station_id: stationId, education, birth_date: birthDate }, worldDate);
+          let app: ReturnType<PoliceService["applyForRecruitment"]>;
+          try {
+            app = policeService.applyForRecruitment({ character_id: characterId, station_id: stationId, education, birth_date: birthDate }, worldDate);
+          } catch (error) {
+            // The service reports these refusals as descriptive messages; map them to the catalogued stable codes.
+            if (error instanceof Error && error.message.startsWith("Must be at least ")) throw new Error("police_age_ineligible");
+            if (error instanceof Error && error.message.startsWith("Minimum education requirement")) throw new Error("police_education_ineligible");
+            throw error;
+          }
           responseData.application = app;
           messageText = "Recruitment application submitted.";
           break;
@@ -3494,6 +3618,14 @@ export class MultiplayerWorld {
       return;
     }
 
+    const suspendedMilitaryCode = MILITARY_SUSPENDED_ACTIONS.get(action);
+    if (suspendedMilitaryCode) {
+      this.send(context, appendOptionalRequestId({
+        type: "military.error", action, code: suspendedMilitaryCode,
+        message: militaryErrorMessage(suspendedMilitaryCode),
+      }, requestId));
+      return;
+    }
     const characterId = player.character.character_id;
     const worldDate = this.store.state.worldClock.world_date;
     const militaryService = new MilitaryService(this.store.state, this.militaryCatalog);
@@ -3550,7 +3682,8 @@ export class MultiplayerWorld {
         case "apply_for_service": {
           const branch = typeof data.branch === "string" ? data.branch as ServiceBranchId : "" as ServiceBranchId;
           if (!branch) throw new Error("military_branch_invalid");
-          const education = typeof data.education === "string" ? data.education : player.character.education_level;
+          // Education comes from the character's authoritative record only; a client-supplied value is ignored.
+          const education = player.character.education_level;
           const birthDate = player.character.date_of_birth ?? { year: worldDate.year - 20, month: 1, day: 1 };
           const app = militaryService.applyForService({ character_id: characterId, branch, education, birth_date: birthDate }, worldDate);
           responseData.application = app;
@@ -3762,6 +3895,14 @@ export class MultiplayerWorld {
       this.send(context, appendOptionalRequestId({
         type: "crime.error", action: "", code: "crime_action_invalid",
         message: "Choose a supported crime action.",
+      }, requestId));
+      return;
+    }
+    const suspendedCrimeCode = CRIME_SUSPENDED_ACTIONS.get(action);
+    if (suspendedCrimeCode) {
+      this.send(context, appendOptionalRequestId({
+        type: "crime.error", action, code: suspendedCrimeCode,
+        message: crimeErrorMessage(suspendedCrimeCode),
       }, requestId));
       return;
     }

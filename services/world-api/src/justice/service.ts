@@ -843,6 +843,51 @@ export function getCase(state: PersistentWorldState, caseId: string): CaseSnapsh
   };
 }
 
+/**
+ * Party standing on a case, from authoritative server state only: the filing party, the respondent, or an active
+ * case-participant record for the character. Client-supplied fields are never consulted.
+ */
+export function isCaseParty(state: PersistentWorldState, caseId: string, characterId: string): boolean {
+  const caseRec = state.cases[caseId];
+  if (!caseRec) return false;
+  if (caseRec.filing_party_character_id === characterId || caseRec.respondent_character_id === characterId) return true;
+  return Object.values(state.caseParticipants).some(
+    (p) => p.case_id === caseId && p.character_id === characterId && p.status === "active",
+  );
+}
+
+/**
+ * Judicial standing on a case (D-01 / access policy item 2). True only when the character is listed on the case's own
+ * court, holds an active judge or magistrate appointment to that same court, and the court's assignment exists. All
+ * three facts come from authoritative server state; nothing client-supplied is read.
+ */
+export function isAssignedJudgeForCase(state: PersistentWorldState, caseId: string, characterId: string): boolean {
+  const caseRec = state.cases[caseId];
+  if (!caseRec) return false;
+  const court = state.courts[caseRec.court_id];
+  if (!court || !court.assigned_judge_ids.includes(characterId)) return false;
+  return Object.values(state.legalProfessionals ?? {}).some(
+    (pro) =>
+      pro.character_id === characterId &&
+      (pro.role === "judge" || pro.role === "magistrate") &&
+      pro.status === "active" &&
+      pro.court_id === caseRec.court_id,
+  );
+}
+
+/**
+ * Case view for a player request. Parties and assigned judges of the case's court may view it. Anyone else receives
+ * the same error as a missing case, so the response does not reveal whether a case ID exists.
+ */
+export function viewCaseForCharacter(state: PersistentWorldState, caseId: string, characterId: string): CaseSnapshot {
+  if (!isCaseParty(state, caseId, characterId) && !isAssignedJudgeForCase(state, caseId, characterId)) {
+    throw new Error("justice_case_not_found");
+  }
+  const snapshot = getCase(state, caseId);
+  if (!snapshot) throw new Error("justice_case_not_found");
+  return snapshot;
+}
+
 export function getCharacterCases(state: PersistentWorldState, characterId: string): CaseSnapshot[] {
   const participantCaseIds = new Set(Object.values(state.caseParticipants).filter((p) => p.character_id === characterId && p.status === "active").map((p) => p.case_id));
   const directCases = Object.values(state.cases).filter((c) => c.filing_party_character_id === characterId || c.respondent_character_id === characterId);
@@ -865,6 +910,11 @@ export function submitEvidence(
 ): EvidenceRecord {
   const caseRec = state.cases[caseId];
   if (!caseRec) throw new Error("justice_case_not_found");
+  // An assigned judge acting in that capacity never submits evidence (access policy item 3). Checked before party
+  // standing, so a judge who is also listed as a party is refused too: the judicial role is not a party role.
+  if (isAssignedJudgeForCase(state, caseId, submittedByCharacterId)) throw new Error("justice_judge_cannot_submit_evidence");
+  // Only a party to the case may submit evidence to it (filing party, respondent, or an active participant).
+  if (!isCaseParty(state, caseId, submittedByCharacterId)) throw new Error("justice_not_case_party");
 
   const evidenceCount = Object.values(state.evidence).filter((e) => e.case_id === caseId).length;
   if (evidenceCount >= catalog.rules.max_evidence_per_case) throw new Error("justice_evidence_limit_reached");
@@ -1314,6 +1364,10 @@ export function justiceErrorMessage(code: string): string {
     justice_appeal_not_eligible: "This judgment is not eligible for appeal.",
     justice_judgment_not_issuable: "Judgment is not in an issuable state.",
     justice_appeal_no_standing: "Character does not have standing to appeal this case.",
+    justice_not_case_party: "Only a party to this case can do that.",
+    justice_judge_cannot_submit_evidence: "An assigned judge cannot submit evidence to a case they are judging.",
+    justice_appeal_decision_suspended: "Appeal decisions are suspended until judicial appointments and assignments can be verified.",
+    justice_fine_payment_suspended: "Fine payments are suspended until they can be recorded atomically in the economy ledger.",
     justice_court_not_appellate: "Court does not have appellate jurisdiction.",
     justice_appeal_grounds_too_long: "Appeal grounds exceed maximum length.",
     justice_appeal_already_decided: "Appeal has already been decided.",

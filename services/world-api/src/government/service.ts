@@ -986,6 +986,7 @@ export function processGovernmentWorldDate(state: PersistentWorldState): number 
 
 export function governmentErrorMessage(code: string): string {
   const messages: Record<string, string> = {
+    government_writes_suspended: "Changes to government records are temporarily suspended while authorization rules are being implemented. Read-only government information is still available.",
     government_office_not_found: "Government office not found.",
     government_character_not_found: "Character not found.",
     government_character_deceased: "Deceased characters cannot hold government office.",

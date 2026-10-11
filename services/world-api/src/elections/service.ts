@@ -1436,6 +1436,7 @@ export function processElectionWorldDate(state: PersistentWorldState, _date: Cal
 
 export function electionsErrorMessage(code: string): string {
   const messages: Record<string, string> = {
+    election_writes_suspended: "Changes to elections and political records are temporarily suspended while authorization rules are being implemented. Read-only election information is still available.",
     elections_party_name_too_short: "Party name is too short.",
     elections_party_name_too_long: "Party name is too long.",
     elections_party_abbreviation_too_short: "Party abbreviation is too short.",

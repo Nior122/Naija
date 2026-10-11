@@ -220,15 +220,11 @@ func _handle_packet(text: String) -> void:
 		"error":
 			var code := str(message.get("code", "server_error"))
 			var description := str(message.get("message", "The server rejected the request."))
-			if (
-				code == "session_invalid"
-				and not _session_token.is_empty()
-				and not _fallback_create_sent
-			):
-				_session_token = ""
+			if code == "session_invalid" and not _session_token.is_empty():
+				# D-06: an invalid saved session is cleared, but the saved creation key is NOT used to create an
+				# identity again. Key-only recovery is refused by the server, so repeating identity.create could only
+				# fail or, in older servers, re-issue a session without proof of ownership. The player is told once.
 				_clear_saved_token()
-				_send_create_identity()
-				return
 			error_received.emit(code, description)
 		"_":
 			pass
