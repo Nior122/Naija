@@ -6,6 +6,8 @@ import { join } from "node:path";
 import { after, afterEach, beforeEach, test } from "node:test";
 import { DatabaseConnection, loadDatabaseConfigFromEnv } from "../dist/database/connection.js";
 import { openWorldPersistence } from "../dist/persistence/open.js";
+import { MigrationManager } from "../dist/database/migrations.js";
+import { MIGRATION_V2_DOWN_SQL } from "../dist/database/schema.js";
 
 /**
  * Stage 28: fail-closed readiness. A database that is unreachable or not migrated must stop startup. It must never
@@ -138,4 +140,58 @@ test("Live: a database with no migrations applied is not ready; the server does 
   const stateFile = join(dir, "unmigrated-no-file.json");
   await assert.rejects(openWorldPersistence({ stateFile, log: quiet }), /has not been migrated|schema is at version/);
   assert.equal(existsSync(stateFile), false, "an unmigrated database must not lead to the JSON file");
+});
+
+test("Live: a database one version behind is refused; the down-migration restores that schema, and the refusal changes nothing", live, async () => {
+  const name = `naija_unmigrated_test_${randomUUID().replace(/-/g, "").slice(0, 12)}`;
+  const admin = new DatabaseConnection(liveAdminConfig());
+  await admin.connect();
+  try {
+    createdDatabases.push(name);
+    await admin.query(`CREATE DATABASE ${name}`);
+  } finally {
+    await admin.disconnect();
+  }
+  const url = urlWithDatabase(DATABASE_URL, name);
+
+  // Build the latest schema, then step back one version with the real down-migration and remove its record.
+  process.env.NAIJA_ENV = "test";
+  process.env.DATABASE_URL = url;
+  const setup = new DatabaseConnection(loadDatabaseConfigFromEnv());
+  await setup.connect();
+  try {
+    const manager = new MigrationManager(setup);
+    await manager.migrate();
+    assert.equal(await manager.getCurrentVersion(), 2, "the current schema is version 2");
+    await setup.query(MIGRATION_V2_DOWN_SQL);
+    await setup.query("DELETE FROM schema_migrations WHERE version = 2");
+    assert.equal(await manager.getCurrentVersion(), 1, "the down-migration leaves the schema at version 1");
+  } finally {
+    await setup.disconnect();
+  }
+
+  // Startup refuses the outdated schema and writes no file.
+  process.env.PERSISTENCE_BACKEND = "postgres";
+  const stateFile = join(dir, "outdated-no-file.json");
+  await assert.rejects(openWorldPersistence({ stateFile, log: quiet }), /schema is at version 1; version 2 is required/);
+  assert.equal(existsSync(stateFile), false, "an outdated database must not lead to the JSON file");
+
+  // The refusal changed nothing: the schema is still version 1.
+  const check = new DatabaseConnection(loadDatabaseConfigFromEnv());
+  await check.connect();
+  try {
+    assert.equal(await new MigrationManager(check).getCurrentVersion(), 1, "the refused startup left the schema at version 1");
+  } finally {
+    await check.disconnect();
+  }
+
+  // The upgrade path: migrating again brings the schema to version 2.
+  const upgrade = new DatabaseConnection(loadDatabaseConfigFromEnv());
+  await upgrade.connect();
+  try {
+    await new MigrationManager(upgrade).migrate();
+    assert.equal(await new MigrationManager(upgrade).getCurrentVersion(), 2, "migrating again restores version 2");
+  } finally {
+    await upgrade.disconnect();
+  }
 });
