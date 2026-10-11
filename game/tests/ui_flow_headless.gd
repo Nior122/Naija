@@ -138,7 +138,7 @@ func _activate(button: Button) -> void:
 
 func _press_toggle_key() -> void:
 	# Sends the key that the project binds to toggle_3d_mode, read from the InputMap at runtime.
-	# The project binds this action to a key that is not necessarily F3 (see the report).
+	# project.godot binds toggle_3d_mode to F3 (physical keycode 4194334). This reads the binding, not a fixed key.
 	var bound: InputEventKey = InputMap.action_get_events("toggle_3d_mode")[0] as InputEventKey
 	var down: InputEventKey = bound.duplicate() as InputEventKey
 	down.pressed = true
@@ -303,6 +303,14 @@ func _run() -> void:
 	_check(load_button != null, "Save modal offers 'Load saved progress' when a save exists")
 	if load_button != null:
 		_activate(load_button)
+	await _frames(3)
+	# In-game Load asks first. Nothing may load until the confirm button is activated.
+	var confirm_load := _find_button(_main, "Load and discard progress")
+	var cancel_load := _find_button(_main, "Cancel")
+	_check(confirm_load != null and cancel_load != null and proto.ui.is_modal_open(), "In-game Load opens a confirmation with confirm and cancel buttons")
+	_check(proto.character == character_ref and proto.character.money == UNSAVED_MONEY, "Before confirmation, the live session and its unsaved money are unchanged")
+	if confirm_load != null:
+		_activate(confirm_load)
 	await _frames(4)
 	var loaded_character = proto.character
 	_observe("after Load: money=%d (unsaved was %d, saved was %d); same object as before=%s" % [loaded_character.money, UNSAVED_MONEY, SAVED_MONEY, loaded_character == character_ref])

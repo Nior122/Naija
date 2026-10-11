@@ -960,14 +960,35 @@ func show_save_menu(has_save: bool) -> void:
 	save_button.pressed.connect(func(): save_requested.emit())
 	card.add_child(save_button)
 	if has_save:
+		# This menu only exists during play, so Load here always asks first (see show_load_confirmation).
 		var load_button := _button("Load saved progress", Vector2(250.0, 42.0))
-		load_button.pressed.connect(func(): load_requested.emit())
+		load_button.pressed.connect(show_load_confirmation)
 		card.add_child(load_button)
 	_add_modal_text(
 		card,
 		"The clock pauses when the game is closed. This is a local prototype save, not an online account."
 	)
 	_add_modal_close(card)
+
+
+# In-game Load confirmation. Policy, not dirty-state tracking: the session has no reliable record of
+# unsaved changes (the clock runs continuously and autosaves are timed), so every in-game Load asks first.
+# Confirm closes this modal and emits load_requested, which prototype_game.gd routes to _continue_game (the one load path).
+# Cancel closes the modal and emits nothing.
+func show_load_confirmation() -> void:
+	var card := _open_modal(
+		"Replace current session?",
+		"Loading replaces your current session with the last saved progress. Unsaved progress is discarded."
+	)
+	var confirm_button := _button("Load and discard progress", Vector2(260.0, 42.0))
+	confirm_button.pressed.connect(_on_load_confirmed)
+	card.add_child(confirm_button)
+	_add_modal_close(card, "Cancel")
+
+
+func _on_load_confirmed() -> void:
+	_close_modal()
+	load_requested.emit()
 
 
 func show_save_result(message: String, success: bool) -> void:

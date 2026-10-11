@@ -489,25 +489,58 @@ func _send_chat_message(message_text: String) -> void:
 	multiplayer_client.send_command("chat.send", {"text": message_text})
 
 
+# Shared by Continue (startup) and Load (in-game, after confirmation). Everything is validated and built
+# into local objects first. The active session (character, clock, online connection) is released only at
+# the commit point, so a failure leaves the current session usable and unchanged.
 func _continue_game() -> void:
-	multiplayer_client.disconnect_from_world()
-	_online_mode = false
-	player.server_controlled = false
 	var result: Dictionary = SaveServiceScript.load_state()
 	if not bool(result.get("ok", false)):
 		ui.show_notice(
 			"Saved life unavailable",
-			str(result.get("error", "The saved game could not be loaded."))
+			str(result.get("error", "The saved game could not be loaded.")) + _unchanged_session_note()
 		)
 		return
-	clock = WorldClockScript.new()
-	clock.load_dictionary(result["clock"])
-	character = CharacterStateScript.new()
-	character.load_dictionary(result["character"], clock.calendar_date())
-	if not WorldMapScript.is_valid_location(character.current_location):
-		character.set_location("home", Vector2(720.0, 540.0))
+	var saved_character: Variant = result.get("character", {})
+	var saved_clock: Variant = result.get("clock", {})
+	if not _is_restorable_save(saved_character, saved_clock):
+		ui.show_notice(
+			"Saved life unavailable",
+			"The save file is missing the character name or clock fields needed to restore a session."
+			+ _unchanged_session_note()
+		)
+		return
+	var loaded_clock := WorldClockScript.new()
+	loaded_clock.load_dictionary(saved_clock)
+	var loaded_character := CharacterStateScript.new()
+	loaded_character.load_dictionary(saved_character, loaded_clock.calendar_date())
+	if not WorldMapScript.is_valid_location(loaded_character.current_location):
+		loaded_character.set_location("home", Vector2(720.0, 540.0))
+	# Commit point: the save has been read and validated, so the active session can be released.
+	multiplayer_client.disconnect_from_world()
+	_online_mode = false
+	player.server_controlled = false
+	clock = loaded_clock
+	character = loaded_character
 	_begin_play_session()
 	ui.notify("Welcome back, %s. Your local progress was loaded." % character.name)
+
+
+# A save is restorable only if it has a non-empty character name and the clock day and minute.
+# The character and clock loaders fill missing fields with defaults, so without this check an empty
+# but well-formed JSON object would silently replace the session with a default character.
+static func _is_restorable_save(character_data: Variant, clock_data: Variant) -> bool:
+	if not character_data is Dictionary or not clock_data is Dictionary:
+		return false
+	var character_fields: Dictionary = character_data
+	var clock_fields: Dictionary = clock_data
+	var character_name: Variant = character_fields.get("name", "")
+	if not character_name is String or (character_name as String).strip_edges().is_empty():
+		return false
+	return clock_fields.has("day") and clock_fields.has("minute_of_day")
+
+
+func _unchanged_session_note() -> String:
+	return " Your current session was not changed." if playing else ""
 
 
 func _begin_play_session() -> void:

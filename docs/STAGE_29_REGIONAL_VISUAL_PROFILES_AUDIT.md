@@ -1141,7 +1141,7 @@ does not click the buttons.
 
 ### 18.9 Gaps and limits (stay open)
 
-- The toggle was driven through the `toggle_3d_mode` action (`InputEventAction`) in `return_path.gd`. No rendered window or real keyboard was used. The bound key is F11, not F3 (19.7).
+- The toggle was driven through the `toggle_3d_mode` action (`InputEventAction`) in `return_path.gd`. No rendered window or real keyboard was used. The bound key was F11, not F3 at the time (19.7). It is now F3 (section 20).
 - No visual inspection of the 3D world or the HUD after return.
 - The Continue and Load buttons were not clicked. The handler they share was called directly.
 - The 3D world does not write character or economy data back. Its shared state carries only `region_id`, `time_of_day`,
@@ -1220,7 +1220,7 @@ process then aborts with SIGABRT, exit 134. Observed values:
 | Load | HUD "Save / Load" then "Load saved progress" | Money 1234 (the saved value). Unsaved 999 discarded. The character is a new object. Name restored. No creation |
 | Continue | startup "Continue saved life" after a fresh main scene | Play starts. Money 1234. Name Ayo. No creation |
 
-The bound key is **F11** (`project.godot`, `physical_keycode` 4194342). See 19.7.
+At the time of this validation the bound key was **F11** (`project.godot`, `physical_keycode` 4194342). See 19.7. It is now F3 (section 20).
 
 ### 19.5 Rendered checks: status
 
@@ -1246,13 +1246,13 @@ The bound key is **F11** (`project.godot`, `physical_keycode` 4194342). See 19.7
 
 ### 19.7 Input binding discrepancy (new finding, not changed)
 
-- `project.godot` binds `toggle_3d_mode` to F11 (`physical_keycode` 4194342, confirmed by `OS.get_keycode_string`). F3 is
+- **Superseded by section 20:** the key is now F3. At the time of this finding, `project.godot` bound `toggle_3d_mode` to F11 (`physical_keycode` 4194342, confirmed by `OS.get_keycode_string`). F3 is
   4194334. The binding was introduced in commit `c50356d` (Stage 24).
 - The code comment in `scene_switcher.gd` (line 33) says "Press F3". The Stage 23, 24, and 25 docs and
   `ADVANCED_3D_WORLD_ARCHITECTURE.md` say F3. The task brief says F3.
 - Which key is intended is an owner decision. The binding was not changed, because a change would alter production input.
   The headless UI test reads the bound key at runtime, so it follows whichever key is chosen.
-- Sections 15 to 18 use "F3" for the bound key in several places. That is inaccurate. The bound key is F11. Those sections are kept as history, and this note corrects them.
+- Sections 15 to 18 use "F3" for the bound key in several places. At the time that was inaccurate (the bound key was F11). After section 20 the bound key is F3, so those references are accurate again. This note is kept as history.
 
 ### 19.8 Continue and Load: distinct controls, one handler
 
@@ -1292,7 +1292,7 @@ separately recorded and are not resolved here.
 
 ### 19.10 Issues and limitations found in this validation
 
-1. The bound key is F11, not F3 (19.7). Owner decision.
+1. The bound key was F11, not F3 (19.7). Resolved in section 20: the key is now F3, per the owner's directive.
 2. Load during play discards unsaved progress (19.8). Owner confirmation.
 3. Pushed mouse events never reach any `Button` in this headless build (19.2). Mouse-only UI paths are untested.
 4. `return_path.gd` has no marker for a hard engine crash. `ui_flow_headless.gd` writes one (a marker when no save existed,
@@ -1311,3 +1311,127 @@ separately recorded and are not resolved here.
   two controls that share one handler (19.8).
 - Performance monitor, rendered measurement: **blocked** (19.6).
 - Stage 29 OPEN. Stage 28 OPEN. Production NOT READY. F9, F10, F11, F13b, and the README gap keep their status.
+
+## 20. World-switch key and in-game Load safety (2026-10-11)
+
+Evidence labels: **headless** means Godot `--headless` with simulated input. Nothing here was rendered. **Static** means grep or file reading. The engine is the custom build `4.7.2.stable.custom_build.ed1daf0bf` (checked with `--version`, exit 0), not the official release.
+
+### 20.1 Result
+
+- Overall: **CONTROL_AND_LOAD_SAFETY_COMPLETE** (headless and static scope only). The rendered gap in 20.10 remains.
+- Stage 29 remains **OPEN**. Stage 28 remains **OPEN**. Production remains **NOT READY**.
+
+### 20.2 Start state
+
+- Branch `arena/00cdea0e-naija`. HEAD and `origin/arena/00cdea0e-naija` were both `03e6611`, with 0 ahead and 0 behind. The tree was clean and there was no stash.
+- The user data folder held `logs`, `naija-multiplayer.cfg`, and `objectdb_snapshots`. No `naija-stage1-save.json` existed. No save file was created, overwritten, or deleted by this section's work. Every test run restored that state.
+
+### 20.3 Configured key and conflict check
+
+- Before: `toggle_3d_mode` was bound to F11 (`physical_keycode` 4194342), in `game/project.godot`.
+- Conflict check, **headless** (`InputMap.get_actions()` and `action_get_events()`): 92 actions in the project InputMap, read by a probe run without the scene. The test repeats the scan after the scene starts, which adds the runtime bindings. F3 (4194334) is bound to no action other than `toggle_3d_mode`. Before the change, F11 was bound only to `toggle_3d_mode`. The probe covers engine `ui_*` defaults. The test scan also covers the actions that `prototype_game.gd` binds at runtime.
+- **Static**: no game script binds F3 or F11, other than the `scene_switcher.gd:33` comment ("Press F3"). The README does not mention the toggle key, so it has no reference to correct.
+- Not verified: Godot's own editor shortcuts and any engine-internal key handling that `InputMap` does not list. An exported game does not use the editor's shortcuts.
+- **Change**: `physical_keycode` 4194342 becomes 4194334 in `game/project.godot`. The action name and the switch implementation (`scene_switcher.gd`) are unchanged.
+- No F11 alias was kept. No repository reference needed one.
+- After the change, the **headless** runtime InputMap reads `toggle_3d_mode` as physical F3. The conflict scan finds no F11 binding.
+- Scoped reference updates: the `scene_switcher.gd` comment already said F3, so it is now accurate. `ADVANCED_3D_WORLD_ARCHITECTURE.md`, `STAGE_24_MULTIPLAYER_INTEGRATION_PLAN.md`, and `STAGE_25_PLATFORM_AUDIT.md` already say F3, so they are unchanged and now accurate. Sections 18.9, 19.4, 19.7, and 19.10 were marked as superseded by this section. Their historical statements are kept.
+- The test `ui_flow_headless.gd` still reads the bound key from the InputMap. Its comment now names F3, and the value is read at runtime rather than hard-coded.
+
+### 20.4 Continue and Load: behaviour before this change
+
+- **Continue** (start screen, `continue_requested`) and **Load** (in-game Save / Load menu, `load_requested`) both called `_continue_game` directly.
+- No confirmation existed. A Load during play replaced the session at once.
+- `_continue_game` released the multiplayer connection and cleared `_online_mode` **before** it read the save file. If the read then failed, the session had already been torn down.
+- It replaced `clock` before it loaded the character. A failure part-way through left a partly replaced session.
+- A save whose `character` key was missing passed the `save_service.gd` check. The check used a `{}` default, and `{} is Dictionary` is true. The direct lookup then raised a runtime error (`save_service.gd:47`). This was observed in the first run of the new test, before the fix.
+- A well-formed JSON `character: {}` would have replaced the session with defaults, because the character loader fills missing fields with defaults.
+
+### 20.5 Dirty-state reliability (static reading, plus runtime observation)
+
+- No dirty-state tracking exists. `_save_game` writes the JSON with no revision counter or fingerprint.
+- `character.updated_at` is rewritten by every save (`touch()`), so it is not a change signal.
+- The clock advances continuously while the session is playing (about 0.65 s real time per game minute, from `life_calendar`). An exact comparison of the live state against the last save would therefore report a difference almost all the time during play.
+- Autosaves happen on each 15-game-minute boundary, and on several gameplay actions. The gap between the last save and a Load is therefore variable and not measurable from the saved file.
+- Money alone is not used as a dirty-state test.
+- **Conclusion: no reliable dirty-state signal exists.** The confirmation policy in 20.6 is a protective policy. It is not dirty-state detection.
+
+### 20.6 Confirmation policy (in-game Load)
+
+- Continue on the start screen loads the save with **no** dialog. This was confirmed at runtime (20.8).
+- An in-game Load always asks first, because the save menu only exists during play. The protective policy applies to every in-game Load, whether or not anything changed.
+- The dialog is titled "Replace current session?". Its text says: "Loading replaces your current session with the last saved progress. Unsaved progress is discarded." Its buttons are "Load and discard progress" (confirm) and "Cancel".
+- **Cancel** closes the modal and emits nothing. The live character, clock, and unsaved values are unchanged.
+- **Confirm** closes the modal, then emits the existing `load_requested` signal. That signal goes to `_continue_game`, the one authoritative load path. No second load path was added.
+- The "Load saved progress" button appears only when a save file exists.
+- The modal reuses the existing `_open_modal` and `_close_modal` pattern. Movement is disabled while the modal is open, and restored when it closes (`_on_modal_changed`). This was checked at runtime, headless.
+
+### 20.7 Failure safety
+
+- `_continue_game` now validates the save **before** it releases the active session:
+  1. `SaveService.load_state` checks JSON, the version, and that `character` and `clock` are dictionaries. The defaults are now `null`, so a missing key fails.
+  2. `_is_restorable_save` requires a non-empty character `name`, and a clock with `day` and `minute_of_day`. This stops an empty but well-formed object from replacing the session with defaults.
+  3. The new character and clock are built into **local** variables.
+  4. **Commit point:** only then does it disconnect the multiplayer session, clear `_online_mode`, replace `clock` and `character`, and start play. Nothing is replaced before this point.
+- On failure, a notice "Saved life unavailable" is shown. While a session is active, it adds "Your current session was not changed." The session objects are not touched.
+- **Save-format impact:** none. The save format, the version, and the write path are unchanged. Only the read-side check changed.
+- **Not runtime-tested:** the disconnect at the commit point, on an active **online** session. The sandbox has no multiplayer server. That ordering change is code-reviewed only (static).
+
+### 20.8 Tests
+
+- **New**: `game/tests/load_confirmation_headless.gd`, 80 checks, exit 0. **Headless, simulated input.** Buttons are activated by focus and `ui_accept`, as in `ui_flow_headless.gd`. Physical F3 and F11 events are sent to the unhandled-input path. No mouse input was used.
+- **Covers**: the binding, read from `ProjectSettings` and from the runtime InputMap. The F3 and F11 conflict scans, before and after the scene starts. Physical F11 does not switch. Physical F3 switches to 3D and back. Continue restores the save and opens no dialog. In-game Load opens the confirmation and pauses movement. Cancel keeps the same character and clock objects, with unsaved money, geography and life history. Repeated Load and Cancel cycles keep the signal-connection counts, the input-binding count, the 2D child count, and the node count unchanged. Confirm creates one new character and clock, restores the saved values, and discards the unsaved life event. Six failure cases each name the check that rejects them, and each leaves the session unchanged. The session stays usable afterwards: the HUD opens, F3 toggles, and a manual save writes a loadable file. With no save file, the Load option is not offered.
+- **Test isolation**: the test backs up `user://naija-stage1-save.json` under its own backup name, or writes a marker when no save existed. It refuses to run while its own backup or marker exists. It freezes the game clock (test-only), so an autosave cannot change the values under test. A watchdog restores the save file.
+- **Modified**: `game/tests/ui_flow_headless.gd`, 54 checks, exit 0 (was 52). Step 8 now passes through the confirmation. It asserts that the live session is unchanged before confirm, and that confirm is required. No existing assertion was relaxed.
+- **Mutation checks** (scratch copy outside the repository, each restored and verified): F11 restored as the binding gave 31 failing checks. Bypassing the confirmation gave 7 failing checks. Removing the empty-character guard gave 13 failing checks. The tests are sensitive to each protection they cover.
+- **Static checks**: the `check-only` sweep covers all 41 GDScript files, 0 non-zero, including the new test. `git diff --check` is clean.
+
+### 20.9 Regression results (exit codes are real)
+
+| Check | Before (03e6611) | After (this change) |
+|---|---|---|
+| `return_path` | 46/46, exit 0 | 46/46, exit 0 |
+| `ui_flow_headless` | 52/52, exit 0 | 54/54, exit 0 (step 8 extended) |
+| `load_confirmation_headless` (new) | not present | 80/80, exit 0 |
+| `regional_handoff` | 41/41, exit 0 | 41/41, exit 0 |
+| `regional_visual_profiles` | 43/43, exit 0 | 43/43, exit 0 |
+| `performance_metrics` | 11/11, exit 0 | 11/11, exit 0 |
+| `player_movement`, `persistence_notice`, `session_policy` | exit 0 | exit 0 |
+| main scene `--quit` | exit 0 | exit 0 |
+| `check-only` sweep | 40 files, 0 non-zero | 41 files, 0 non-zero |
+| `domain_smoke` | 4 failing (run: 4 of 93) | 4 failing (run: 4 of 91) |
+| `save_restart --read` | exit 1 (2 error lines) | exit 1 (2 error lines) |
+| `npm test` (static) | exit 0; 1074 total, 1037 pass, 0 fail, 37 skipped | exit 0; same counts |
+| `npm run lint` (static) | exit 1; 51 errors | exit 1; 51 errors, same files |
+| `git diff --check` | clean | clean |
+
+- The `domain_smoke` denominator changed between runs at the same code (observed 91, 92, and 93 across earlier logs). The failing count was 4 in every run. Its failing check names are not printed, so I did not verify them one by one. I did not change `domain_smoke`.
+
+### 20.10 Headless limitation and rendered gap
+
+- **Not verified** (rendered or real-input): the confirmation dialog's appearance and layout. Button sizes, text wrapping, and clicks. Mouse interaction (pushed mouse events do not reach Buttons in this headless build, see 19.2). A real keyboard pressing F3 in a window. Perceived timing of the switch or the Load. Whether the modal visually blocks the world.
+- **Headless evidence is**: the InputMap read, physical key events through the unhandled-input path, UI activation by focus and `ui_accept`, and the node and object state after each step.
+- The engine binary is a custom build with `headless` as its only display driver. Rendered checks remain blocked (19.5).
+
+### 20.11 Pre-existing issues found, not fixed (out of scope)
+
+- `domain_smoke`: 4 failing checks. The denominator varies between runs (20.9). Unchanged.
+- `save_restart --read`: exit 1 after a matched write. Unchanged.
+- `toggle_first_person` (`camera_3d_controller.gd:46`): not defined in `project.godot` or at runtime. It logs "InputMap action ... doesn't exist" during 3D runs. This is the same class as `jump`. Not fixed.
+- `jump` (`character_3d.gd:48`): undefined. Not fixed.
+- `world_3d.tscn` `load_steps=6` mismatch: unchanged.
+- `load_dictionary` overwrites a supplied `life_history` when the DOB is invalid: unchanged.
+- **Code-reading observation, not verified at runtime**: `scene_switcher.gd` toggles the key without checking whether a 2D modal is open. A toggle during an open modal may therefore switch modes while the modal is shown. Not changed here.
+- **Test risk**: `ui_flow_headless.gd` does not freeze the clock. An autosave during its run could change a saved value. It has passed on every run so far, but it is not frozen the way the new test is. Not changed here.
+
+### 20.12 Scope protection
+
+- Not changed: the region catalog, presets, the 32-region mapping, the save format, the auth and session policy, Stage 28 and Stage 30 behaviour, `time_of_day.gd`, the F9, F10, and F11 roadmap items, F13b, and the README gap.
+- Not run: any world-data generator.
+- Changed beyond the key and the Load path: `save_service.gd`'s read-side validation, fixed so that a missing key fails (20.4, 20.7). It does not change the format.
+
+### 20.13 Status
+
+- Control and Load safety: complete for the headless and static scope above.
+- Rendered validation of the confirmation dialog, mouse interaction, and the F3 key on a real display: **not done**.
+- Stage 29 **OPEN** (rendered checks are still blocked). Stage 28 **OPEN**. Production **NOT READY**.
