@@ -607,7 +607,7 @@ test("state-changing requests require IDs and do not replay a successful travel"
   });
 });
 
-test("identity creation retries recover the same player without duplicating records", async () => {
+test("identity creation retries with a key alone are refused (D-05) without duplicating records; the original session still works", async () => {
   await withServer(async ({ websocketUrl, stateFile }) => {
     const first = await openPeer(websocketUrl);
     const creationKey = randomBytes(32).toString("hex");
@@ -618,13 +618,18 @@ test("identity creation retries recover the same player without duplicating reco
 
     const retry = await openPeer(websocketUrl);
     try {
+      // D-05: a creation key alone does not re-issue the identity or rotate its token.
       retry.send({ type: "identity.create", creationKey, profile });
-      const recovered = await retry.waitForType("identity.created");
-      assert.equal(recovered.playerId, original.playerId);
-      assert.notEqual(recovered.sessionToken, original.sessionToken);
-      retry.send({ type: "session.resume", sessionToken: recovered.sessionToken });
-      const ready = await retry.waitForType("session.ready");
-      assert.equal(ready.playerId, original.playerId);
+      const refused = await retry.waitForType("error");
+      assert.equal(refused.code, "identity_recovery_unavailable");
+      const resumed = await openPeer(websocketUrl);
+      try {
+        resumed.send({ type: "session.resume", sessionToken: original.sessionToken });
+        const ready = await resumed.waitForType("session.ready");
+        assert.equal(ready.playerId, original.playerId, "the original session still works");
+      } finally {
+        await resumed.close();
+      }
       const saved = JSON.parse(await readFile(stateFile, "utf8"));
       assert.equal(Object.keys(saved.players).length, 1);
       assert.notEqual(JSON.stringify(saved).includes(creationKey), true);

@@ -112,7 +112,7 @@ test("R2 interruption: a process killed before its save commits leaves the last 
   assert.equal(Object.values(finalState.players).filter((player) => player.creationKeyHash === keyHashOf(key)).length, 1);
 });
 
-test("R2 interruption: a process killed after its save commits keeps one complete identity; the key recovers it after restart", async () => {
+test("R2 interruption: a process killed after its save commits keeps one complete identity; a key-only retry after restart is refused (D-05), with no duplicate", async () => {
   const directory = tempDirectory("naija-interrupt-");
   directories.push(directory);
   const file = join(directory, "world-state.json");
@@ -132,8 +132,9 @@ test("R2 interruption: a process killed after its save commits keeps one complet
   try {
     peer.send(createMessage(key, "Restarted"));
     const reply = await peer.waitFor((message) => message.type === "identity.created" || message.type === "error", 5000);
-    assert.equal(reply.type, "identity.created");
-    assert.equal(reply.playerId, committedIds[0], "the key recovers the committed identity, not a duplicate");
+    // D-05: a creation key alone does not re-issue the committed identity. The identity is kept, not duplicated.
+    assert.equal(reply.type, "error");
+    assert.equal(reply.code, "identity_recovery_unavailable");
   } finally {
     await peer.close();
     await restarted.stop();

@@ -252,35 +252,84 @@ test("audit: gameplay after saves stop changes live memory only; a restart loses
   }
 });
 
+/**
+ * Sets the heap reading that the production memory check sees (monitoring.checkMemory reads process.memoryUsage()) for
+ * the duration of fn, and restores the real function afterwards. Only the reading changes. The health code, the memory
+ * check, and the persistence check run unchanged.
+ */
+async function withHeapReading(heapUsedPercent, fn) {
+  const original = process.memoryUsage;
+  process.memoryUsage = () => {
+    const heapTotal = 100 * MiB;
+    return { ...original(), heapTotal, heapUsed: Math.round((heapTotal * heapUsedPercent) / 100) };
+  };
+  try {
+    return await fn();
+  } finally {
+    process.memoryUsage = original;
+  }
+}
+
 test("G1: while saves are refused by the size limit, /health reports persistence failure, /live stays up, and a later successful save clears it", async () => {
   // Production wiring (src/index.ts passes persistence.health()). Before G1 this recorded a gap: /health reported no
   // save failure. The old CURRENT BEHAVIOUR assertion is replaced; see docs/STAGE_28_PERSISTENCE_SAFETY.md.
+  // The heap reading is held at a healthy value here, so readiness depends on persistence alone. The process-wide memory
+  // check is tested separately, in "G1 (memory)" below. Without this, a GC-timing heap spike could fail the readiness assertion.
+  await withHeapReading(50, async () => {
+    const backend = fileBackend();
+    const started = await startCreationServer({ store: backend.store }, { ...LIMIT_OPTIONS, persistenceHealth: () => backend.store.health() });
+    try {
+      const seed = await createOne(started.websocketUrl, "Health");
+      backend.store.state.players[seed.playerId].character.test_padding = "x".repeat(17 * MiB);
+      assert.equal((await createOne(started.websocketUrl, "Refused")).code, "world_capacity_reached");
+
+      const response = await fetch(`${started.baseUrl}/health`);
+      const body = await response.json();
+      assert.equal(response.status, 503, "a refused save makes readiness fail");
+      assert.equal(body.checks.persistence.status, "fail");
+      assert.equal(body.checks.memory.status, "pass", "the 503 comes from persistence, not memory");
+      assert.match(body.checks.persistence.message, /over its size limit/);
+      assert.match(body.checks.persistence.message, /not persisted/);
+      // The message carries reason and timing only, never world data.
+      assert.doesNotMatch(body.checks.persistence.message, /Health|Refused|test_padding|xxxx/);
+
+      const live = await fetch(`${started.baseUrl}/live`);
+      assert.equal(live.status, 200, "liveness does not depend on persistence");
+      assert.equal((await live.json()).status, "alive");
+
+      delete backend.store.state.players[seed.playerId].character.test_padding;
+      assert.equal((await createOne(started.websocketUrl, "Recovered")).type, "identity.created");
+      const recovered = await fetch(`${started.baseUrl}/health`);
+      const recoveredBody = await recovered.json();
+      assert.equal(recoveredBody.checks.persistence.status, "pass", "a successful save after the failure clears it");
+      assert.equal(recoveredBody.checks.memory.status, "pass");
+      assert.notEqual(recoveredBody.status, "unhealthy", `readiness must not stay failed (checks: ${JSON.stringify(recoveredBody.checks)})`);
+      assert.equal(recovered.status, 200, "healthy or degraded readiness returns 200");
+    } finally {
+      await started.stop().catch(() => undefined);
+    }
+  });
+});
+
+test("G1 (memory): heap pressure alone makes /health unhealthy, reports memory as the failing check, and leaves persistence passing", async () => {
+  // Keeps the memory check's independent effect covered now that the persistence G1 test holds the heap reading fixed.
   const backend = fileBackend();
   const started = await startCreationServer({ store: backend.store }, { ...LIMIT_OPTIONS, persistenceHealth: () => backend.store.health() });
   try {
-    const seed = await createOne(started.websocketUrl, "Health");
-    backend.store.state.players[seed.playerId].character.test_padding = "x".repeat(17 * MiB);
-    assert.equal((await createOne(started.websocketUrl, "Refused")).code, "world_capacity_reached");
-
-    const response = await fetch(`${started.baseUrl}/health`);
-    const body = await response.json();
-    assert.equal(response.status, 503, "a refused save makes readiness fail");
-    assert.equal(body.checks.persistence.status, "fail");
-    assert.match(body.checks.persistence.message, /over its size limit/);
-    assert.match(body.checks.persistence.message, /not persisted/);
-    // The message carries reason and timing only, never world data.
-    assert.doesNotMatch(body.checks.persistence.message, /Health|Refused|test_padding|xxxx/);
-
-    const live = await fetch(`${started.baseUrl}/live`);
-    assert.equal(live.status, 200, "liveness does not depend on persistence");
-    assert.equal((await live.json()).status, "alive");
-
-    delete backend.store.state.players[seed.playerId].character.test_padding;
-    assert.equal((await createOne(started.websocketUrl, "Recovered")).type, "identity.created");
-    const recovered = await fetch(`${started.baseUrl}/health`);
-    const recoveredBody = await recovered.json();
-    assert.equal(recoveredBody.checks.persistence.status, "pass", "a successful save after the failure clears it");
-    assert.notEqual(recovered.status, 503, `readiness must not stay failed (checks: ${JSON.stringify(recoveredBody.checks)})`);
+    await withHeapReading(95, async () => {
+      const response = await fetch(`${started.baseUrl}/health`);
+      const body = await response.json();
+      assert.equal(response.status, 503, "heap pressure makes readiness fail");
+      assert.equal(body.status, "unhealthy");
+      assert.equal(body.checks.memory.status, "fail");
+      assert.match(body.checks.memory.message, /Heap usage critical/);
+      assert.equal(body.checks.persistence.status, "pass", "persistence is not reported as failing");
+    });
+    await withHeapReading(50, async () => {
+      const body = await (await fetch(`${started.baseUrl}/health`)).json();
+      assert.equal(body.checks.memory.status, "pass", "the memory check passes again when the reading is normal");
+      assert.equal(body.checks.persistence.status, "pass");
+    });
   } finally {
     await started.stop().catch(() => undefined);
   }

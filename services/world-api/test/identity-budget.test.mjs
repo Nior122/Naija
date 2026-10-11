@@ -226,7 +226,7 @@ test("R4 budget: refused, invalid, and failed creations do not use any budget", 
   }
 });
 
-test("R4 budget: a retry with an existing creation key is recovery, not a new identity, and is allowed when the budget is used up", async () => {
+test("R4 budget: a key-only retry of an existing identity is refused (D-05), creates nothing, and leaves the session working", async () => {
   const backend = fileBackend();
   const started = await startCreationServer(backend, { identityBudget: { ...BUDGET, perIpLimit: 1, globalLimit: 1000 } });
   try {
@@ -234,10 +234,17 @@ test("R4 budget: a retry with an existing creation key is recovery, not a new id
     assert.equal(original.reply.type, "identity.created");
     assert.ok(isLimited((await createFrom(started, "127.0.0.1", "NewOne")).reply), "the single slot is used");
 
+    // Key-only recovery is refused before any budget use: no token is rotated and no identity is created.
     const retry = await createFrom(started, "127.0.0.1", "Keeper", original.creationKey);
-    assert.equal(retry.reply.type, "identity.created", "the retry is recovery of the existing identity");
-    assert.equal(retry.reply.playerId, original.reply.playerId, "the same identity is returned");
-    assert.equal(countPlayers(backend), 1, "no new identity was created by the retry");
+    assert.equal(retry.reply.type, "error");
+    assert.equal(retry.reply.code, "identity_recovery_unavailable", "a creation key alone does not re-issue the identity");
+    assert.equal(countPlayers(backend), 1, "the refused retry created no identity");
+    // The original session is unaffected: its token still resumes the same identity.
+    const peer = await openFrom(started.websocketUrl, "127.0.0.1");
+    peer.send({ type: "session.resume", sessionToken: original.reply.sessionToken });
+    const ready = await peer.waitFor((message) => message.type === "session.ready", 5000);
+    assert.equal(ready.playerId, original.reply.playerId, "the original session still works after the refused retry");
+    await peer.close();
   } finally {
     await started.stop();
   }

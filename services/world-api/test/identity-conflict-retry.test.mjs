@@ -207,7 +207,7 @@ for (const name of backendNames) {
       }
     });
 
-    test("after a server restart the saved identity is the key's identity: recovery, with no second identity", async () => {
+    test("after a server restart a key-only retry of the saved identity is refused (D-05): the saved identity is kept, with no second identity", async () => {
       const backend = await openBackend(name);
       const key = newCreationKey();
       const first = await startOver(backend, {
@@ -231,13 +231,14 @@ for (const name of backendNames) {
 
       const second = await startOver(backend, { identityBudget: budget(2) });
       try {
+        // D-05: the key alone does not re-issue the saved identity, so the retry is refused. The saved identity stays,
+        // and no second identity is created. The player has no session token for it (documented limitation).
         const retry = await createFrom(second, "127.0.0.1", key, "Retry");
-        assert.equal(retry.type, "identity.created");
-        assert.equal(retry.playerId, savedId, "the restarted server recovers the saved identity by key");
+        assert.equal(retry.type, "error");
+        assert.equal(retry.code, "identity_recovery_unavailable");
         const durable = await backend.durableState();
-        assert.deepEqual(playersWithKey(durable, keyHashOf(key)), [savedId], "recovery creates no second identity");
+        assert.deepEqual(playersWithKey(durable, keyHashOf(key)), [savedId], "the saved identity is kept; no second identity");
         assert.deepEqual(orphanProblems(durable), []);
-        assert.equal(await resumes(second.websocketUrl, retry.sessionToken), "session.ready");
       } finally {
         await second.stop();
         await backend.cleanup();

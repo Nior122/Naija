@@ -136,24 +136,22 @@ for (const name of backendNames) {
       }
     });
 
-    test("existing-key recovery is unchanged: the same key returns the same identity with a new token, and the old token stops working", async () => {
+    test("key-only retry is refused (D-05): the same key issues no new token, the old token keeps working, and no identity is created", async () => {
       const backend = await openBackend(name);
       const started = await startOver(backend, { identityBudget: budget(5) });
       try {
         const key = newCreationKey();
         const created = await createFrom(started, "127.0.0.1", key, "Owner");
         assert.equal(created.type, "identity.created");
-        const recovered = await createFrom(started, "127.0.0.1", key, "Owner");
-        assert.equal(recovered.type, "identity.created");
-        assert.equal(recovered.playerId, created.playerId, "the same identity");
-        assert.notEqual(recovered.sessionToken, created.sessionToken, "recovery issues a new token");
+        const refused = await createFrom(started, "127.0.0.1", key, "Owner");
+        assert.equal(refused.type, "error");
+        assert.equal(refused.code, "identity_recovery_unavailable", "a creation key alone does not re-issue the identity");
 
-        assert.equal(await resumes(started.websocketUrl, created.sessionToken), "session_invalid", "the old token no longer resumes");
-        assert.equal(await resumes(started.websocketUrl, recovered.sessionToken), "session.ready", "the new token resumes");
+        assert.equal(await resumes(started.websocketUrl, created.sessionToken), "session.ready", "the existing token still works");
 
         const durable = await backend.durableState();
         assert.deepEqual(playersWithKey(durable, keyHashOf(key)), [created.playerId]);
-        assert.equal(Object.keys(durable.players).length, 1, "recovery creates no identity");
+        assert.equal(Object.keys(durable.players).length, 1, "the refused retry creates no identity");
       } finally {
         await started.stop();
         await backend.cleanup();

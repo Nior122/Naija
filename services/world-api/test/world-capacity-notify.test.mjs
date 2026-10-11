@@ -163,6 +163,14 @@ test("R5 notify-once: a refused periodic save retries silently until a save succ
     // A new over-limit episode starts after the successful save and notifies once more.
     backend.store.state.players[seed.playerId].character.test_padding = "x".repeat(17 * MiB);
     const secondErrors = await captureErrors(async () => {
+      // Editing the store directly does not mark the engine dirty, so trigger a save the same way as the first
+      // episode: a session resume sets lastSeen and marks the player dirty. Without this, the second episode
+      // depended on an incidental dirty mark from the world tick, which made the test timing-dependent.
+      online.send({ type: "session.resume", sessionToken: seed.sessionToken });
+      // Wait for the notice itself, not a fixed delay: the periodic save can run late under a loaded test run.
+      const deadline = Date.now() + 15_000;
+      while (countNotices() < 2 && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 100));
+      // Then let the episode settle, so a repeated notice would be counted.
       await new Promise((resolve) => setTimeout(resolve, 2500));
     });
     assert.equal(countNotices(), 2, "a new episode after a successful save notifies once");

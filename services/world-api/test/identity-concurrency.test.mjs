@@ -133,7 +133,7 @@ describe("R1 concurrent identity creation", () => {
     }
   });
 
-  test("R1: after success, a later request with the key recovers the same identity (existing behaviour)", async () => {
+  test("R1: after success, a later request with the key is refused (D-05); the identity and its session are unchanged", async () => {
     const backend = fileBackend();
     const started = await startCreationServer(backend);
     const key = newCreationKey();
@@ -145,10 +145,20 @@ describe("R1 concurrent identity creation", () => {
       await first.close();
 
       later.send(createMessage(key, "Original"));
-      const recovered = await later.waitFor((message) => message.type === "identity.created", 5000);
-      assert.equal(recovered.playerId, created.playerId);
+      const refused = await later.waitFor((message) => message.type === "error", 5000);
+      assert.equal(refused.code, "identity_recovery_unavailable", "a creation key alone does not re-issue the identity");
       const state = durable(backend.file);
       assert.equal(Object.keys(state.players).length, 1);
+      // The original session still resumes the same identity.
+      const resumed = await openPeer(started.websocketUrl);
+      try {
+        resumed.send({ type: "session.resume", sessionToken: created.sessionToken });
+        const ready = await resumed.waitFor((message) => message.type === "session.ready" || message.type === "error", 5000);
+        assert.equal(ready.type, "session.ready", "the original token still works");
+        assert.equal(ready.playerId, created.playerId);
+      } finally {
+        await resumed.close();
+      }
     } finally {
       await first.close();
       await later.close();
@@ -156,7 +166,7 @@ describe("R1 concurrent identity creation", () => {
     }
   });
 
-  test("R1: the first socket closing mid-save does not leave a reservation; the committed identity is recovered once", async () => {
+  test("R1: the first socket closing mid-save does not leave a reservation; a later key-only request is refused and creates no second identity", async () => {
     const backend = fileBackend();
     const started = await startCreationServer(backend);
     const key = newCreationKey();
@@ -171,8 +181,9 @@ describe("R1 concurrent identity creation", () => {
       await waitUntil(() => Object.keys(backend.store.state.players).length === 1);
 
       other.send(createMessage(key, "Dropped"));
-      const recovered = await other.waitFor((message) => message.type === "identity.created" || message.type === "error", 5000);
-      assert.equal(recovered.type, "identity.created", "the committed identity must be recoverable by key");
+      const reply = await other.waitFor((message) => message.type === "identity.created" || message.type === "error", 5000);
+      assert.equal(reply.type, "error", "a key-only request must not re-issue the committed identity (D-05)");
+      assert.equal(reply.code, "identity_recovery_unavailable");
       const state = durable(backend.file);
       assert.equal(Object.keys(state.players).length, 1, "no second identity");
     } finally {
@@ -183,8 +194,8 @@ describe("R1 concurrent identity creation", () => {
   });
 });
 
-describe("R1 concurrent recovery of an existing identity", () => {
-  test("two sockets recovering the same key at once: one session is issued, the other is refused, the winner's token works", async () => {
+describe("R1 concurrent key-only requests for an existing identity (D-05)", () => {
+  test("two sockets sending the same key at once for an existing identity: both are refused, no session is issued, the original token works", async () => {
     const backend = fileBackend();
     const started = await startCreationServer(backend);
     const key = newCreationKey();
@@ -200,26 +211,24 @@ describe("R1 concurrent recovery of an existing identity", () => {
     const first = await openPeer(started.websocketUrl);
     const second = await openPeer(started.websocketUrl);
     try {
-      const release = backend.store.holdNextWrite();
       first.send(createMessage(key, "Recovered"));
-      await waitUntil(() => backend.store.heldCount === 1);
-
       second.send(createMessage(key, "Recovered"));
-      const secondReply = await firstOutcome(second);
-      release();
       const firstReply = await firstOutcome(first, 5000);
-
-      assert.equal(firstReply?.type, "identity.created", "the first recovery must succeed");
-      assert.equal(secondReply?.type, "error", "the concurrent recovery must not issue a second session");
-      assert.equal(secondReply.code, "identity_creation_in_progress");
-      assert.equal(firstReply.playerId, original.playerId, "recovery returns the same identity");
-
-      // The first recovery's token is the working token; the original token was rotated away by the recovery.
-      first.send({ type: "session.resume", sessionToken: firstReply.sessionToken });
-      const ready = await first.waitFor((message) => message.type === "session.ready" || message.type === "error", 5000);
-      assert.equal(ready.type, "session.ready");
+      const secondReply = await firstOutcome(second, 5000);
+      for (const reply of [firstReply, secondReply]) {
+        assert.equal(reply?.type, "error", "a key-only request must not issue a session");
+        assert.ok(
+          ["identity_recovery_unavailable", "identity_creation_in_progress"].includes(reply.code),
+          `unexpected refusal code: ${reply.code}`,
+        );
+      }
       const state = durable(backend.file);
       assert.equal(Object.values(state.players).filter((player) => player.creationKeyHash === keyHashOf(key)).length, 1);
+      // The original token was not rotated: it still resumes the identity.
+      first.send({ type: "session.resume", sessionToken: original.sessionToken });
+      const ready = await first.waitFor((message) => message.type === "session.ready" || message.type === "error", 5000);
+      assert.equal(ready.type, "session.ready");
+      assert.equal(ready.playerId, original.playerId);
     } finally {
       await first.close();
       await second.close();
