@@ -13,20 +13,33 @@ export interface Migration {
   down?: string;
 }
 
+/**
+ * Advisory lock key that serialises schema changes. Two connections that migrate an empty database at the same moment
+ * (two processes starting, or parallel test files) would otherwise both run the same DDL: one fails with a unique
+ * violation (for example on pg_extension). The lock is transaction-scoped (pg_advisory_xact_lock), so it is released by
+ * the commit or rollback that ends each transaction that takes it.
+ */
+const MIGRATION_LOCK_KEY = 7273740;
+
+const SCHEMA_MIGRATIONS_TABLE_SQL = `
+  CREATE TABLE IF NOT EXISTS schema_migrations (
+    version INTEGER PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    applied_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  )
+`;
+
 export class MigrationManager {
   constructor(private readonly db: DatabaseConnection = database) {}
 
   /**
-   * Initialize the migrations table
+   * Initialize the migrations table. Runs under the migration lock, so concurrent callers do not race on creating it.
    */
   async initialize(): Promise<void> {
-    await this.db.query(`
-      CREATE TABLE IF NOT EXISTS schema_migrations (
-        version INTEGER PRIMARY KEY,
-        name VARCHAR(255) NOT NULL,
-        applied_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-      )
-    `);
+    await this.db.transaction(async (client) => {
+      await client.query("SELECT pg_advisory_xact_lock($1)", [MIGRATION_LOCK_KEY]);
+      await client.query(SCHEMA_MIGRATIONS_TABLE_SQL);
+    });
   }
 
   /**
@@ -53,20 +66,28 @@ export class MigrationManager {
   }
 
   /**
-   * Apply a migration
+   * Apply a migration. Resolves true when this call applied it, and false when it was already applied (by this or
+   * another connection) and was skipped.
    */
-  async applyMigration(migration: Migration): Promise<void> {
-    const currentVersion = await this.getCurrentVersion();
-    
-    if (migration.version <= currentVersion) {
-      console.log(`[Migration] Skipping migration ${migration.version} (${migration.name}) - already applied`);
-      return;
-    }
-
+  async applyMigration(migration: Migration): Promise<boolean> {
+    // The version is read again inside the lock. The caller's earlier read can be stale: another connection may have
+    // applied this migration since then. A migration that is already applied is skipped, not applied twice.
+    let skipped = false;
     console.log(`[Migration] Applying migration ${migration.version}: ${migration.name}`);
 
     try {
       await this.db.transaction(async (client) => {
+        await client.query("SELECT pg_advisory_xact_lock($1)", [MIGRATION_LOCK_KEY]);
+        await client.query(SCHEMA_MIGRATIONS_TABLE_SQL);
+        const current = await client.query<{ version: number | string | null }>(
+          "SELECT MAX(version) AS version FROM schema_migrations",
+        );
+        const currentVersion = Number(current.rows[0]?.version ?? 0);
+        if (migration.version <= currentVersion) {
+          skipped = true;
+          return;
+        }
+
         // Apply the migration SQL
         await client.query(migration.up);
 
@@ -77,7 +98,12 @@ export class MigrationManager {
         );
       });
 
+      if (skipped) {
+        console.log(`[Migration] Skipping migration ${migration.version} (${migration.name}) - already applied`);
+        return false;
+      }
       console.log(`[Migration] Successfully applied migration ${migration.version}`);
+      return true;
     } catch (error) {
       console.error(`[Migration] Failed to apply migration ${migration.version}:`, error);
       throw error;
@@ -96,8 +122,8 @@ export class MigrationManager {
 
     for (const migration of migrations) {
       if (migration.version > currentVersion) {
-        await this.applyMigration(migration);
-        appliedCount++;
+        // Counts only migrations this call applied. Another connection may have applied one since the read above.
+        if (await this.applyMigration(migration)) appliedCount++;
       }
     }
 
