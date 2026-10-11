@@ -722,6 +722,14 @@ export class MultiplayerWorld {
   private gameMillisecondRemainder = 0;
   private dirty = false;
   private flushInFlight = false;
+  /**
+   * Treasury durability (Stage 32). changeGeneration counts treasury changes whose reply promises a saved world.
+   * savedGeneration is the highest changeGeneration captured by a save that succeeded. A treasury reply is sent only
+   * after savedGeneration has caught up with its own change (ensureDurable). Saves run through the persistence queue,
+   * so a save captures every change made before it was queued.
+   */
+  private changeGeneration = 0;
+  private savedGeneration = 0;
   /** True from the first refused save (over the size limit) until the next successful save. */
   private capacityEpisodeOpen = false;
   /** True from the first non-capacity save failure until the next successful save. */
@@ -2907,6 +2915,18 @@ export class MultiplayerWorld {
 
     this.markRequestProcessed(player, requestId);
     if (!["view_federal", "view_state", "view_local", "search_projects", "announcements", "my_appointments"].includes(action)) this.touchPlayer(player);
+    if (GOVERNMENT_TREASURY_ACTIONS.has(action)) {
+      // A treasury reply is sent only once its change is saved. Until then the reply is an error, and a retry with the
+      // same request ID returns the recorded result (replayed) after the save succeeds.
+      this.changeGeneration += 1;
+      if (!(await this.ensureDurable())) {
+        this.send(context, appendOptionalRequestId({
+          type: "government.error", action, code: "treasury_not_saved",
+          message: governmentErrorMessage("treasury_not_saved"),
+        }, requestId));
+        return;
+      }
+    }
     this.send(context, appendOptionalRequestId({
       type: "government.result", action, ok: true, message: messageText, data,
     }, requestId));
@@ -5252,11 +5272,27 @@ export class MultiplayerWorld {
     this.dirty = false;
     let writeFailed = false;
     try {
+      writeFailed = !(await this.persistOnce());
+    } finally {
+      this.flushInFlight = false;
+      if (this.dirty && !writeFailed && !this.closed) void this.flushDirty();
+    }
+  }
+
+  /**
+   * One save of the live world, queued behind every earlier save. Resolves true when it succeeded. On failure it keeps
+   * the world marked dirty (the background retry saves it later), records the failure, and sends the persistence
+   * notice once per episode. The memory state is not rolled back: a later successful save writes all of it.
+   */
+  private async persistOnce(): Promise<boolean> {
+    const captured = this.changeGeneration;
+    try {
       await this.serialize(() => this.store.flush());
+      this.savedGeneration = Math.max(this.savedGeneration, captured);
       this.lastPersistAt = this.now();
       this.noteSaveSucceeded();
+      return true;
     } catch (error) {
-      writeFailed = true;
       this.dirty = true;
       this.failedSaveAttemptsSinceSuccess += 1;
       // A refused save keeps the previous valid file. Nothing is removed to make room.
@@ -5282,9 +5318,18 @@ export class MultiplayerWorld {
           );
         }
       }
-    } finally {
-      this.flushInFlight = false;
-      if (this.dirty && !writeFailed && !this.closed) void this.flushDirty();
+      return false;
     }
+  }
+
+  /**
+   * Makes every treasury change made so far durable before its reply is sent (Stage 32). Returns false when the save
+   * failed; the reply is then an error that says the change is not confirmed, and the retry uses the same request ID.
+   */
+  private async ensureDurable(): Promise<boolean> {
+    const target = this.changeGeneration;
+    if (this.savedGeneration >= target) return true;
+    await this.persistOnce();
+    return this.savedGeneration >= target;
   }
 }

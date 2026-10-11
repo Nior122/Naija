@@ -611,6 +611,8 @@ export function validateGovernmentRecords(maps: PersistentGovernmentMaps): Recor
     v.invariant("actor_character_id", optionalIdentifier(r.actor_character_id), "must be an identifier when present");
     v.invariant("balance_after_ngn", r.balance_after_ngn === undefined || isNonNegativeInteger(r.balance_after_ngn),
       "must be a non-negative integer when present");
+    v.invariant("funding_rule_id", r.funding_rule_id === undefined || r.funding_rule_id === null || optionalIdentifier(r.funding_rule_id),
+      "must be an identifier when present");
   });
 
   v.records("governmentExpenditure", maps.governmentExpenditure as unknown as RecordMap, "expenditure_id", (r) => {
@@ -636,6 +638,10 @@ export function validateGovernmentRecords(maps: PersistentGovernmentMaps): Recor
       "must be a sha256 hex digest when present");
     v.invariant("balance_after_ngn", r.balance_after_ngn === undefined || isNonNegativeInteger(r.balance_after_ngn),
       "must be a non-negative integer when present");
+    v.invariant("recipient_account_id", r.recipient_account_id === undefined || r.recipient_account_id === null ||
+      optionalIdentifier(r.recipient_account_id), "must be an identifier when present");
+    v.invariant("recipient_transaction_id", r.recipient_transaction_id === undefined || r.recipient_transaction_id === null ||
+      optionalIdentifier(r.recipient_transaction_id), "must be an identifier when present");
   });
 
   v.records("governmentProjects", projects, "project_id", (r) => {

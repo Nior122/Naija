@@ -27,6 +27,8 @@ import type { PersistentPlayer, PersistentWorldState } from "../multiplayer/type
 import type { CalendarDate } from "../life/types.js";
 import { compareDates } from "../life/calendar.js";
 import { authorizeOfficePermission, isOfficeSuspended } from "./authority.js";
+import { loadEconomyCatalog } from "../economy/catalog.js";
+import { hasActiveFamilyTie, planGovernmentPaymentCredit } from "../economy/service.js";
 import { officePlacement } from "./hierarchy.js";
 import type { OfficeStatus } from "./types.js";
 
@@ -300,6 +302,7 @@ export function reconcileGovernmentStructure(
     };
     created += 1;
   }
+  created += applyInitialTreasuryFunding(state, date, now, catalog);
   if (created > 0) {
     appendGovernmentEvent(state, "gov:federal", "structure_reconciled",
       `Government structure reconciled: ${created} record(s) added.`, date, now, { records_added: created });
@@ -787,8 +790,11 @@ export function allocateBudget(
  *   3. a retry of the same request returns the original expenditure (replayed), and a different payload with the
  *      same request ID is refused;
  *   4. amount, reason, organisation status, and budget status;
- *   5. the destination is a real character, business, or organisation, and the actor has no direct interest in it;
- *   6. enough allocated budget left, and enough money in the treasury account.
+ *   5. the destination is a character with a cash account (Stage 32: business and organisation payments are refused as
+ *      unsupported), and the actor has no direct interest in it (not the actor, and no active family or marriage tie);
+ *   6. enough allocated budget left, enough money in the treasury account, and the payee can take the credit (active
+ *      cash account, per-payment limit, balance limit), checked by planGovernmentPaymentCredit.
+ * Only then are the debit, the budget update, and the payee's credit written, in one synchronous step.
  * The actor, the destination owner, and the organisation all come from server records. No request field grants authority.
  */
 export function spendBudget(
@@ -836,32 +842,36 @@ export function spendBudget(
     destinationId.length > 120) {
     throw new Error("treasury_destination_invalid");
   }
-  let destinationLabel = destinationId;
-  if (destinationKind === "character") {
-    const payee = Object.values(state.players).find((p) => p.character.character_id === destinationId);
-    if (!payee) throw new Error("treasury_destination_not_found");
-    if (destinationId === actorCharacterId) throw new Error("treasury_conflict_of_interest");
-    destinationLabel = payee.character.name;
-  } else if (destinationKind === "business") {
-    const business = state.businesses?.[destinationId];
-    if (!business) throw new Error("treasury_destination_not_found");
-    // A payment to a business the actor owns directly benefits the actor, so it is refused, not routed elsewhere.
-    if (business.owner_character_id === actorCharacterId) throw new Error("treasury_conflict_of_interest");
-    destinationLabel = business.name;
-  } else if (!state.governmentOrganisations[destinationId]) {
-    throw new Error("treasury_destination_not_found");
+  // Only a character can receive a payment in Stage 32: the money is credited to that character's existing cash
+  // account. A business or an organisation has no receiving rule yet, so it is refused, never debited with no credit.
+  if (destinationKind !== "character") throw new Error("treasury_destination_unsupported");
+  const payee = Object.values(state.players).find((p) => p.character.character_id === destinationId);
+  if (!payee) throw new Error("treasury_destination_not_found");
+  // Self-payment and payment to a family member or spouse of the actor are refused: each would benefit the actor.
+  if (destinationId === actorCharacterId || hasActiveFamilyTie(state, actorCharacterId, destinationId)) {
+    throw new Error("treasury_conflict_of_interest");
   }
+  const destinationLabel = payee.character.name;
 
   if (getBudgetAvailable(state, budgetId) < amountNgn) throw new Error("government_insufficient_budget");
   const funds = org.treasury_account?.balance_ngn ?? 0;
   if (funds < amountNgn) throw new Error("treasury_insufficient_funds");
+  // Every check on the recipient runs here, before the first write (see planGovernmentPaymentCredit).
+  const credit = planGovernmentPaymentCredit(state, destinationId, amountNgn, loadEconomyCatalog());
 
+  // The debit and the credit are written in this one synchronous step. The save that follows writes both together.
   const expenditure = postExpenditure(state, org, {
     budgetId, categoryId: budget.category_id, amountNgn, description: reasonText, projectId: null,
     recipientReference: destinationLabel, actorCharacterId, destinationKind, destinationId,
     idempotencyKey: idemKey, requestFingerprint: fingerprint,
     categoryLabel: catalog.budget_categories.find((c) => c.id === budget.category_id)?.label ?? budget.category_id,
   }, date, now);
+  const transactionId = credit.apply({
+    expenditureId: expenditure.expenditure_id, treasuryAccountId: expenditure.account_id ?? "", sourceLabel: org.name,
+    amountNgn, date, now,
+  });
+  expenditure.recipient_account_id = credit.accountId;
+  expenditure.recipient_transaction_id = transactionId;
   return { expenditure, replayed: false };
 }
 
@@ -892,7 +902,57 @@ export function auditTreasuryLedger(state: PersistentWorldState): string[] {
     }
     if (budget.allocated_amount_ngn > budget.approved_amount_ngn) problems.push(`${budget.budget_id}: allocated exceeds approved`);
   }
+  // Stage 32: a payment to a character is credited to that character's cash account, one for one.
+  const transactions = state.economyTransactions ?? {};
+  const creditedByPayments = new Set<string>();
+  for (const expenditure of Object.values(state.governmentExpenditure)) {
+    if (expenditure.destination_kind !== "character") continue;
+    if (!expenditure.recipient_transaction_id) {
+      problems.push(`${expenditure.expenditure_id}: payment to a character was recorded before its recipient was credited`);
+      continue;
+    }
+    const transaction = transactions[expenditure.recipient_transaction_id];
+    if (!transaction || transaction.kind !== "government_payment" || transaction.amount_ngn !== expenditure.amount_ngn ||
+      transaction.account_id !== expenditure.recipient_account_id || transaction.reference_id !== expenditure.expenditure_id) {
+      problems.push(`${expenditure.expenditure_id}: recipient credit does not match the payment`);
+    } else {
+      creditedByPayments.add(transaction.transaction_id);
+    }
+  }
+  for (const transaction of Object.values(transactions)) {
+    if (transaction.kind === "government_payment" && !creditedByPayments.has(transaction.transaction_id)) {
+      problems.push(`${transaction.transaction_id}: government payment credit has no matching payment`);
+    }
+  }
   return problems;
+}
+
+/**
+ * One-time initial treasury funding (Stage 32). For each catalogue rule whose organisation exists, one revenue row is
+ * written to that treasury, with the rule's source reference and funding_rule_id. The check reads the ledger that is
+ * saved with the world, so it holds across restarts: a rule that has already been applied changes nothing. The amount
+ * comes from the catalogue only. No request can name one, and there is no route that applies a rule.
+ */
+export function applyInitialTreasuryFunding(
+  state: PersistentWorldState,
+  date: CalendarDate,
+  now: number,
+  catalog: GovernmentCatalog = loadGovernmentCatalog(),
+): number {
+  let funded = 0;
+  for (const rule of catalog.treasury_funding) {
+    const org = state.governmentOrganisations[rule.organisation_id];
+    if (!org || org.status !== "active") continue;
+    const marker = `treasury-funding:${rule.rule_id}`;
+    const alreadyFunded = Object.values(state.governmentRevenue).some((row) =>
+      row.funding_rule_id === rule.rule_id || (row.organisation_id === org.organisation_id && row.source_reference === marker));
+    if (alreadyFunded) continue;
+    const revenue = recordGovernmentRevenue(state, org.organisation_id, rule.category_id, rule.amount_ngn, rule.reason,
+      marker, date, now, catalog);
+    revenue.funding_rule_id = rule.rule_id;
+    funded += 1;
+  }
+  return funded;
 }
 
 // ─── Projects ─────────────────────────────────────────────────────
@@ -1559,6 +1619,14 @@ export function governmentErrorMessage(code: string): string {
     office_definition_missing: "The office definition for this seat no longer exists.",
     government_action_invalid: "Invalid government action.",
     government_action_unknown: "Unknown government action.",
+    treasury_destination_unsupported: "Payments can only be made to a person's cash account. Business and organisation payments are not available yet.",
+    treasury_not_saved: "The change is recorded on the server but is not saved yet, so it is not confirmed. Retry with the same request ID; it will not be applied twice.",
+    economy_payee_not_found: "The payment recipient is not a character in this world.",
+    economy_payee_deceased: "The payment recipient is deceased and cannot receive payments.",
+    economy_payee_account_missing: "The payment recipient has no cash account, so the payment cannot be made.",
+    economy_payee_account_inactive: "The payment recipient's cash account is not active.",
+    economy_payment_over_transaction_limit: "A single payment to a person cannot exceed the economy's transaction limit.",
+    economy_payee_balance_limit: "The payment would take the recipient's cash account over its balance limit.",
   };
   return messages[code] ?? "An unknown government error occurred.";
 }

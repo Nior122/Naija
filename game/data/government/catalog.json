@@ -93,6 +93,15 @@
     "office:president": ["budget_approve", "budget_allocate", "budget_spend"],
     "office:minister": ["budget_approve", "budget_allocate", "budget_spend"]
   },
+  "treasury_funding": [
+    {
+      "rule_id": "treasury-initial-allocation-v1",
+      "organisation_id": "gov:min:finance",
+      "category_id": "rev:grant",
+      "amount_ngn": 100000000,
+      "reason": "One-time initial allocation to the Federal Ministry of Finance treasury, set by the world catalogue."
+    }
+  ],
   "rules": {
     "budget_approval_minimum_age_years": 25,
     "ministry_budget_category_id": "bud:administration",

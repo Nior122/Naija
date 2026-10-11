@@ -143,6 +143,14 @@ export interface IndependentInstitutionDefinition {
   readonly description: string;
 }
 
+export interface TreasuryFundingRule {
+  readonly rule_id: string;
+  readonly organisation_id: string;
+  readonly category_id: string;
+  readonly amount_ngn: number;
+  readonly reason: string;
+}
+
 export interface GovernmentCatalog {
   readonly schema_version: 1;
   readonly world_id: "nigeria-main";
@@ -155,6 +163,11 @@ export interface GovernmentCatalog {
   readonly expenditure_categories: readonly ExpenditureCategoryDefinition[];
   readonly seed_offices: readonly OfficeDefinition[];
   readonly independent_institutions: readonly IndependentInstitutionDefinition[];
+  /**
+   * One-time treasury funding (Stage 32). Each rule is applied at most once per world, recorded as a revenue row in the
+   * treasury ledger with its rule_id. Amounts come from this catalogue only; no player request can name one.
+   */
+  readonly treasury_funding: readonly TreasuryFundingRule[];
   /** Permissions held by an office definition. An office confers a permission only within its own organisation. */
   readonly office_permissions: Readonly<Record<string, readonly TreasuryPermission[]>>;
   readonly rules: GovernmentRules;
@@ -260,6 +273,8 @@ export interface GovernmentRevenueRecord {
   account_id?: string | null;
   actor_character_id?: string | null;
   balance_after_ngn?: number | null;
+  /** Set only on one-time initial funding rows (Stage 32). Absent on every other revenue row. */
+  funding_rule_id?: string | null;
 }
 
 export interface GovernmentExpenditureRecord {
@@ -281,6 +296,12 @@ export interface GovernmentExpenditureRecord {
   destination_id?: string | null;
   request_fingerprint?: string | null;
   balance_after_ngn?: number | null;
+  /**
+   * Set when a payment to a character was credited to the recipient's cash account in the same write (Stage 32). Absent
+   * on older records; an older payment to a character has no recipient_transaction_id and is reported by the audit.
+   */
+  recipient_account_id?: string | null;
+  recipient_transaction_id?: string | null;
 }
 
 export interface GovernmentProjectRecord {

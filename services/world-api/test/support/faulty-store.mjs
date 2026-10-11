@@ -14,6 +14,15 @@ export class FaultyStore {
     this.writeCount = 0;
     this.committedCount = 0;
     this.heldCount = 0;
+    this.killed = false;
+  }
+
+  /**
+   * Simulates a process that has died: from now on no write reaches the storage, including the saves that a closing
+   * socket would otherwise trigger. Used by crash tests, so an abandoned server cannot save its unsaved state.
+   */
+  kill() {
+    this.killed = true;
   }
 
   get state() {
@@ -65,6 +74,7 @@ export class FaultyStore {
 
   async #write(perform) {
     this.writeCount += 1;
+    if (this.killed) throw new Error("the process has stopped");
     const failure = this.failures.shift();
     const gate = this.hold;
     this.hold = null;

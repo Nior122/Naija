@@ -29,6 +29,7 @@ import {
   spendBudget,
 } from "../dist/government/service.js";
 import { validateGovernmentRecords } from "../dist/multiplayer/record-validation.js";
+import { initializeEconomyWorldState } from "../dist/economy/service.js";
 
 const CATALOG = loadGovernmentCatalog();
 const DATE = { year: 2026, month: 10, day: 11 };
@@ -40,11 +41,18 @@ const EDUCATION = "gov:min:education";
 
 // ─── Part A: service-level ────────────────────────────────────────────────────
 
-/** A world with the seeded federal government and ministries. Nothing else. */
-function makeState() {
-  const state = { worldClock: { world_date: { ...DATE } }, players: {}, people: {}, businesses: {} };
+/**
+ * A world with the seeded federal government and ministries, and the economy maps. The seed uses a catalogue with no
+ * funding rule, so every treasury starts at zero and each test states its own money. The funding rule is tested on
+ * its own (government-treasury-payments.test.mjs).
+ */
+function makeState({ withFunding = false } = {}) {
+  const state = {
+    worldClock: { world_date: { ...DATE } }, players: {}, people: {}, businesses: {}, relationships: {}, marriages: {},
+  };
   initializeGovernmentWorldState(state);
-  seedGovernmentWorld(state, DATE, NOW, CATALOG);
+  initializeEconomyWorldState(state, NOW);
+  seedGovernmentWorld(state, DATE, NOW, withFunding ? CATALOG : { ...CATALOG, treasury_funding: [] });
   return state;
 }
 
@@ -52,9 +60,11 @@ function makeState() {
 function addCitizen(state, name, { age = 40, status = "alive" } = {}) {
   const characterId = `char-${name.toLowerCase()}`;
   // `age` is the field the appointment check reads; date_of_birth is what the approval-age check reads. Both are set.
-  const character = { character_id: characterId, name, life_status: status, age: age ?? 40 };
+  const character = { character_id: characterId, name, life_status: status, age: age ?? 40, money: 0 };
   if (age !== null) character.date_of_birth = { year: DATE.year - age, month: 1, day: 1 };
   state.players[`player-${characterId}`] = { playerId: `player-${characterId}`, character };
+  // Living citizens get a cash account from the economy, as they do in a real world (the payee needs one).
+  initializeEconomyWorldState(state, NOW);
   return characterId;
 }
 
@@ -86,7 +96,7 @@ function fund(state, organisationId, amountNgn) {
 }
 
 test("the seeded world is fully placed, and reconciling it again changes nothing", () => {
-  const state = makeState();
+  const state = makeState({ withFunding: true });
   assert.deepEqual(auditGovernmentStructure(state, CATALOG).unresolved, []);
   const before = snapshot(state);
   assert.equal(reconcileGovernmentStructure(state, DATE, NOW, CATALOG), 0, "nothing to add on a complete world");
@@ -95,8 +105,9 @@ test("the seeded world is fully placed, and reconciling it again changes nothing
 
 test("a legacy world is completed on load without rewriting its existing records", () => {
   const state = makeState();
-  // Simulate a world saved before Stage 31: no treasury accounts, and a legacy federal minister record.
+  // Simulate a world saved before Stage 31: no treasury accounts, no ledger rows, and a legacy federal minister record.
   for (const organisation of Object.values(state.governmentOrganisations)) delete organisation.treasury_account;
+  state.governmentRevenue = {};
   const legacyOfficeId = "office:minister:legacy-federal";
   state.governmentOffices[legacyOfficeId] = {
     office_id: legacyOfficeId, definition_id: "office:minister", organisation_id: FEDERAL, label: "Minister (legacy)",
@@ -107,8 +118,13 @@ test("a legacy world is completed on load without rewriting its existing records
   assert.ok(reconcileGovernmentStructure(state, DATE, NOW, CATALOG) > 0, "missing treasury accounts are added");
   for (const organisation of Object.values(state.governmentOrganisations)) {
     assert.ok(organisation.treasury_account, `${organisation.organisation_id} has a treasury account`);
-    assert.equal(organisation.treasury_account.balance_ngn, 0);
+    // The one-time initial funding (Stage 32) lands on the finance treasury at the upgrade. Nothing else is funded.
+    const expected = organisation.organisation_id === FINANCE ? CATALOG.treasury_funding[0].amount_ngn : 0;
+    assert.equal(organisation.treasury_account.balance_ngn, expected, `${organisation.organisation_id} balance`);
   }
+  const funded = JSON.stringify(state.governmentOrganisations[FINANCE].treasury_account);
+  assert.equal(reconcileGovernmentStructure(state, DATE, NOW, CATALOG), 0, "a second load funds nothing");
+  assert.equal(JSON.stringify(state.governmentOrganisations[FINANCE].treasury_account), funded);
   assert.equal(JSON.stringify(state.governmentOffices[legacyOfficeId]), legacyBefore,
     "the legacy record is not rewritten (no status, no new fields)");
   assert.equal(officePlacement(state, state.governmentOffices[legacyOfficeId], CATALOG).code, "office_scope_incompatible",
@@ -280,25 +296,29 @@ test("spending debits the treasury, records one ledger row with server-side acto
   fund(state, FINANCE, 400000000);
 
   const destination = { kind: "character", id: payee };
-  const first = spendBudget(state, minister, budget.budget_id, 100000000, destination, "Civil service salaries", "spend-1",
+  const first = spendBudget(state, minister, budget.budget_id, 40000000, destination, "Civil service salaries", "spend-1",
     DATE, NOW, CATALOG);
   assert.equal(first.replayed, false);
   assert.equal(first.expenditure.actor_character_id, minister, "the actor is the authenticated character");
   assert.equal(first.expenditure.destination_id, payee);
-  assert.equal(first.expenditure.balance_after_ngn, 300000000);
-  assert.equal(state.governmentOrganisations[FINANCE].treasury_account.balance_ngn, 300000000);
-  assert.equal(state.governmentBudgets[budget.budget_id].spent_amount_ngn, 100000000);
+  assert.equal(first.expenditure.balance_after_ngn, 360000000);
+  assert.equal(state.governmentOrganisations[FINANCE].treasury_account.balance_ngn, 360000000);
+  assert.equal(state.governmentBudgets[budget.budget_id].spent_amount_ngn, 40000000);
   assert.equal(state.governmentBudgets[budget.budget_id].status, "active");
   assert.match(first.expenditure.request_fingerprint, /^[0-9a-f]{64}$/);
+  // The payee is credited in the same write: one payment row, and one credit on the payee's cash account.
+  assert.equal(state.economyAccounts[first.expenditure.recipient_account_id].balance_ngn, 40000000);
+  assert.equal(state.economyTransactions[first.expenditure.recipient_transaction_id].kind, "government_payment");
 
-  const replay = spendBudget(state, minister, budget.budget_id, 100000000, destination, "Civil service salaries", "spend-1",
+  const replay = spendBudget(state, minister, budget.budget_id, 40000000, destination, "Civil service salaries", "spend-1",
     DATE, NOW, CATALOG);
   assert.equal(replay.replayed, true);
   assert.equal(replay.expenditure.expenditure_id, first.expenditure.expenditure_id);
-  assert.equal(state.governmentOrganisations[FINANCE].treasury_account.balance_ngn, 300000000, "money moved once");
+  assert.equal(state.governmentOrganisations[FINANCE].treasury_account.balance_ngn, 360000000, "money moved once");
+  assert.equal(state.economyAccounts[first.expenditure.recipient_account_id].balance_ngn, 40000000, "credited once");
   assert.equal(Object.keys(state.governmentExpenditure).length, 1);
 
-  assertRefusedWithoutChange(state, () => spendBudget(state, minister, budget.budget_id, 200000000, destination,
+  assertRefusedWithoutChange(state, () => spendBudget(state, minister, budget.budget_id, 20000000, destination,
     "Civil service salaries", "spend-1", DATE, NOW, CATALOG), /treasury_idempotency_conflict/);
   assert.deepEqual(auditTreasuryLedger(state), [], "balances agree with the ledger");
 });
@@ -310,6 +330,8 @@ test("spending refuses self-payment, owned businesses, unknown destinations, bad
   appointTo(state, "office:minister", FINANCE, minister);
   state.businesses["biz-minister"] = { business_id: "biz-minister", name: "Minister Ventures", owner_character_id: minister, status: "active" };
   state.businesses["biz-other"] = { business_id: "biz-other", name: "Other Ventures", owner_character_id: other, status: "active" };
+  const relative = addCitizen(state, "Relative", { age: 30 });
+  state.relationships["rel-sibling"] = { relationship_id: "rel-sibling", type: "sibling_of", participants: [minister, relative], status: "active" };
   const budget = budgetFor(state, FINANCE);
   approveBudget(state, minister, budget.budget_id, 500000000, DATE, NOW, CATALOG);
   allocateBudget(state, minister, budget.budget_id, 300000000, "alloc-1", DATE, NOW, CATALOG);
@@ -322,14 +344,17 @@ test("spending refuses self-payment, owned businesses, unknown destinations, bad
     return spendBudget(state, minister, budget.budget_id, 1000000, destination, reason, `refuse-${attempt}`, DATE, NOW, CATALOG);
   };
   assertRefusedWithoutChange(state, spend({ kind: "character", id: minister }), /treasury_conflict_of_interest/);
-  assertRefusedWithoutChange(state, spend({ kind: "business", id: "biz-minister" }), /treasury_conflict_of_interest/);
-  // A business owned by someone else is a permitted destination. This one goes through.
-  const permitted = spendBudget(state, minister, budget.budget_id, 1000000, { kind: "business", id: "biz-other" }, "Supplies",
+  assertRefusedWithoutChange(state, spend({ kind: "character", id: relative }), /treasury_conflict_of_interest/);
+  // Businesses have no receiving rule in Stage 32, so a payment to one is refused whoever owns it.
+  assertRefusedWithoutChange(state, spend({ kind: "business", id: "biz-minister" }), /treasury_destination_unsupported/);
+  assertRefusedWithoutChange(state, spend({ kind: "business", id: "biz-other" }), /treasury_destination_unsupported/);
+  // A character payee with a cash account is a permitted destination. This one goes through.
+  const permitted = spendBudget(state, minister, budget.budget_id, 1000000, { kind: "character", id: other }, "Supplies",
     "permitted-1", DATE, NOW, CATALOG);
   assert.equal(permitted.replayed, false);
   assert.equal(state.governmentBudgets[budget.budget_id].spent_amount_ngn, 1000000, "the one permitted payment went through");
   assertRefusedWithoutChange(state, spend({ kind: "character", id: "char-nobody" }), /treasury_destination_not_found/);
-  assertRefusedWithoutChange(state, spend({ kind: "business", id: "biz-missing" }), /treasury_destination_not_found/);
+  assertRefusedWithoutChange(state, spend({ kind: "business", id: "biz-missing" }), /treasury_destination_unsupported/);
   assertRefusedWithoutChange(state, spend({ kind: "government_office", id: "office:president" }), /treasury_destination_invalid/);
   assertRefusedWithoutChange(state, spend({ kind: "character", id: "" }), /treasury_destination_invalid/);
   assertRefusedWithoutChange(state, spend({ kind: "character", id: other }, "   "), /treasury_reason_invalid/);
@@ -507,6 +532,8 @@ function fingerprint(state) {
   return JSON.stringify(state, (key, value) => (key === "lastSeen" || key === "lastActivityAt" ? undefined : value));
 }
 
+const financeBalance = (backend) => backend.store.state.governmentOrganisations[FINANCE].treasury_account.balance_ngn;
+
 const TREASURY_REPLY = (reply) => reply.type === "government.result" || reply.type === "government.error";
 const waitForGovernment = (peer) => peer.waitFor(TREASURY_REPLY, 5000);
 
@@ -578,15 +605,21 @@ for (const backendName of backendNames) {
     await sendTreasury(minister.peer, treasuryRequest("approve_budget", "sock-a-1", { budget_id: budget.budget_id, approved_amount_ngn: 500000000 }));
     await sendTreasury(minister.peer, treasuryRequest("allocate_budget", "sock-al-1", { budget_id: budget.budget_id, amount_ngn: 300000000 }));
 
-    const payload = { budget_id: budget.budget_id, amount_ngn: 100000000, destination: { kind: "character", id: payee.characterId }, reason: "Salaries" };
+    const start = financeBalance(backend);
+    // A socket identity starts with its own cash (from the character record), so the payee is checked by its change.
+    const payeeStart = backend.store.state.economyAccounts[Object.values(backend.store.state.economyAccounts)
+      .find((a) => a.character_id === payee.characterId && a.kind === "cash").account_id].balance_ngn;
+    const payload = { budget_id: budget.budget_id, amount_ngn: 40000000, destination: { kind: "character", id: payee.characterId }, reason: "Salaries" };
     const first = await sendTreasury(minister.peer, treasuryRequest("spend_budget", "sock-spend-1", payload));
     const second = await sendTreasury(minister.peer, treasuryRequest("spend_budget", "sock-spend-1", payload));
     assert.equal(first.type, "government.result", JSON.stringify(first));
     assert.equal(second.type, "government.result");
     assert.equal(second.data.replayed, true);
     assert.equal(second.data.expenditure.expenditure_id, first.data.expenditure.expenditure_id);
-    assert.equal(backend.store.state.governmentOrganisations[FINANCE].treasury_account.balance_ngn, 300000000, "debited once");
+    assert.equal(financeBalance(backend), start - 40000000, "debited once");
     assert.equal(Object.keys(backend.store.state.governmentExpenditure).length, 1);
+    const payeeAccount = backend.store.state.economyAccounts[first.data.expenditure.recipient_account_id];
+    assert.equal(payeeAccount.balance_ngn, payeeStart + 40000000, "credited once to the payee's cash account");
     assert.deepEqual(auditTreasuryLedger(backend.store.state), []);
   });
 
@@ -600,13 +633,14 @@ for (const backendName of backendNames) {
     await sendTreasury(minister.peer, treasuryRequest("approve_budget", "race-a", { budget_id: budget.budget_id, approved_amount_ngn: 500000000 }));
     await sendTreasury(minister.peer, treasuryRequest("allocate_budget", "race-al", { budget_id: budget.budget_id, amount_ngn: 300000000 }));
 
-    const payload = { budget_id: budget.budget_id, amount_ngn: 100000000, destination: { kind: "character", id: payee.characterId }, reason: "Race" };
+    const start = financeBalance(backend);
+    const payload = { budget_id: budget.budget_id, amount_ngn: 40000000, destination: { kind: "character", id: payee.characterId }, reason: "Race" };
     minister.peer.send(treasuryRequest("spend_budget", "race-spend", payload));
     minister.peer.send(treasuryRequest("spend_budget", "race-spend", payload));
     const replies = [await waitForGovernment(minister.peer), await waitForGovernment(minister.peer)];
     assert.ok(replies.every((r) => r.type === "government.result"), JSON.stringify(replies));
     assert.equal(replies.filter((r) => r.data.replayed === true).length, 1, "exactly one of them is a replay");
-    assert.equal(backend.store.state.governmentOrganisations[FINANCE].treasury_account.balance_ngn, 300000000);
+    assert.equal(financeBalance(backend), start - 40000000);
     assert.equal(Object.keys(backend.store.state.governmentExpenditure).length, 1);
   });
 
@@ -619,16 +653,21 @@ for (const backendName of backendNames) {
     setup(backend, { funding: 100000000 });
     await sendTreasury(minister.peer, treasuryRequest("approve_budget", "fund-a", { budget_id: budget.budget_id, approved_amount_ngn: 500000000 }));
     await sendTreasury(minister.peer, treasuryRequest("allocate_budget", "fund-al", { budget_id: budget.budget_id, amount_ngn: 400000000 }));
+    // Leave exactly 60m in the treasury through the trusted expenditure path (no player route), so two 40m payments
+    // cannot both be paid. Each payment is within the per-payment limit.
+    recordGovernmentExpenditure(backend.store.state, FINANCE, null, "exp:other", financeBalance(backend) - 60000000,
+      "Test drain", null, null, backend.store.state.worldClock.world_date, Date.now(), CATALOG);
+    assert.equal(financeBalance(backend), 60000000, "premise: 60m left");
 
     const destination = { kind: "character", id: payee.characterId };
-    minister.peer.send(treasuryRequest("spend_budget", "pay-a", { budget_id: budget.budget_id, amount_ngn: 80000000, destination, reason: "A" }));
-    minister.peer.send(treasuryRequest("spend_budget", "pay-b", { budget_id: budget.budget_id, amount_ngn: 80000000, destination, reason: "B" }));
+    minister.peer.send(treasuryRequest("spend_budget", "pay-a", { budget_id: budget.budget_id, amount_ngn: 40000000, destination, reason: "A" }));
+    minister.peer.send(treasuryRequest("spend_budget", "pay-b", { budget_id: budget.budget_id, amount_ngn: 40000000, destination, reason: "B" }));
     const replies = [await waitForGovernment(minister.peer), await waitForGovernment(minister.peer)];
     const successes = replies.filter((r) => r.type === "government.result").length;
     const refusals = replies.filter((r) => r.type === "government.error" && r.code === "treasury_insufficient_funds").length;
     assert.equal(successes, 1);
     assert.equal(refusals, 1);
-    assert.equal(backend.store.state.governmentOrganisations[FINANCE].treasury_account.balance_ngn, 20000000);
+    assert.equal(financeBalance(backend), 20000000);
     assert.ok(backend.store.state.governmentOrganisations[FINANCE].treasury_account.balance_ngn >= 0);
     assert.deepEqual(auditTreasuryLedger(backend.store.state), []);
   });
@@ -647,10 +686,11 @@ for (const backendName of backendNames) {
       budget_id: budget.budget_id, amount_ngn: 1000, destination: { kind: "character", id: minister.characterId }, reason: "Self",
     }));
     assert.equal(self.code, "treasury_conflict_of_interest");
+    // Businesses have no receiving rule yet, so a payment to the minister's own business is refused as unsupported.
     const business = await sendTreasury(minister.peer, treasuryRequest("spend_budget", "biz-pay", {
       budget_id: budget.budget_id, amount_ngn: 1000, destination: { kind: "business", id: "biz-socket-minister" }, reason: "Biz",
     }));
-    assert.equal(business.code, "treasury_conflict_of_interest");
+    assert.equal(business.code, "treasury_destination_unsupported");
     assert.equal(fingerprint(backend.store.state), before, "neither refusal changed the state");
   });
 }

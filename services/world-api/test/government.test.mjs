@@ -191,11 +191,13 @@ test("seedGovernmentWorld creates federal government, ministries, offices, and b
     assert.equal(budget.spent_amount_ngn, 0);
   }
 
-  // Every seeded treasury account starts at zero (there is no funding source yet; see the Stage 31 document).
+  // Every seeded treasury starts at zero, except the finance treasury, which receives the one-time initial funding
+  // (Stage 32). No other treasury is funded.
   const accounts = Object.values(world.state.governmentOrganisations).map((o) => o.treasury_account).filter(Boolean);
   assert.ok(accounts.length >= 10);
   for (const account of accounts) {
-    assert.equal(account.balance_ngn, 0);
+    const expected = account.organisation_id === "gov:min:finance" ? loadGovernmentCatalog().treasury_funding[0].amount_ngn : 0;
+    assert.equal(account.balance_ngn, expected, account.organisation_id);
     assert.equal(account.account_id, `treasury:${account.organisation_id}`);
   }
 

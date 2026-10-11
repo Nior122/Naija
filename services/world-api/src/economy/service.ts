@@ -1062,6 +1062,86 @@ export function estimateIncomeTax(monthlyIncomeNgn: number, catalog: EconomyCata
   return calculateIncomeTax(monthlyIncomeNgn, catalog);
 }
 
+// ─── Government payments into a cash account (Stage 32) ────────────
+
+/** Family and marriage ties that make a payment a conflict of interest for the paying official. */
+const FAMILY_TIE_TYPES: readonly string[] = ["parent_of", "guardian_of", "sibling_of", "spouse"];
+
+export function hasActiveFamilyTie(state: PersistentWorldState, characterA: string, characterB: string): boolean {
+  const relationship = Object.values(state.relationships ?? {}).some((relation) =>
+    relation.status === "active" && FAMILY_TIE_TYPES.includes(relation.type) &&
+    relation.participants.includes(characterA) && relation.participants.includes(characterB));
+  if (relationship) return true;
+  return Object.values(state.marriages ?? {}).some((marriage) =>
+    marriage.status === "active" && marriage.spouse_ids.includes(characterA) && marriage.spouse_ids.includes(characterB));
+}
+
+/**
+ * Checks a payment into a character's cash account and returns the write that makes it. It never creates an account
+ * (unlike creditSalary). Every check runs here, before any write, so the caller can validate the whole payment first.
+ * The returned apply() performs only assignments and cannot fail, so the government side can post its debit in the
+ * same synchronous step and the two writes never end up half done.
+ */
+export function planGovernmentPaymentCredit(
+  state: PersistentWorldState,
+  characterId: string,
+  amountNgn: number,
+  catalog: EconomyCatalog = loadEconomyCatalog(),
+): {
+  readonly accountId: string;
+  apply(input: { readonly expenditureId: string; readonly treasuryAccountId: string; readonly sourceLabel: string;
+    readonly amountNgn: number; readonly date: CalendarDate; readonly now: number }): string;
+} {
+  const player = characterForId(state, characterId);
+  if (!player) throw new Error("economy_payee_not_found");
+  if (player.character.life_status === "deceased") throw new Error("economy_payee_deceased");
+  const account = accountsForCharacter(state, characterId).find((candidate) => candidate.kind === "cash");
+  if (!account) throw new Error("economy_payee_account_missing");
+  if (account.status !== "active") throw new Error("economy_payee_account_inactive");
+  if (!Number.isSafeInteger(amountNgn) || amountNgn < catalog.rules.minimum_transaction_amount_ngn ||
+    amountNgn > catalog.rules.maximum_transaction_amount_ngn) {
+    throw new Error("economy_payment_over_transaction_limit");
+  }
+  if (account.balance_ngn + amountNgn > catalog.rules.maximum_account_balance_ngn) {
+    throw new Error("economy_payee_balance_limit");
+  }
+  return {
+    accountId: account.account_id,
+    apply(input) {
+      const timestamp = new Date(input.now).toISOString();
+      const balanceBefore = account.balance_ngn;
+      account.balance_ngn += input.amountNgn;
+      account.total_deposited_ngn += input.amountNgn;
+      account.updated_at = timestamp;
+      const transactionId = `economy-tx-${randomUUID()}`;
+      state.economyTransactions[transactionId] = {
+        transaction_id: transactionId,
+        account_id: account.account_id,
+        character_id: characterId,
+        kind: "government_payment",
+        amount_ngn: input.amountNgn,
+        balance_before_ngn: balanceBefore,
+        balance_after_ngn: account.balance_ngn,
+        fee_ngn: 0,
+        description: `Payment from ${input.sourceLabel}.`,
+        world_date: cloneDate(input.date),
+        minute_of_day: state.worldClock.minute_of_day,
+        posted_at: timestamp,
+        reference_id: input.expenditureId,
+        counterparty_account_id: input.treasuryAccountId,
+        idempotency_key: createHash("sha256").update(`gov-payment:${input.expenditureId}`).digest("hex"),
+      };
+      appendEconomyEvent(state, characterId, "government_payment_received",
+        `Received ₦${input.amountNgn.toLocaleString("en-NG")} from ${input.sourceLabel}.`,
+        input.date, state.worldClock.minute_of_day, input.now,
+        { amount_ngn: input.amountNgn, expenditure_id: input.expenditureId, balance_after_ngn: account.balance_ngn },
+        { account_id: account.account_id, transaction_id: transactionId });
+      syncCharacterCashFromEconomy(state, characterId);
+      return transactionId;
+    },
+  };
+}
+
 export function syncCharacterCashFromEconomy(state: PersistentWorldState, characterId: string): void {
   const player = characterForId(state, characterId);
   if (!player) return;
@@ -1084,6 +1164,12 @@ export function economyErrorMessage(code: string): string {
     economy_withdrawal_amount_invalid: "The withdrawal amount is outside the allowed range.",
     economy_transfer_amount_invalid: "The transfer amount is outside the allowed range.",
     economy_same_account_transfer: "You cannot transfer between the same account.",
+    economy_payee_not_found: "The payment recipient is not a character in this world.",
+    economy_payee_deceased: "The payment recipient is deceased and cannot receive payments.",
+    economy_payee_account_missing: "The payment recipient has no cash account, so the payment cannot be made.",
+    economy_payee_account_inactive: "The payment recipient's cash account is not active.",
+    economy_payment_over_transaction_limit: "A single payment to a person cannot exceed the economy's transaction limit.",
+    economy_payee_balance_limit: "The payment would take the recipient's cash account over its balance limit.",
     economy_insufficient_funds: "You do not have enough funds for this transaction.",
     economy_balance_limit_exceeded: "This transaction would exceed the account balance limit.",
     economy_daily_withdrawal_limit: "You have reached the daily withdrawal limit for this account.",

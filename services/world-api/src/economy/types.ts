@@ -15,7 +15,8 @@ export type EconomyTransactionKind =
   | "loan_late_fee"
   | "initial_credit"
   | "clinic_payment"
-  | "bus_fare";
+  | "bus_fare"
+  | "government_payment";
 
 export type EconomyAccountKind = "cash" | "savings" | "current" | "fixed_deposit";
 export type EconomyLoanStatus = "active" | "paid_off" | "defaulted" | "cancelled";

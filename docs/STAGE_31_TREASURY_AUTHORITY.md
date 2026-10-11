@@ -4,8 +4,13 @@ Date: 2026-10-11. Branch: `arena/00cdea0e-naija`. Starting commit: `2244457` (th
 
 Status: **Three treasury routes are open, behind server-side authority. Everything else that moves money stays
 refused.** This stage builds the government treasury ledger, the hierarchy rule that decides which office governs which
-organisation, and the budget-approval age rule. It is not production-ready. It has no funding source, and money paid to
-a character does not reach that character's economy account (see section 8).
+organisation, and the budget-approval age rule. It is not production-ready.
+
+> **Updated by Stage 32** (`docs/STAGE_32_TREASURY_FUNDING_AND_PAYMENTS.md`). The two gaps this status line named are
+> closed in part. The Finance treasury now has a one-time catalogue funding (₦100m, `treasury-initial-allocation-v1`).
+> A payment to a character is credited to that character's existing cash account in the same write as the debit.
+> Business and organisation payments remain refused. Where this document says there is no funding source, or that
+> payments do not reach payees, it describes the state **before Stage 32**, and sections 4, 7, 8, and 10 are updated.
 
 Read this with `docs/STAGE_28_AUTHORITY_MODEL.md` (the rules G-1 to G-8 and R-a to R-f) and
 `docs/STAGE_30_GOVERNMENT_ELECTION_AUTHORITY.md` (the resolver and the term and suspension rules). Both are updated to
@@ -17,7 +22,7 @@ point here.
 |---|---|---|
 | `approve_budget` | **Open** (server authority, age 25 or over) | Sets a ceiling on a budget. Moves no money. |
 | `allocate_budget` | **Open** (server authority, `requestId` required) | Commits part of an approved ceiling. Moves no money. |
-| `spend_budget` | **Open** (server authority, `requestId` required, destination checks) | Debits the organisation's treasury ledger. |
+| `spend_budget` | **Open** (server authority, `requestId` required, destination checks) | Debits the organisation's treasury ledger. **Stage 32:** credits a character's existing cash account in the same write. Business and organisation destinations are refused. |
 | `record_revenue` | Suspended (`government_writes_suspended`) | No funding source has been decided. Revenue has no player route. |
 | `record_expenditure` | Suspended | Replaced by the scoped `spend_budget`. Also needs the treasury debit. |
 | `create_budget` | Suspended | Trusted seeding path only (see section 4). |
@@ -40,7 +45,7 @@ Trusted functions with no player route: `recordGovernmentRevenue`, `recordGovern
 | Exact scope | An office confers authority only over its own organisation. A minister of finance has no authority over the health budget, the federal budget, or another ministry's budget. A parent may not spend from a child budget, or the reverse (`government_budget_wrong_organisation` in the trusted path, `government_authority_scope` on the route). |
 | Approval age (R-f) | `budget_approval_minimum_age_years: 25`, checked against the server's `date_of_birth` with `ageOnDate`. Refused as `treasury_approval_age_ineligible`. A missing or invalid birth date is refused as `government_age_unknown`. |
 | Age rule is approval only | Allocation and spending are not age-gated. The rule is not applied to all financial transactions. A test proves a 20-year-old minister may allocate and spend, while being refused approval. |
-| Self-dealing | A payment to the actor, or to a business whose `owner_character_id` is the actor, is refused (`treasury_conflict_of_interest`). This is the narrow G-7 rule. Broader conflicts remain an owner decision. |
+| Self-dealing | A payment to the actor is refused (`treasury_conflict_of_interest`). **Stage 32:** the refusal also covers an active `parent_of`, `guardian_of`, `sibling_of`, or `spouse` tie, and an active marriage with the actor. Ended ties do not count. A payment to a business the actor owns is no longer reachable, because businesses are refused (`treasury_destination_unsupported`). Broader conflicts remain an owner decision. |
 | Requests are idempotent where money moves | Spend is keyed by a hash of actor and `requestId`, with a payload fingerprint. A retry replays the first result (`replayed: true`). The same key with a different payload is refused (`treasury_idempotency_conflict`). Allocation uses the same scheme, held in event details. |
 | Ceilings are absolute | `approve_budget` sets the ceiling. It cannot go below what is already allocated (`treasury_approval_below_allocation`). |
 | Refusals change nothing | Each treasury function validates the whole request before its first write. Tests take a full state snapshot before and after every refusal and require equality. |
@@ -100,9 +105,11 @@ the organisation's kind is recognised (`organisation_kind_unrecognised`), and th
   (not draft, not closed), destination (kind, existence, and conflict), available budget, and finally treasury funds.
   Nothing is written until every check passes.
 - **Destinations.** `character`, `business`, or `organisation` only. Anything else is `treasury_destination_invalid`.
-  A character must exist. A business must exist. An organisation must exist.
-- **Funding.** There is none. Revenue has no route, and the trusted intake has no caller, so every treasury starts at 0.
-  Spending from it is therefore refused (`treasury_insufficient_funds`) until a funding source is decided.
+  **Stage 32:** only a `character` is accepted. A business or organisation is refused as `treasury_destination_unsupported`.
+  The character must exist and have an active cash account. No account is created for a payee.
+- **Funding.** *Before Stage 32, there was none, and every treasury started at 0.* **Stage 32:** the Finance treasury
+  receives a one-time catalogue grant of ₦100,000,000, applied by the server and never by a request. Other treasuries
+  are still at 0. Revenue still has no route. See `STAGE_32_TREASURY_FUNDING_AND_PAYMENTS.md` section 3.
 
 ## 5. Database and security guarantees (verified)
 
@@ -155,7 +162,9 @@ later run wins.
 - **Engine error paths.** Only the treasury functions were checked for validate-then-write. The older government and
   economy actions still mutate memory before a failure can occur.
 - **Persistence failures.** `flushDirty` retries a failed save without rollback. If a save fails after a treasury
-  write, memory is ahead of disk until a save succeeds. This is a known condition, not a fix.
+  write, memory is ahead of disk until a save succeeds. This is a known condition, not a fix. **Stage 32:** a treasury
+  reply is no longer sent before its save succeeds (`treasury_not_saved` otherwise), and a crash in the window still
+  loses the change in full. See `STAGE_32` section 5.4.
 - **Older binaries.** No schema version changed, so there is no rollback migration. An older build reading a world with
   treasury accounts ignores the optional fields, and its balance view would be stale.
 - **Carried, not changed:** session expiry (D-06), plaintext client credentials (CRED-1), unwired touch controls, mutation
@@ -163,10 +172,10 @@ later run wins.
 
 ## 8. Remaining blockers
 
-1. **No funding source.** No revenue route, tax, or fine flows into a treasury. Owner decision needed.
-2. **Payments do not reach payees.** `spend_budget` debits the government ledger and records the destination. It does not
-   credit the payee's economy account. Linking it to the existing economy is required before a payment is real money to
-   a citizen, and it must go through the existing economy, not a second system.
+1. **No funding source.** *Stage 32 added a one-time catalogue grant to the Finance treasury only.* Revenue, tax, and fines
+   still have no route. Owner decision needed on the amount and source.
+2. **Payments do not reach payees.** *Resolved for characters in Stage 32:* `spend_budget` credits the payee's existing
+   cash account in the same write. Business and organisation payees remain refused and are still a blocker.
 3. **Office permission table (R-b).** The president and minister hold the three treasury permissions in the catalogue.
    This is a mission decision that the owner should confirm.
 4. **Governors and locals are not seeded.** No state or local organisation exists, so those offices cannot act.
@@ -185,7 +194,8 @@ later run wins.
 
 ## 10. Next recommended stage
 
-Stage 32 should be a **funding and payee-credit design**: a decided funding source for at least one treasury, and an
-atomic credit from a government payment into the existing economy account of a character or business. It must reuse
-the economy system, must keep every refusal write-free, and must be tested on both backends. Open the revenue route only
-after that. Election certification and publication enforcement (Stage 30 E-2 and E-4) can follow separately.
+*Stage 32 is done (`STAGE_32_TREASURY_FUNDING_AND_PAYMENTS.md`).* It delivered a one-time funding rule for one treasury
+and a payment to a character's existing cash account. The next stage is **business payees through the existing economy**,
+in the same atomic write, with the same refusal rules. It should either keep the file backend to one process and say so,
+or add a version check to it before any multi-process use. Revenue stays closed until a funding source is decided.
+Election certification and publication enforcement (Stage 30 E-2 and E-4) can follow separately.

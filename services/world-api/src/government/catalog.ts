@@ -37,7 +37,7 @@ function validateCatalog(value: unknown): GovernmentCatalog {
     !Array.isArray(value.project_categories) || !Array.isArray(value.budget_categories) ||
     !Array.isArray(value.revenue_categories) || !Array.isArray(value.expenditure_categories) ||
     !Array.isArray(value.seed_offices) || !Array.isArray(value.independent_institutions) ||
-    !isRecord(value.office_permissions)) {
+    !Array.isArray(value.treasury_funding) || !isRecord(value.office_permissions)) {
     throw new Error("Government catalogue is incomplete or has an unsupported schema/world.");
   }
   const catalog = value as unknown as GovernmentCatalog;
@@ -69,6 +69,22 @@ function validateCatalog(value: unknown): GovernmentCatalog {
   }
   if (!catalog.budget_categories.some((c) => c.id === rules.ministry_budget_category_id)) {
     throw new Error("Government rules name an unknown ministry budget category.");
+  }
+
+  // Treasury funding (Stage 32): each rule is a fixed, finite amount into one treasury, with a revenue category that
+  // exists. A rule is applied once per world, so its ID must be unique and its amount within the revenue bounds.
+  uniqueIds(catalog.treasury_funding.map((rule) => ({ id: rule.rule_id })), "Treasury funding rules");
+  for (const rule of catalog.treasury_funding) {
+    if (!rule.organisation_id.startsWith("gov:") || typeof rule.reason !== "string" || rule.reason.trim().length === 0) {
+      throw new Error(`Treasury funding rule ${rule.rule_id} needs a government organisation and a reason.`);
+    }
+    if (!Number.isSafeInteger(rule.amount_ngn) || rule.amount_ngn < rules.minimum_revenue_amount_ngn ||
+      rule.amount_ngn > rules.maximum_revenue_amount_ngn) {
+      throw new Error(`Treasury funding rule ${rule.rule_id} has an amount outside the revenue bounds.`);
+    }
+    if (!catalog.revenue_categories.some((c) => c.id === rule.category_id)) {
+      throw new Error(`Treasury funding rule ${rule.rule_id} names an unknown revenue category.`);
+    }
   }
 
   // Hierarchy (Stage 31): every office names a scope that matches its level, an institution, and a seed placement.
