@@ -135,3 +135,165 @@ for (const backendName of backendNames) {
     }
   });
 }
+
+/** The part of the world a case request could change: the case, its evidence, participants, hearings, and audit. */
+function caseFootprint(state, caseId) {
+  const pick = (map) => Object.values(map ?? {}).filter((r) => r.case_id === caseId);
+  return JSON.parse(JSON.stringify({
+    cases: state.cases[caseId] ?? null,
+    evidence: pick(state.evidence),
+    caseParticipants: pick(state.caseParticipants),
+    hearings: pick(state.hearings),
+    legalAudits: pick(state.legalAudits),
+  }));
+}
+
+/** The fields a player can see on a refusal. Two refusals are indistinguishable when these match. */
+function refusalShape(reply) {
+  return { type: reply.type, action: reply.action, code: reply.code, message: reply.message, data: reply.data, case: reply.case };
+}
+
+const OPEN_STATUSES = ["submitted", "accepted", "awaiting_response", "pretrial", "awaiting_hearing", "in_hearing"];
+const CLOSED_STATUSES = ["draft", "rejected", "awaiting_judgment", "judgment_issued", "eligible_for_appeal", "appeal_pending", "settled", "withdrawn", "dismissed", "closed"];
+
+for (const backendName of backendNames) {
+  test(`[${backendName}] an unrelated player gets the same refusal for view_case and submit_evidence as for a missing case; nothing changes`, async () => {
+    const { backend, entry } = await session(backendName);
+    const filer = await citizen(entry, backend, "Filer", 30);
+    const respondent = await citizen(entry, backend, "Respondent", 30);
+    const stranger = await citizen(entry, backend, "Stranger", 30);
+    const seed = seedCase(backend, filer, respondent);
+    const state = backend.store.state;
+    const footprint = caseFootprint(state, seed.caseId);
+    // lastSeen and session.lastActivityAt are activity markers, refreshed for any authenticated request (existing
+    // behaviour). Everything else on the player record must be unchanged by a refusal.
+    const playerRecord = () => JSON.stringify(state.players[stranger.playerId], (key, value) => (key === "lastSeen" || key === "lastActivityAt" ? undefined : value));
+    const strangerRecord = playerRecord();
+
+    const viewMissing = await ask(stranger.peer, { type: "justice.action", action: "view_case", requestId: "v-missing", case_id: "case-made-up-by-player" });
+    const viewPrivate = await ask(stranger.peer, { type: "justice.action", action: "view_case", requestId: "v-private", case_id: seed.caseId });
+    const evidenceMissing = await ask(stranger.peer, {
+      type: "justice.action", action: "submit_evidence", requestId: "e-missing", case_id: "case-made-up-by-player", category: "document", description: "Attempt.",
+    });
+    const evidencePrivate = await ask(stranger.peer, {
+      type: "justice.action", action: "submit_evidence", requestId: "e-private", case_id: seed.caseId, category: "document", description: "Attempt.",
+    });
+
+    assert.equal(viewPrivate.code, "justice_case_not_found");
+    assert.deepEqual(refusalShape(viewPrivate), refusalShape({ ...viewMissing, requestId: undefined }), "view: same as a missing case");
+    assert.equal(evidencePrivate.code, "justice_case_not_found");
+    assert.deepEqual(refusalShape(evidencePrivate), refusalShape({ ...evidenceMissing, requestId: undefined }), "evidence: same as a missing case");
+    assert.deepEqual(caseFootprint(state, seed.caseId), footprint, "a refused request changes no case data");
+    assert.equal(playerRecord(), strangerRecord, "a refused request changes no player record (activity markers aside)");
+  });
+
+  test(`[${backendName}] a judge not assigned to the case, or listed as assigned without an authority record, gets the missing-case refusal`, async () => {
+    const { backend, entry } = await session(backendName);
+    const filer = await citizen(entry, backend, "Filer", 30);
+    const respondent = await citizen(entry, backend, "Respondent", 30);
+    const unassigned = await citizen(entry, backend, "UnassignedJudge", 45);
+    const ghost = await citizen(entry, backend, "GhostJudge", 45);
+    const seed = seedCase(backend, filer, respondent);
+    const state = backend.store.state;
+    // Appointed to the same court, but never assigned to this case's court assignment list.
+    J.appointLegalProfessional(state, unassigned.characterId, "judge", [], "operator-seed", seed.date, seed.now, seed.catalog);
+    // Listed on the court's assignment list with no active authority record: an invalid assignment.
+    assert.equal(state.courts[COURT_ID].assigned_judge_ids.includes(unassigned.characterId), false, "premise: not assigned");
+    state.courts[COURT_ID].assigned_judge_ids.push(ghost.characterId);
+
+    const footprint = caseFootprint(state, seed.caseId);
+    const missing = await ask(unassigned.peer, { type: "justice.action", action: "view_case", requestId: "missing-ref", case_id: "case-made-up-by-player" });
+    for (const [label, actor] of [["unassigned judge", unassigned], ["judge with no authority record", ghost]]) {
+      const view = await ask(actor.peer, { type: "justice.action", action: "view_case", requestId: `view-${label.replace(/\W+/g, "-")}`, case_id: seed.caseId });
+      assert.equal(view.code, "justice_case_not_found", `${label}: view`);
+      assert.deepEqual(refusalShape(view), refusalShape({ ...missing, requestId: undefined }), `${label}: view is the missing-case refusal`);
+      const evidence = await ask(actor.peer, { type: "justice.action", action: "submit_evidence", requestId: `ev-${label.replace(/\W+/g, "-")}`, case_id: seed.caseId, category: "document", description: "Attempt." });
+      assert.equal(evidence.code, "justice_case_not_found", `${label}: evidence`);
+    }
+    assert.deepEqual(caseFootprint(state, seed.caseId), footprint, "refusals change no case data");
+  });
+
+  test(`[${backendName}] an assigned judge who is also an active participant is still refused evidence; the judicial role is not a party role`, async () => {
+    const { backend, entry } = await session(backendName);
+    const filer = await citizen(entry, backend, "Filer", 30);
+    const respondent = await citizen(entry, backend, "Respondent", 30);
+    const judge = await citizen(entry, backend, "Judge", 45);
+    const seed = seedCase(backend, filer, respondent);
+    appointJudge(seed, judge, COURT_ID);
+    const state = backend.store.state;
+    state.caseParticipants["part-judge-as-witness"] = {
+      participant_id: "part-judge-as-witness", case_id: seed.caseId, character_id: judge.characterId, role: "witness",
+      joined_at: new Date().toISOString(), joined_world_date: state.worldClock.world_date, status: "active", updated_at: new Date().toISOString(),
+    };
+    const before = evidenceCount(state, seed.caseId);
+    const reply = await ask(judge.peer, { type: "justice.action", action: "submit_evidence", requestId: "judge-participant", case_id: seed.caseId, category: "document", description: "Attempt." });
+    assert.equal(reply.code, "justice_judge_cannot_submit_evidence");
+    assert.equal(evidenceCount(state, seed.caseId), before);
+  });
+
+  test(`[${backendName}] evidence is accepted only while the case is open to evidence, for parties; refusals are the same for every closed status and change nothing`, async () => {
+    const { backend, entry } = await session(backendName);
+    const filer = await citizen(entry, backend, "Filer", 30);
+    const respondent = await citizen(entry, backend, "Respondent", 30);
+    const seed = seedCase(backend, filer, respondent);
+    const state = backend.store.state;
+    const caseRec = state.cases[seed.caseId];
+    const problems = [];
+    let n = 0;
+    for (const status of [...OPEN_STATUSES, ...CLOSED_STATUSES]) {
+      caseRec.status = status;
+      const actor = n % 2 === 0 ? filer : respondent;
+      const before = caseFootprint(state, seed.caseId);
+      const reply = await ask(actor.peer, {
+        type: "justice.action", action: "submit_evidence", requestId: `status-${n++}`, case_id: seed.caseId, category: "document", description: `In ${status}.`,
+      });
+      const open = OPEN_STATUSES.includes(status);
+      if (open) {
+        if (reply.type !== "justice.result") problems.push(`${status}: expected acceptance, got ${reply.code}`);
+      } else {
+        if (reply.code !== "justice_case_not_open_for_evidence") problems.push(`${status}: expected justice_case_not_open_for_evidence, got ${reply.code}`);
+        if (JSON.stringify(caseFootprint(state, seed.caseId)) !== JSON.stringify(before)) problems.push(`${status}: refusal changed state`);
+      }
+    }
+    assert.deepEqual(problems, []);
+  });
+
+  test(`[${backendName}] client-supplied authority fields are ignored: the server identity decides, for view and evidence`, async () => {
+    const { backend, entry } = await session(backendName);
+    const filer = await citizen(entry, backend, "Filer", 30);
+    const respondent = await citizen(entry, backend, "Respondent", 30);
+    const stranger = await citizen(entry, backend, "Stranger", 30);
+    const judge = await citizen(entry, backend, "Judge", 45);
+    const seed = seedCase(backend, filer, respondent);
+    appointJudge(seed, judge, COURT_ID);
+    const state = backend.store.state;
+    const forged = {
+      character_id: filer.characterId, characterId: filer.characterId, player_id: filer.playerId,
+      submitted_by_character_id: filer.characterId, actor_character_id: filer.characterId,
+      party: true, role: "judge", is_judge: true, judge_character_id: judge.characterId,
+      assigned_judge_character_id: judge.characterId, court_id: COURT_ID,
+    };
+
+    // A stranger who forges party and judge fields is still a stranger.
+    const forgedView = await ask(stranger.peer, { type: "justice.action", action: "view_case", requestId: "forged-view", case_id: seed.caseId, ...forged });
+    assert.equal(forgedView.code, "justice_case_not_found");
+    const forgedEvidence = await ask(stranger.peer, { type: "justice.action", action: "submit_evidence", requestId: "forged-ev", case_id: seed.caseId, category: "document", description: "Attempt.", ...forged });
+    assert.equal(forgedEvidence.code, "justice_case_not_found");
+
+    // A judge who forges another character's id is still judged on the server identity: refused as the judge.
+    const judgeEvidence = await ask(judge.peer, { type: "justice.action", action: "submit_evidence", requestId: "judge-forged-ev", case_id: seed.caseId, category: "document", description: "Attempt.", submitted_by_character_id: respondent.characterId, character_id: respondent.characterId });
+    assert.equal(judgeEvidence.code, "justice_judge_cannot_submit_evidence");
+
+    // A party who forges another party's id gets evidence recorded under their own server identity.
+    const before = evidenceCount(state, seed.caseId);
+    const partyEvidence = await ask(respondent.peer, { type: "justice.action", action: "submit_evidence", requestId: "party-forged-ev", case_id: seed.caseId, category: "document", description: "Respondent's exhibit.", submitted_by_character_id: filer.characterId, character_id: filer.characterId });
+    assert.equal(partyEvidence.type, "justice.result");
+    assert.equal(evidenceCount(state, seed.caseId), before + 1);
+    const recorded = Object.values(state.evidence).find((e) => e.case_id === seed.caseId && e.description === "Respondent's exhibit.");
+    assert.equal(recorded.submitted_by_character_id, respondent.characterId, "the recorded submitter is the server identity, not the forged id");
+
+    // The judge's view is still the judge's own: forged fields do not change it.
+    const judgeView = await ask(judge.peer, { type: "justice.action", action: "view_case", requestId: "judge-forged-view", case_id: seed.caseId, character_id: stranger.characterId });
+    assert.equal(judgeView.type, "justice.result");
+  });
+}

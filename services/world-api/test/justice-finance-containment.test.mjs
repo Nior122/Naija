@@ -5,8 +5,9 @@
 //   - justice.action pay_fine        -> justice_fine_payment_suspended      (decision D-02)
 //   - crime.action create_criminal_record -> crime_record_creation_suspended (decision D-03)
 // Evidence submission and case viewing are restricted to parties to the case (filing party, respondent, or an
-// active case-participant record). Non-parties are refused with justice_not_case_party (evidence) or
-// justice_case_not_found (view, which does not reveal whether a case exists).
+// active case-participant record) and, for viewing, the assigned judge. Anyone else receives justice_case_not_found,
+// the same response as a missing case, so the response does not reveal whether a case exists. Evidence is accepted
+// only while the case is open to evidence (see EVIDENCE_OPEN_CASE_STATUSES in src/justice/service.ts).
 //
 // Every refusal test compares the justice, crime, and economy state before and after the request. A refused request
 // must change nothing. Positive controls show that the same routes still work for parties where they are allowed,
@@ -99,6 +100,20 @@ function buildAppealChain(backend, filer, respondent, judge) {
   return { caseId: caseRec.case_id, judgmentId: judgment.judgment_id, appealId: appeal.appeal_id };
 }
 
+/** A filed case still open to evidence (in hearing). Positive controls for submit_evidence run on this case. */
+function buildOpenCase(backend, filer, respondent) {
+  const state = backend.store.state;
+  const date = state.worldClock.world_date;
+  const now = Date.now();
+  const catalog = J.loadJusticeCatalog();
+  J.seedJusticeWorld(state, date, now, catalog);
+  const caseRec = J.fileCase(state, "civil_general", COURT_ID, filer.characterId, respondent.characterId, "Summary.", "Desc.", [], null, date, now, catalog);
+  for (const status of ["accepted", "pretrial", "awaiting_hearing", "in_hearing"]) {
+    J.advanceCaseStatus(state, caseRec.case_id, status, filer.characterId, date, now);
+  }
+  return { caseId: caseRec.case_id };
+}
+
 for (const backendName of backendNames) {
   test(`[${backendName}] decide_appeal is refused for an assigned judge, a party, and a stranger; state is unchanged`, async () => {
     const { backend, entry } = await session(backendName);
@@ -185,7 +200,7 @@ for (const backendName of backendNames) {
     const stranger = await citizen(entry, backend, "Stranger", 30);
     const witness = await citizen(entry, backend, "Witness", 30);
     const judge = await citizen(entry, backend, "Judge", 45);
-    const chain = buildAppealChain(backend, filer, respondent, judge);
+    const chain = buildOpenCase(backend, filer, respondent);
     const state = backend.store.state;
     // An active participant record for the witness, written through the trusted path (no player route adds one yet).
     state.caseParticipants["part-containment-witness"] = {
@@ -208,6 +223,11 @@ for (const backendName of backendNames) {
       assert.equal(evidenceCount(), before + 1, label);
     }
 
+    // A refusal must look exactly like a missing case, so the response does not reveal that this case exists.
+    const missing = await ask(stranger.peer, {
+      type: "justice.action", action: "submit_evidence", requestId: "ev-missing-case",
+      case_id: "case-made-up-by-player", category: "document", description: "Attempt.",
+    });
     const beforeRefusals = protectedState(state);
     const refusals = [
       { label: "stranger", actor: stranger, extra: {} },
@@ -220,7 +240,9 @@ for (const backendName of backendNames) {
         case_id: chain.caseId, category: "document", description: "Attempt.", ...refusal.extra,
       });
       assert.equal(reply.type, "justice.error", refusal.label);
-      assert.equal(reply.code, "justice_not_case_party", refusal.label);
+      assert.equal(reply.code, "justice_case_not_found", refusal.label);
+      assert.equal(reply.message, missing.message, `${refusal.label}: same message as a missing case`);
+      assert.equal(reply.data, undefined, refusal.label);
     }
     assert.deepEqual(protectedState(state), beforeRefusals);
   });

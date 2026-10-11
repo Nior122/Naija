@@ -37,8 +37,8 @@ Principles (apply to every family):
 |---|---|---|
 | J-1 Assignment | A judge is assigned to a court only through the trusted appointment path (appoint legal professional, then assign to court). No player route. | Trusted functions exist; no player route. |
 | J-2 Judicial standing for a case | Active judge or magistrate appointment, assigned to the case's own court. | IMPLEMENTED (`isAssignedJudgeForCase`). Tested through the socket. |
-| J-3 Case access | Parties (filing party, respondent, active participant) and assigned judges of the case's court may view. Everyone else gets `justice_case_not_found`. | IMPLEMENTED. Tested. |
-| J-4 Evidence | Parties may submit. An assigned judge may not submit evidence in that capacity. Non-parties may not submit. | IMPLEMENTED. Tested. |
+| J-3 Case access | Parties (filing party, respondent, active participant) and assigned judges of the case's court may view. Everyone else gets `justice_case_not_found`. | IMPLEMENTED. Tested. Recorded in `docs/STAGE_28_CASE_ACCESS.md`. |
+| J-4 Evidence | Parties may submit, only while the case is open to evidence (filed through in hearing). An assigned judge may not submit evidence in that capacity. Anyone else gets `justice_case_not_found`, the same as a missing case. | IMPLEMENTED. Tested. Corrected in the case-access slice: non-parties previously received `justice_not_case_party`, which revealed that the case exists. See `docs/STAGE_28_CASE_ACCESS.md`. |
 | J-5 Appeal decision | Authorised, independently assigned judge of the appellate court; not the original judge; not a party; not conflicted. | SUSPENDED (`justice_appeal_decision_suspended`). Appellate assignment mechanism is not built. |
 | J-6 Fine payment | Paid from the responsible character's own balance to the designated account, atomically, with a ledger entry. | SUSPENDED (`justice_fine_payment_suspended`). No atomic ledger link. |
 | J-7 Criminal record | Only from a valid final judgment in a case, by an authorised justice process. | SUSPENDED (`crime_record_creation_suspended`). |

@@ -897,6 +897,15 @@ export function getCharacterCases(state: PersistentWorldState, characterId: stri
 
 // ─── Evidence ─────────────────────────────────────────────────────
 
+/**
+ * Case statuses in which parties may still submit evidence: the case is filed and has not yet reached judgment.
+ * Evidence closes when the case goes to judgment (awaiting_judgment). This list is an implementation choice of the
+ * case-access slice, recorded in docs/STAGE_28_CASE_ACCESS.md for review.
+ */
+export const EVIDENCE_OPEN_CASE_STATUSES: ReadonlySet<CaseStatusId> = new Set<CaseStatusId>([
+  "submitted", "accepted", "awaiting_response", "pretrial", "awaiting_hearing", "in_hearing",
+]);
+
 export function submitEvidence(
   state: PersistentWorldState,
   caseId: string,
@@ -910,11 +919,15 @@ export function submitEvidence(
 ): EvidenceRecord {
   const caseRec = state.cases[caseId];
   if (!caseRec) throw new Error("justice_case_not_found");
+  // Private case: a caller who is neither a party nor the assigned judge receives the same refusal as a missing case,
+  // so the response does not reveal whether the case exists (access policy, indistinguishable refusals).
+  const judging = isAssignedJudgeForCase(state, caseId, submittedByCharacterId);
+  if (!judging && !isCaseParty(state, caseId, submittedByCharacterId)) throw new Error("justice_case_not_found");
   // An assigned judge acting in that capacity never submits evidence (access policy item 3). Checked before party
   // standing, so a judge who is also listed as a party is refused too: the judicial role is not a party role.
-  if (isAssignedJudgeForCase(state, caseId, submittedByCharacterId)) throw new Error("justice_judge_cannot_submit_evidence");
-  // Only a party to the case may submit evidence to it (filing party, respondent, or an active participant).
-  if (!isCaseParty(state, caseId, submittedByCharacterId)) throw new Error("justice_not_case_party");
+  if (judging) throw new Error("justice_judge_cannot_submit_evidence");
+  // A party may submit only while the case is open to evidence (access policy, case-status rule).
+  if (!EVIDENCE_OPEN_CASE_STATUSES.has(caseRec.status)) throw new Error("justice_case_not_open_for_evidence");
 
   const evidenceCount = Object.values(state.evidence).filter((e) => e.case_id === caseId).length;
   if (evidenceCount >= catalog.rules.max_evidence_per_case) throw new Error("justice_evidence_limit_reached");
@@ -1366,6 +1379,7 @@ export function justiceErrorMessage(code: string): string {
     justice_appeal_no_standing: "Character does not have standing to appeal this case.",
     justice_not_case_party: "Only a party to this case can do that.",
     justice_judge_cannot_submit_evidence: "An assigned judge cannot submit evidence to a case they are judging.",
+    justice_case_not_open_for_evidence: "This case is no longer taking evidence.",
     justice_appeal_decision_suspended: "Appeal decisions are suspended until judicial appointments and assignments can be verified.",
     justice_fine_payment_suspended: "Fine payments are suspended until they can be recorded atomically in the economy ledger.",
     justice_court_not_appellate: "Court does not have appellate jurisdiction.",
