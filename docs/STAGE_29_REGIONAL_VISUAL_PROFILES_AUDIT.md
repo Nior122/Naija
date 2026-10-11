@@ -1649,3 +1649,181 @@ Conclusion from M1 to M3: the modal test catches removal of the guard. The UI-fl
 - Modal safety for world switching: verified headless, with the guard in `00f692b`. This section adds no production change.
 - UI-flow determinism: clock frozen, save restore verified, and three consecutive runs passed. The race is confirmed only with an accelerated clock.
 - Stage 29 **OPEN** until rendered validation is complete. Stage 28 **OPEN**. Production **NOT READY**.
+
+## 23. Recovery, return-path save safety, and consolidated issue register (2026-10-11)
+
+Evidence labels used below. **Engine-executed** means a Godot run with a verified binary. **Parse** means a third-party tree-sitter GDScript grammar (PyPI `tree-sitter-gdscript` 6.1.0), which is not Godot. **Node** means in-process Node tests, not a live server. **Static** means reading or grep. **Not verified** and **blocked** are stated where they apply.
+
+### 23.1 Result
+
+- Repository: **RECOVERY_COMPLETE**. The local branch was realigned to `origin/arena/00cdea0e-naija` (`c898e21`) without touching any working file. The working tree is clean.
+- Return-path save safety: **FIXED_UNVERIFIED**. The data-loss path is fixed in the code. It has not been executed, because no Godot binary is available.
+- Engine-dependent acceptance (all Godot tests, rendered validation, live-server behaviour): **BLOCKED — GODOT UNAVAILABLE**, and no live server.
+- Node test suite and lint: **executed (Node, static)**, with results in 23.10.
+- Stage 29: **OPEN**. Stage 28: **OPEN**. Production: **NOT READY**.
+
+### 23.2 Repository recovery
+
+- Starting state, verified at the start of this task: local branch `arena/00cdea0e-naija` at `44483b4` (the `main` tip), with no upstream. The remote branch was at `c898e21`, 96 commits ahead. Staged: 0. Modified tracked: 32. Untracked: 318. Stashes: 0. Ignored files present: 0.
+- Blob check before any change: all 411 files of `c898e21` matched the working tree exactly, and no extra working-tree file existed outside that commit. The 32 modified files are the earlier fixes, and their content equals `c898e21`.
+- Backup taken before any Git-state change: a copy of the `.git` directory and a tar of the working tree (excluding `.git`), with a SHA-256 checksum. Location: `/tmp/naija-recovery-backup-20261011142806`. `/tmp` did not survive an earlier environment reset, so this copy is not durable. It should be treated as temporary.
+- Realignment, in two steps, both without touching a working file:
+  1. `git update-ref refs/heads/arena/00cdea0e-naija c898e21 44483b4` (compare-and-swap; it would have failed if the branch had moved). This is a fast-forward, because `44483b4` is an ancestor of `c898e21`.
+  2. `git read-tree c898e21` (index only, with no working-tree update), followed by `git branch --set-upstream-to=origin/arena/00cdea0e-naija`.
+- Final state, verified: HEAD `c898e21`, branch `arena/00cdea0e-naija`, 0 ahead and 0 behind its upstream, no staged files, no stash. No reset, clean, or force-push was used.
+- Earlier fixes are present in history (verified with `git log`): `00f692b` (modal guard, UI-flow determinism), `cd1703c` (F3 standard key, confirmed Load), `03e6611` and `7510942` (headless UI-flow evidence), `b5430c8` (3D return repair), `c898e21` (section 22).
+
+### 23.3 Engine availability
+
+- `/tmp/godot-build` is gone. No Godot executable exists anywhere on the machine (`find` returned nothing).
+- The official 4.7.2-stable release is published on GitHub (checked through `api.github.com`). The release binary is served from a release-assets host that is not on this sandbox's allowlist (recorded as blocked earlier in this task). That host was not retried, and no other mirror was used.
+- A source build from `codeload.github.com` is possible in principle, but this machine has 2 cores, 3 GB of RAM, and no `scons`. A full Godot build on this hardware would be slow and could exhaust memory (a judgment, not measured). It was not started. It would produce a custom build, not the official release.
+- Consequence: no Godot test was executed in this task. The `--version` check was not run, because there is no binary to check.
+
+### 23.4 Return-path save safety
+
+**Save and backup paths.** Save: `user://naija-stage1-save.json`, which is `save_service.gd`'s `DEFAULT_SAVE_PATH`. Backup: `user://naija-stage1-save.return-test-backup.json`. Marker (new): `user://naija-stage1-save.return-test-no-save.marker`.
+
+**Behaviour before this change (confirmed by reading `HEAD:game/tests/return_path.gd`):**
+1. The test does not remove the original save. Its own explicit saves, and the clock's autosave, overwrite `SAVE_PATH` in place during the run. The backup is therefore the only intact copy while the test runs.
+2. The backup was written with `store_buffer` and never read back or compared.
+3. The restore wrote the original only `if file != null`, then removed the backup unconditionally. If reopening the save for writing failed, the backup was deleted and the user's save was lost. **This was the most serious finding.** Confirmed by code reading. Not yet confirmed by failure injection.
+4. The restored save was never compared to the original bytes, and the restore result was ignored.
+5. No marker recorded that no save existed. After a killed run, the test's own save would have been treated as user data on the next run, backed up, and kept.
+6. The refusal check covered only the backup path, not markers or the other save-slot tests' files.
+
+**Behaviour after this change (`game/tests/return_path.gd`):**
+- The original bytes are read into memory before any write (`_original_bytes`). A missing original is recorded as absence, through the marker, and never as an empty file.
+- The backup is written, read back, and compared to the in-memory original. A mismatch removes this run's own backup and stops before the save is changed.
+- Restore writes the in-memory original back, reads it back, and compares the bytes. The backup is removed only after that comparison matches. If the write fails, the backup is kept. If the comparison fails, the backup is kept. If the backup cannot be removed, the failure is reported.
+- If no save existed, a marker records that. Restore removes the save only if it is present, which can only be this run's save, and then removes the marker. A failure keeps the marker.
+- `_restore_save()` returns a result that is checked as an assertion (`_check`). A failed restore therefore fails the run.
+- Refusal: the run refuses if the backup, the marker, or any other save-slot test's backup or marker is present. Nothing is changed in that case.
+- The other two save-slot tests (`ui_flow_headless.gd`, `load_confirmation_headless.gd`) now also refuse while the return-path marker is present.
+
+**Effect on counts.** The new restore check adds one assertion. A successful run is therefore expected to print 47 return-path checks, not 46. This is expected, and it is not yet executed.
+
+**Verification status of the change:**
+- Parse: 0 error nodes in all three edited files, with a negative control that produced 2 error nodes. This shows the parser detects errors. It is not Godot compilation.
+- Engine-executed: none. The new code is **FIXED_UNVERIFIED**.
+- Not verified: the failure-injection tests in 23.6 (restore-write failure, backup mismatch, leftover marker).
+
+**Crash and kill behaviour.** Ordinary cleanup does not run after a hard kill or a crash. The recovery material (backup or marker) then stays on disk, and the next run refuses to start until a person resolves it. The test does not delete that material to make a run proceed. The test cannot recover a save after a hard kill by itself.
+
+### 23.5 Clock and autosave (return-path test)
+
+- The 2D clock rate is `_seconds_per_game_minute` in `prototype_game.gd` (line 33, default 0.65 s per game minute, clamped at line 42).
+- Autosave: `prototype_game.gd` calls `_save_game(false)` when a 15-game-minute boundary is crossed (lines 131-147), and only when no modal is open and the session is not suspended. A suspended session does not advance the clock (line 83).
+- The test checks that the 2D clock is unchanged while 3D is active (`return_path.gd`, the check at line 199).
+- **Not established:** a clock advance also calls `character.advance_time` and `advance_life_to_date` (lines 118-134). Those can change character state. An autosave during the test could therefore capture state that a later assertion reads. Static review could not rule this out, and the engine was not available to test it.
+- No clock freeze was added in this task, and no production code changed. Status **OPEN** (TEST-6). If a flake is observed, the fix is a test-local seam (for example, suspending the clock inside the test), not a production change.
+
+**Timing-sensitive check that remains (not changed, not verified):**
+- `resume_step <= 1` (test line 308) counts game minutes advanced in the first frame after resume. At 0.65 s per game minute, a single frame with a wall-clock delta of about 1.3 s would advance two minutes (arithmetic, not an observed failure). Status **OPEN** (TEST-7).
+- `moved > 1.0` after 60 held-input frames depends on physics stepping. Status **OPEN** (TEST-8), not reproduced.
+
+### 23.6 Failure-path review
+
+| Failure | Behaviour after this change | Verification |
+|---|---|---|
+| Assertion fails | Recorded. Run continues to restore, then exits 1 | Static |
+| Backup cannot be opened, written, or read back identically | Run stops before the save file is changed; a mismatched backup is removed | Static |
+| Backup read-back mismatch | Own backup removed; original never changed | Static |
+| Original cannot be reopened for writing during restore | Backup kept; error reported; run fails | Static (**not failure-injected**) |
+| Restored bytes differ from the original | Backup kept; run fails | Static |
+| Backup cannot be removed after verified restore | Reported; run fails; backup kept | Static |
+| No-save case, marker cannot be removed | Reported; run fails; marker kept | Static |
+| Previous run's backup, marker, or other test's file present | Refuses; changes nothing | Static |
+| Watchdog (180 s) | Restores (same logic), then exits 1 | Static |
+| Hard kill or crash | No restore; recovery material kept; next run refuses | Documented limitation |
+| GDScript runtime error inside the test coroutine | Restore waits for the watchdog. Not verified | **OPEN** |
+
+Failure injection was not performed. It needs a working engine and a scratch copy with a fixture user-data directory. The repository's own test runner has no such isolation (see 23.10).
+
+### 23.7 Modal, F3, and F11 (static)
+
+- `project.godot`: `toggle_3d_mode` is bound to physical F3 (`physical_keycode` 4194334). No F11 keycode (4194342) is bound in `project.godot`.
+- `load_confirmation_headless.gd` asserts that only `toggle_3d_mode` uses F3, and that F11 is not used. It passed at `00f692b` (104/104). That result is historical and was not re-executed in this task.
+- `scene_switcher.gd` line 36 checks `_world_switch_blocked()` before switching. That helper (line 44) defers to `mode_2d_instance.blocks_world_switch()`, defined at `prototype_game.gd:1356`. Both are present at `c898e21`. Whether the event is consumed while a modal is open was not checked, so it is not claimed here.
+- The Load confirmation, Cancel, and Confirm paths were not changed in this task.
+- Status: **code present by inspection; engine re-verification BLOCKED**.
+
+### 23.8 Time-of-day lighting ownership (TOD-1)
+
+- `time_of_day.gd` looks up `DirectionalLight3D` and `WorldEnvironment` through `get_parent()`. In `world_3d.tscn`, the TimeOfDay node is a child of the root (line 82). The light and the environment are children of `Environment` (lines 44 and 51). So both lookups return `null`.
+- Effect today: `_set_ambient_light` is guarded by `world_environment and ...`, so the lighting writes are inert. The regional profile's ambient values are not overwritten.
+- Latent conflict: a naive fix that makes the lookup succeed would make `_update_lighting()` write ambient light every frame and override the regional profile's values. That is the conflict the mission warned about.
+- Required design, not implemented: one owner for ambient light. Either the regional profile owns ambient light and time of day modulates only the sun, or time of day owns ambient and the regional profile supplies only the base. This needs an architectural decision, so `time_of_day.gd` was not changed.
+- Status: **OPEN**, design required. Not runtime-verified.
+
+### 23.9 Regional profiles, generators, and classification (static)
+
+- **F9 (Kaduna climate).** `environment_config.gd` (line 141) says `semi-arid`. The regional catalog (`regional-catalog.json`) and `regional-environment-profiles.json` both say `tropical`. The mission excludes changes to catalogs and presets, so this is recorded only. Status: **OPEN**, classification.
+- **GEN-1 (`ng:state:fc` generator mismatch).** `update-environment-profiles.js` line 22 maps `ng:state:fc` to `ng:fct:abuja`, which is not the catalog ID `ng:state:fc` used at runtime. `generate-regional-catalog.js` keys its region table by `ng:state:fc` (line 128), which matches the catalog ID. Its `capital: 'Abuja'` field does not change that. The generators were not run. Status: **OPEN**, excluded.
+- **GEO-1 (historical table row).** The audit table row for FC (line 204) says "silent fallback to ng:state:od". The current `environment_config.gd` line 59 maps `ng:state:fc` to `savanna`. The row may be stale. Status: **NOT VERIFIED**, needs a runtime check.
+- **Undefined actions.** `toggle_first_person` (`camera_3d_controller.gd:46`) and `jump` (`character_3d.gd:48`) are used, and neither is defined in `project.godot`. They log InputMap errors at runtime. Status: **OPEN** (known, unchanged, not fixed).
+- **`world_3d.tscn`** declares `load_steps=6`. It has 5 external and 4 sub-resources, so Godot would expect 10. Status: **OPEN** (cosmetic, known).
+- No world-data generator was run.
+
+### 23.10 Test results (this task)
+
+| Test | Environment | Result |
+|---|---|---|
+| Godot binary `--version` | None available | **BLOCKED** (not run) |
+| `load_confirmation_headless.gd` | Headless, Godot | **BLOCKED** (not run) |
+| `ui_flow_headless.gd` (3 runs) | Headless, Godot | **BLOCKED** (not run) |
+| `return_path.gd` (3 runs) | Headless, Godot | **BLOCKED** (not run) |
+| regional handoff, visual profiles, performance, player movement, persistence notice, session policy | Headless, Godot | **BLOCKED** (not run) |
+| Main scene load, GDScript check-only sweep | Headless, Godot | **BLOCKED** (not run) |
+| `domain_smoke.gd`, `save_restart --read` | Headless, Godot | **BLOCKED** (not run). Baseline (earlier engine runs): 4 failures and 2 errors |
+| GDScript parse (three edited files) | Parse, third-party grammar | 0 error nodes; negative control 2 error nodes |
+| `npm test` (world-api and root) | Node, in-process | exit 0; 1074 total, 1037 pass, 0 fail, 37 skipped |
+| `npm run lint` | Static | exit 1; 51 errors, 0 warnings. Same count as baseline. Per-file comparison not possible (earlier baseline log lost) |
+| `git diff --check` | Static | exit 0 |
+
+The Node suite includes `justice-case-access.test.mjs` and the `identity-*` tests. Those are in-process checks, so they say nothing about a live server.
+
+**Secret scan (static).** No private key, AWS key, GitHub token, or Slack token patterns were found in tracked text. Seven Postgres-style URLs with a password placeholder appear in documentation and test fixtures. They use `example.test`, `example.com`, `db.example.test`, or loopback hosts. None is a live credential. Status: **VERIFIED NOT AN ISSUE** (static).
+
+### 23.11 Consolidated issue register
+
+| ID | Component | Finding | Severity | Status | Evidence | Blocks release |
+|---|---|---|---|---|---|---|
+| REC-1 | Git | Local branch was at `main`, not at `c898e21`, with no upstream | High | FIXED_VERIFIED | `git status`, `rev-list` 0/0, blob check 411/411 | No |
+| ENV-1 | Engine | No Godot binary; official download blocked by allowlist | High | BLOCKED | `find`, download error | Yes, for any engine evidence |
+| TEST-1 | return_path restore | Backup deleted even if original write fails | High (data loss) | FIXED_UNVERIFIED | Code reading; parse | Yes, until engine-tested |
+| TEST-2 | return_path backup | Backup not read back or compared before use | High | FIXED_UNVERIFIED | Code reading; parse | Yes, until engine-tested |
+| TEST-3 | return_path restore | Restore not compared to original bytes | High | FIXED_UNVERIFIED | Code reading; parse | Yes, until engine-tested |
+| TEST-4 | return_path marker | No marker for the no-save case; leftover save treated as user data | Medium | FIXED_UNVERIFIED | Code reading | Yes, until engine-tested |
+| TEST-5 | Save-slot refusal | Refusal did not cover markers or other tests' files | Medium | FIXED_UNVERIFIED | Code reading; parse | Yes, until engine-tested |
+| TEST-6 | return_path clock | Autosave and clock advance run during the test and change character state; effect on assertions not established | Medium (unknown) | OPEN | 23.5 | No (flake risk) |
+| TEST-7 | return_path timing | `resume_step <= 1` depends on the first frame's wall-clock delta | Medium (flaky risk) | OPEN | 23.5 | No |
+| TEST-8 | return_path timing | `moved > 1.0` depends on physics stepping | Low | OPEN | 23.5 | No |
+| TEST-9 | Crash recovery | Hard kill bypasses cleanup; material kept, next run refuses | Medium | KNOWN_LIMITATION | 23.4 | No |
+| TEST-10 | Runtime error path | Restore waits for watchdog; unverified | Low | OPEN | 23.6 | No |
+| TOD-1 | time_of_day lighting | Lookup misses light and environment; naive fix would override regional ambient | Medium | OPEN (design) | 23.8 | No (inert today) |
+| F9 | Kaduna climate | `semi-arid` vs `tropical` | Low | OPEN (excluded data) | 23.9 | No |
+| GEN-1 | Generators | `ng:state:fc` vs `ng:fct:abuja` mismatch | Low | OPEN (excluded) | 23.9 | No (generators not run) |
+| GEO-1 | Audit history | FC row may be stale | Low | NOT_VERIFIED | 23.9 | No |
+| ACT-1 | Input actions | `toggle_first_person` and `jump` undefined | Low | OPEN | 23.9 | No |
+| TSCN-1 | world_3d.tscn | `load_steps` mismatch | Low | OPEN | 23.9 | No |
+| LINT-1 | Lint | 51 errors | Low | OPEN (baseline, count only) | 23.10 | No |
+| SMOKE-1 | domain_smoke | 4 failures (last engine run) | Medium | OPEN (not re-run) | Historical | Unknown |
+| SR-1 | save_restart --read | 2 errors (last engine run) | Medium | OPEN (not re-run) | Historical | Unknown |
+| SEC-1 | Secrets | Postgres placeholders in docs and fixtures | Info | VERIFIED NOT AN ISSUE | 23.10 | No |
+
+### 23.12 Remaining blockers
+
+1. **Must fix before safe testing:** a verified Godot 4.7.2 binary on this machine. Then run the return-path failure-injection tests (restore-write failure, backup mismatch, leftover marker) in a scratch copy, and run `return_path.gd` three times, to convert TEST-1 to TEST-5 from FIXED_UNVERIFIED to FIXED_VERIFIED.
+2. **Must fix before a playable milestone:** a design decision for TOD-1 (ambient-light owner). The regional-profile and environment work depends on it.
+3. **Must fix before production:** the Stage 28 persistence, deployment, and operational blockers (historical; not re-audited in this pass beyond the Node suite).
+4. **Requires a rendered display:** the Load dialog, F3 blocking with a physical key, the regional visual profiles, and all lighting changes.
+5. **Requires a live server or external credentials:** live-server behaviour of the multiplayer and backend, server-backed persistence, and deployment verification.
+6. **Requires a human decision or action:** provision the Godot binary (or approve a long source build); the Kaduna climate value (F9); the FC generator ID (GEN-1); and approval of any generator change (GEN-1), which is out of scope until a human decides.
+
+### 23.13 Status
+
+- Repository: **RECOVERY_COMPLETE**.
+- Return-path save safety: **FIXED_UNVERIFIED** (engine-unexecuted).
+- Modal safety and UI-flow determinism: unchanged from section 22. **Engine-verified at `00f692b`**, not re-run in this task.
+- Stage 29: **OPEN**. Stage 28: **OPEN**. Production: **NOT READY**.
