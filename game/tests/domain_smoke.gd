@@ -9,6 +9,8 @@ const EducationServiceScript = preload("res://scripts/domain/education_service.g
 const SaveServiceScript = preload("res://scripts/services/save_service.gd")
 const WorldMapScript = preload("res://scripts/world/world_map.gd")
 const TEST_SAVE_PATH: String = "user://naija-stage1-test-save.json"
+# Pins the starter-household profile used by this run (see _test_character_creation_and_household).
+const STARTER_HOUSEHOLD_SEED: int = 1
 const SaveSlotGuardScript = preload("res://tests/support/save_slot_guard.gd")
 
 var _failures: Array[String] = []
@@ -190,6 +192,20 @@ func _test_life_simulation() -> void:
 		"Calendar weeks begin on the configured Monday"
 	)
 
+	# Starter households pick one configured caregiver/sibling profile at random (life_catalog.json lists four, with 2 to 4
+	# relatives). That is intended variety, but it changes how many per-relative checks run. Sweep seeded samples to check
+	# every sampled household stays inside the configured range, then pin the random stream for the household used below,
+	# so the total check count is reproducible. Production randomness is not changed.
+	var sampled_sizes: Dictionary = {}
+	for sample_seed in range(1, 41):
+		seed(sample_seed)
+		var sample: Dictionary = HouseholdFactoryScript.create_household(date)
+		sampled_sizes[sample.get("family_members", []).size()] = true
+	var sample_sizes_in_range := true
+	for size_key in sampled_sizes:
+		sample_sizes_in_range = sample_sizes_in_range and int(size_key) >= 2 and int(size_key) <= 4
+	_check(sample_sizes_in_range, "Every seeded starter household has 2 to 4 relatives (sizes seen: %s)" % str(sampled_sizes.keys()))
+	seed(STARTER_HOUSEHOLD_SEED)
 	var household: Dictionary = HouseholdFactoryScript.create_household(date)
 	var relatives: Array = household.get("family_members", [])
 	_check(
