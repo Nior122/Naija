@@ -22,7 +22,38 @@ jobs:
       - name: Install dependencies
         run: npm ci
       - name: Run foundation checks
-        run: npm run check
+        # Stage 39: the full output is kept in a file, so a failure can be read afterwards, as the PostgreSQL job does. The
+        # file holds the lint output and the TAP stream of the tests. pipefail keeps the exit code of npm run check.
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run check 2>&1 | tee "$RUNNER_TEMP/world-api-foundation.log"
+      - name: Summarise failing foundation tests
+        if: failure()
+        shell: bash
+        run: |
+          LOG="$RUNNER_TEMP/world-api-foundation.log"
+          {
+            echo "### Failing foundation tests"
+            echo ""
+            echo "Test names, errors, and hook failures from the output (the full log is in the job artifact)."
+            echo ""
+            echo '```'
+            if [ -f "$LOG" ]; then
+              grep -E "^\s*not ok |failureType:|  error:|hookFailed|testCodeFailure|^# (tests|pass|fail|skipped|todo)" "$LOG" | head -n 300 || true
+            else
+              echo "The output file was not written."
+            fi
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Keep the foundation test log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: world-api-foundation-log
+          path: ${{ runner.temp }}/world-api-foundation.log
+          retention-days: 14
+          if-no-files-found: warn
 
   node-live-database:
     # Runs the live PostgreSQL tests against a disposable service container. The container is created for this job only,

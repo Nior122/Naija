@@ -14,6 +14,7 @@ Naija: One World is a long-term project. Keep changes small, testable, documente
 - Use Node.js 22.13+ in the 22.x line (`.nvmrc` records the tested version) and npm.
 - Run `npm ci`, then `npm run check` from the repository root.
 - If the live PostgreSQL CI job fails, open the run and download the `world-api-live-postgres-log` artifact. The job summary lists the failing test names. The artifact may contain test output; do not paste it publicly without reading it first.
+- If the foundation CI job (`npm run check`) fails, the output is kept in the `world-api-foundation-log` artifact (Stage 39), and the job summary lists the failing test names.
 - Install Godot 4.7.2 stable to open `game/project.godot`. Godot engine validation is separate from the Node `npm run check` command.
 - Use `.env.example` only for safe local configuration. Never commit `.env`, tokens, private keys, passwords, or production credentials.
 

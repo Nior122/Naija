@@ -92,6 +92,15 @@ The 54 file-backend skips are the PostgreSQL-backed tests, which state "requires
 - **Record-validation (property domain): 31 failures.** The first version of the optional fields normalised absent values to null and counted them, so valid older records were rewritten. Fixed with `optionalWorldDate` (absent stays absent). Verified by the record-validation suite (157/157).
 - **Test setup errors (fixed in the tests, not the code):** the rental-start payment is also a payment row, so the first row lookup in the monthly test returned the start payment; and a business-owner rent test changed the ownership but not the listing, so the existing owner-consistency check (`property_listing_unavailable`) refused first. Both fixes keep the intended check in the path.
 
+## CI investigation (run 38235819303, commit b95dedb)
+
+- **Result:** the `Foundation checks` workflow failed. Job `node-foundation` ("World API build, lint, and tests") failed at the step `Run foundation checks` (`npm run check`). Job `node-live-database` ("World API live PostgreSQL tests") passed.
+- **Logs: not retrieved.** `gh run view --log-failed` and `gh api .../jobs/{id}/logs` both failed with "EOF" from the results receiver. This is the same failure as run 38209331236 (Stage 38). `gh run rerun --failed` was refused ("its workflow file may be broken").
+- **Local repro: did not reproduce.** The same command on the same commit, in this sandbox (Node 22.22.3, the `.nvmrc` version; 2 vCPU), passed: lint exit 0, then tests 1351 total, 1297 pass, 0 fail, 54 skip, 0 TODO, exit 0. The run took about 3.5 minutes locally; the CI job took about 2 minutes 10 seconds in total, including the install. The job timing does not show whether the suite stopped early.
+- **Root cause: not determined.** No failing test name is known, so no cause is asserted. Stage 39 changed rent and record-validation code and added the `housing-rent-stage39` tests. None of these were shown to be the cause. The failure is in the same class as the unexplained run 38209331236, which is also unexplained.
+- **Not done:** no timeout was raised, and no test was skipped or changed to hide it. No later passing run is taken as a fix.
+- **Diagnostics added:** the foundation job now keeps its full output (`tee` to `world-api-foundation.log`, with `pipefail`). On failure it writes the failing test names and errors to the step summary, and uploads `world-api-foundation-log` (14 days). This is the same pattern as the PostgreSQL job, so the next failure can be read without the results receiver.
+
 ## What this proves, and what it does not
 
 **Verified by tests:**
