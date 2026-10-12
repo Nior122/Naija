@@ -98,6 +98,20 @@ function activeListingForProperty(state: PersistentWorldState, propertyId: strin
   );
 }
 
+/**
+ * Stage 35: closes every open listing of a property (sale and rent). Called on every ownership change, so that no
+ * listing outlives the owner who created it. Before this, a purchase closed only the listing it named, and a transfer
+ * closed only the first open listing it found, so a rent listing could stay open under a previous owner.
+ */
+function closeOpenListingsForProperty(state: PersistentWorldState, propertyId: string, timestamp: string): void {
+  for (const listing of Object.values(state.propertyListings)) {
+    if (listing.property_id === propertyId && listing.available) {
+      listing.available = false;
+      listing.updated_at = timestamp;
+    }
+  }
+}
+
 function cashBalanceForCharacter(state: PersistentWorldState, characterId: string): number {
   const cashAccounts = Object.values(state.economyAccounts).filter((a) => a.kind === "cash" && a.character_id === characterId);
   if (cashAccounts.length === 0) return 0;
@@ -143,6 +157,16 @@ export function initializePropertyWorldState(state: PersistentWorldState): void 
   if (!state.propertyMaintenance) state.propertyMaintenance = {};
   if (!state.propertyFurnishings) state.propertyFurnishings = {};
   if (!state.propertyEvents) state.propertyEvents = {};
+  // Stage 35: a saved world can hold an open listing made by a previous owner (written before every ownership change
+  // closed all listings). Such a listing is closed on load. Only listings change here: no money and no ownership.
+  for (const listing of Object.values(state.propertyListings)) {
+    if (!listing.available) continue;
+    const owner = ownerForProperty(state, listing.property_id);
+    if (!owner || owner.owner_id !== listing.owner_id) {
+      listing.available = false;
+      listing.updated_at = new Date().toISOString();
+    }
+  }
 }
 
 export function seedProperties(
@@ -352,6 +376,8 @@ export function purchaseProperty(
   const currentOwner = ownerForProperty(state, property.property_id);
   if (!currentOwner) throw new Error("property_no_owner");
   if (currentOwner.owner_id === characterId) throw new Error("property_already_owner");
+  // A listing made by a previous owner is not a sale by the current owner (Stage 35). Refused before any change.
+  if (listing.owner_id !== currentOwner.owner_id) throw new Error("property_listing_unavailable");
   // A player seller must have a cash account to be credited. Checked before the debit (Stage 35).
   const sellerPlayer = characterForId(state, currentOwner.owner_id);
   if (sellerPlayer) assertCashAccountExists(state, currentOwner.owner_id);
@@ -404,9 +430,8 @@ export function purchaseProperty(
   };
   state.propertySales[sale.sale_id] = sale;
 
-  // Mark listing as unavailable
-  listing.available = false;
-  listing.updated_at = timestamp;
+  // Close every open listing of the property: the sale, and any rent listing left by the previous owner (Stage 35).
+  closeOpenListingsForProperty(state, property.property_id, timestamp);
 
   // Terminate any active rental
   const activeRental = activeRentalForProperty(state, property.property_id);
@@ -576,6 +601,8 @@ export function createRentalAgreement(
   // Cannot rent own property
   const currentOwner = ownerForProperty(state, property.property_id);
   if (currentOwner && currentOwner.owner_id === characterId) throw new Error("property_cannot_rent_own");
+  // A rent listing made by a previous owner is not an offer by the current owner (Stage 35). Refused before any change.
+  if (currentOwner && listing.owner_id !== currentOwner.owner_id) throw new Error("property_listing_unavailable");
 
   const timestamp = new Date(now).toISOString();
   const rent = listing.rent_price_ngn;
@@ -964,12 +991,8 @@ export function transferProperty(
     activeRental.updated_at = timestamp;
   }
 
-  // Cancel any active listing
-  const activeListing = activeListingForProperty(state, propertyId);
-  if (activeListing) {
-    activeListing.available = false;
-    activeListing.updated_at = timestamp;
-  }
+  // Cancel every open listing of the property (Stage 35: sale and rent, not only the first one found)
+  closeOpenListingsForProperty(state, propertyId, timestamp);
 
   appendPropertyEvent(state, propertyId, "ownership_transferred",
     `Ownership transferred from ${fromCharacterId} to ${toCharacterId}.`, date, now,

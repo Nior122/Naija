@@ -12,73 +12,12 @@
 // Every test uses its own world. Refusals are compared with the live state and the stored state, field by field.
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
-import { backendNames, connectBackends, disconnectBackends, openBackend, openPeerFrom, startOver } from "./support/creation-backends.mjs";
-import { createIdentity, resumeSession } from "./support/harness.mjs";
-import { activeOwnersOf, balanceOf, cashAccountOf, propertyContent } from "./support/property-world.mjs";
+import { backendNames, connectBackends, disconnectBackends, startOver } from "./support/creation-backends.mjs";
+import { activeOwnersOf, balanceOf, propertyContent } from "./support/property-world.mjs";
+import { fundingRows, live, market, openWorld, player, purchase, restart, resumed, saleFor, settle, stored, STARTUP } from "./support/property-socket.mjs";
 
 before(connectBackends);
 after(disconnectBackends);
-
-const STARTUP = { identityBudget: { perIpLimit: 100, globalLimit: 1000, windowMs: 3_600_000 } };
-
-async function openWorld(backendName) {
-  const backend = await openBackend(backendName);
-  const started = await startOver(backend, STARTUP);
-  return { backend, started };
-}
-
-/** Creates a player with an adult age and a cash balance (test-side setup in memory, then flushed to storage). */
-async function player(world, name, balance) {
-  const peer = await openPeerFrom(world.started.websocketUrl, "127.0.0.1");
-  const identity = await createIdentity(peer, name);
-  assert.equal((await resumeSession(peer, identity.sessionToken)).type, "session.ready");
-  const character = world.backend.store.state.players[identity.playerId].character;
-  // The engine derives age from date_of_birth on each world-date change, so the birth date is set too.
-  const worldYear = world.backend.store.state.worldClock.world_date.year;
-  character.date_of_birth = { year: worldYear - 30, month: 6, day: 15 };
-  character.age = 30;
-  const account = cashAccountOf(world.backend.store.state, character.character_id);
-  account.balance_ngn = balance;
-  account.total_deposited_ngn = balance;
-  await world.backend.store.flush();
-  return { peer, identity, playerId: identity.playerId, characterId: character.character_id, sessionToken: identity.sessionToken };
-}
-
-const live = (world) => world.backend.store.state;
-const stored = async (world) => world.backend.durableState();
-
-/** The first property reply for this request ID: a result, an error, or a duplicate notice. */
-function settle(peer, requestId) {
-  return peer.waitFor((message) => message.requestId === requestId &&
-    (message.type === "property.result" || message.type === "property.error" || message.type === "command.duplicate"), 5000);
-}
-
-async function market(peer) {
-  peer.send({ type: "property.action", action: "market", requestId: `market-${Math.random()}` });
-  const reply = await peer.waitFor((message) => message.type === "property.result" || message.type === "property.error", 5000);
-  assert.equal(reply.type, "property.result", JSON.stringify(reply));
-  return reply.data.market.listings;
-}
-
-function saleFor(listings, state) {
-  const sale = listings
-    .filter((listing) => listing.listing_type === "sale" && !state.properties[listing.property_id].is_land)
-    .sort((a, b) => a.asking_price_ngn - b.asking_price_ngn)[0];
-  assert.ok(sale, "premise: the seeded world has a non-land sale listing");
-  return sale;
-}
-
-/** Funding rows written once by the treasury rules. They must not be recreated by a restart or a retry. */
-function fundingRows(state) {
-  return Object.values(state.governmentRevenue ?? {})
-    .filter((row) => row.funding_rule_id)
-    .map((row) => `${row.funding_rule_id}:${row.amount_ngn}`)
-    .sort();
-}
-
-function purchase(peer, requestId, listingId) {
-  peer.send({ type: "property.action", action: "purchase", requestId, payload: { listing_id: listingId } });
-}
 
 for (const backendName of backendNames) {
   test(`${backendName}: a purchase is confirmed after the save: the debit, the single active owner, and the stored record agree`, async () => {
@@ -471,17 +410,3 @@ for (const backendName of backendNames) {
   });
 }
 
-/** Stops the running server, reopens the storage, and starts a fresh server over it (a process restart). */
-async function restart(world) {
-  await world.started.stop();
-  await world.backend.reopen();
-  const started = await startOver(world.backend, STARTUP);
-  return { started };
-}
-
-/** A new socket on a restarted server, with the same session resumed. */
-async function resumed(restarted, sessionToken) {
-  const peer = await openPeerFrom(restarted.started.websocketUrl, "127.0.0.1");
-  assert.equal((await resumeSession(peer, sessionToken)).type, "session.ready");
-  return peer;
-}

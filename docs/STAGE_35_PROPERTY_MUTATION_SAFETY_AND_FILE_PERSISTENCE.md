@@ -19,16 +19,16 @@ save that covers the change (section 4).
 
 | # | Action | Who may act; checks before any change | Money | Ownership or state changed | Order: checks, then change, then save, then reply |
 |---|---|---|---|---|---|
-| 1 | `purchase` | Any player. Alive. Age at least `minimum_purchase_age_years`. Listing is a sale and available. Property purchasable. Owned-count and land limits. Price valid. Buyer balance at least price. Current owner exists and is not the buyer (self-dealing). If the seller is a player, the seller's cash account exists. | Buyer −price; seller +price (one sale) | Old owner inactive; buyer owner active; sale record; listing closed; active rental terminated | All checks, then debit, then credit, then ownership, sale, and listing, then request record, then save, then reply |
+| 1 | `purchase` | Any player. Alive. Age at least `minimum_purchase_age_years`. Listing is a sale and available. Property purchasable. Owned-count and land limits. Price valid. Buyer balance at least price. Current owner exists and is not the buyer (self-dealing). The listing's owner is the current owner (a listing left by an earlier owner is refused, `property_listing_unavailable`). If the seller is a player, the seller's cash account exists. | Buyer −price; seller +price (one sale) | Old owner inactive; buyer owner active; sale record; every open listing of the property closed (sale and any rent listing); active rental terminated | All checks, then debit, then credit, then ownership, sale, and listing, then request record, then save, then reply |
 | 2 | `list_for_sale` | Current owner, player kind (`authorizePropertyAction`). Asking price in range. | None | Listing created | Checks, then listing, then save, then reply |
 | 3 | `list_for_rent` | Current owner, player kind. Property not land. Rent price, period, and deposit valid. | None | Rental listing created | Checks, then listing, then save, then reply |
-| 4 | `rent` (`createRentalAgreement`) | Tenant alive and adult. Rental listing available. Property not already rented. Rental limit. Not the owner. Balance at least total due. If the landlord is a player, the landlord's cash account exists. | Tenant −total due; landlord +total due | Agreement created (active); listing closed | All checks, then debit, then credit, then agreement and listing, then save, then reply |
-| 5 | `pay_rent` (`payRent`) | Tenant of an active agreement; balance; landlord account. **Suspended at the socket**: refused as `property_rent_payment_suspended` before any check, record, or change. | Would be: tenant −rent; landlord +rent | Would be: payment record | Not reachable from the socket. The service ordering was fixed (landlord account before debit) but is covered only by service-level tests. |
+| 4 | `rent` (`createRentalAgreement`) | Tenant alive and adult. Rental listing available. Property not already rented. Rental limit. Not the owner. The listing's owner is the current owner (`property_listing_unavailable` otherwise). Balance at least total due. If the landlord is a player, the landlord's cash account exists. | Tenant −total due; landlord +total due | Agreement created (active); listing closed | All checks, then debit, then credit, then agreement and listing, then save, then reply |
+| 5 | `pay_rent` (`payRent`) | Tenant of an active agreement; balance; landlord account. **Suspended at the socket**: refused as `property_rent_payment_suspended` before any check, record, or change. | Would be: tenant −rent; landlord +rent | Would be: payment record | Not reachable from the socket. The service ordering was fixed (landlord account before debit) and is covered by service-level tests. The socket refusal, and a termination sent together with a `pay_rent`, are tested on both backends (`property-actions-stage35.test.mjs`). |
 | 6 | `terminate_rental` | Tenant or landlord (`property_unauthorized` otherwise). Agreement active. | None | Agreement terminated | Checks, then status, then save, then reply |
 | 7 | `maintain` (`recordMaintenance`) | Owner, player kind. Condition valid. Cost at least 0. Description length. If cost is above 0: owner has a cash account and balance at least cost. Checked before any change. | Owner −cost (no receiving account: a spending sink, unchanged) | Condition and maintenance record | Checks, then debit, then condition and record, then save, then reply |
 | 8 | `furnish` (`purchaseFurniture`) | Owner, player kind. Not land. Catalogue item exists. Quantity 1 to 10. Furniture limit. Balance at least total. | Buyer −total (spending sink, unchanged) | Furnishing records | Checks, then debit, then records, then save, then reply |
 | 9 | `remove_furnishing` | Owner, player kind. Furnishing belongs to the property. | None (no refund, unchanged) | Furnishing removed | Checks, then removal, then save, then reply |
-| 10 | `transfer` (`transferProperty`) | Current owner must be a player (`authorizePropertyAction`). From and to differ. Recipient exists, alive, adult, within property and land limits. | None. Transfer is ownership-only in the game rules (no consideration). | Old owner inactive; new owner active; active rental terminated; active listing closed; event | Checks, then ownership and cancellations, then save, then reply |
+| 10 | `transfer` (`transferProperty`) | Current owner must be a player (`authorizePropertyAction`). From and to differ. Recipient exists, alive, adult, within property and land limits. | None. Transfer is ownership-only in the game rules (no consideration). | Old owner inactive; new owner active; active rental terminated; every open listing of the property closed; event | Checks, then ownership and cancellations, then save, then reply |
 
 Read-only actions (`market`, `view`, `my_properties`, `my_rentals`) need no request ID, record nothing, and reply directly.
 
@@ -44,7 +44,10 @@ no separate transaction log, so the claim is "one save", not "one database trans
 
 ## 3. Changes
 
-- `services/world-api/src/properties/service.ts`: `assertCashAccountExists`; purchase checks the seller account before the
+- `services/world-api/src/properties/service.ts`: `closeOpenListingsForProperty` (purchase and transfer close every open
+  listing, not only the one named or the first found); purchase and rent refuse a listing whose owner is not the current
+  owner (`property_listing_unavailable`, checked before any change); `initializePropertyWorldState` closes an open listing
+  whose owner is not the active owner, on load (listings only; no money or ownership changes); `assertCashAccountExists`; purchase checks the seller account before the
   debit and no longer has the unreachable idempotency early return (the sale record still stores `idempotency_key`);
   rent and pay-rent check the landlord account before the tenant debit; maintenance checks account and funds before any
   change; transfer takes `catalog` and enforces recipient age, per-character and land limits.
@@ -60,13 +63,18 @@ no separate transaction log, so the claim is "one save", not "one database trans
 - `services/world-api/src/persistence/writer-lock.ts`: rewritten as an `flock(2)` holder (section 6).
 - `services/world-api/src/persistence/open.ts`: the file-backend log line names the flock lock and
   `docs/PERSISTENCE_FILE_BACKEND.md`.
-- Tests: new `test/property-invariants-stage35.test.mjs` (16 service-level, in memory), new
+- Tests: new `test/property-actions-stage35.test.mjs` (socket tests for the eight changing actions, each with the contract
+  cases, plus conflicts, the stale-listing regressions, and the `pay_rent` refusal; 28 tests per backend), new
+  `test/treasury-funding-stage35.test.mjs` (the one-time allocation under repeat, restart, a definite save failure with retry,
+  and a committed save with a lost reply; 5 tests per backend), new `test/support/property-socket.mjs` (socket helpers,
+  shared by the two socket files). New `test/property-invariants-stage35.test.mjs` (16 service-level, in memory), new
   `test/property-mutation-stage35.test.mjs` (12 socket tests, each run on the file backend and on PostgreSQL), new
   `test/support/property-world.mjs` (fixture), new `test/support/writer-lock-race-child.mjs` (separate-process child for
   race 2). Rewritten `test/file-writer-lock-races.test.mjs` (8 tests). Changed
   `test/mutation-resend-guards.test.mjs`: a re-sent purchase expects `command.duplicate` (the charge-once assertion is
   unchanged), and the header comment is corrected.
-- Docs: this file; new `docs/PERSISTENCE_FILE_BACKEND.md`; a pointer from `docs/STAGE_28_CONFIGURATION.md`.
+- Docs: this file; new `docs/PERSISTENCE_FILE_BACKEND.md`; a pointer from `docs/STAGE_28_CONFIGURATION.md`; a pointer
+  at the end of `docs/DATABASE_PLAN.md`.
 - Deleted before this stage's commit: two scratch files (`tmp-debug-lock.mjs`, `tmp-debug-holder.mjs`). Not in the repository.
 
 No gameplay rule was added. The changes enforce rules that already existed in the service (landlord and seller accounts,
@@ -124,6 +132,16 @@ Concurrency.
   `propertyAction` and the service functions). Two requests cannot interleave between a check and its change. Tested by
   concurrent duplicates and by two buyers for one listing (one purchase applies; the other buyer is
   refused as `property_listing_unavailable` and is not charged).
+- Conflicting pairs on one property, sent together on one socket, are tested on both backends: a sale listing and a
+  transfer (exactly one applies, one active owner, the money agrees); two tenants for one rental listing (one agreement,
+  only its tenant charged); two furnishing orders with cash for one (one applies, cash never negative); a termination and a
+  `pay_rent` (the termination applies once, and the payment never applies).
+- Stale listings: before this stage, a purchase closed only the listing it named, and a transfer closed only the first open
+  listing it found. A rent listing left by a previous owner stayed open, and renting it was accepted, paying an owner who no
+  longer held the property. This was found by the new socket tests (the premise check of the rent test failed). It is fixed
+  as described in section 3. Three regression tests cover it on both backends: the purchase, the transfer, and a stored
+  stale listing on load. On the pre-stage code (`f45b80f`) the purchase test fails with the stale rent listing still offered,
+  the transfer test fails with a listing still open, and the load test fails with the listing still open.
 - Across processes on PostgreSQL, the whole-world save is a conditional `UPDATE` on the version the writer loaded. A stale
   writer's save affects no row and is not confirmed. Tested generically (`postgres-persistence`, `multiprocess-persistence`
   suites, which pass). No property-specific cross-process test exists yet (section 10).
@@ -186,7 +204,8 @@ Guarantees (code and tests).
   older version affects no row and does not confirm.
 - A property change, its money movement, and its request record are in one saved world row, so they persist together or
   not at all.
-- Restart keeps the confirmed change, the request record, and the one-time treasury rows (the four restart tests, run on
+- Restart keeps the confirmed change, the request record, and the one-time treasury rows (the restart tests in
+  `property-mutation-stage35.test.mjs`, `property-actions-stage35.test.mjs`, and `treasury-funding-stage35.test.mjs`, run on
   PostgreSQL in section 9).
 - Migrations: the existing migration and schema tests pass in the PostgreSQL run.
 
@@ -199,37 +218,46 @@ Limits.
 
 ## 9. Commands and actual results
 
-All runs are on the working tree for this stage. Counts are from the logs named in the table.
+All runs are on the final working tree for this stage (after the last code change). Logs are in `/tmp` on the
+development host and are not committed.
 
 | Command | Result | Log |
 |---|---|---|
-| `npm run build` (runs `tsc`; the typecheck) | exit 0 | `/tmp/s35-build.log` |
-| `npm run lint` (eslint on `services/world-api/src`) | exit 0 | `/tmp/s35-lint.log` |
-| `node --test test/property-invariants-stage35.test.mjs` | 16 tests, 16 pass, 0 fail, 0 skip (in memory) | terminal |
-| `node --test test/property-mutation-stage35.test.mjs` (no `DATABASE_URL`) | 12 tests, 12 pass, 0 fail (file backend) | terminal |
-| same, with `DATABASE_URL` (PostgreSQL) | 24 tests: 12 pass file, 12 pass PostgreSQL, 0 fail | terminal |
-| `node --test test/properties.test.mjs` | 19 tests, 19 pass | terminal |
-| `node --test test/authority-matrix.test.mjs` | 5 tests, 5 pass | terminal |
-| `node --test test/mutation-resend-guards.test.mjs` | 4 tests, 4 pass | terminal |
-| `node --test test/file-writer-lock.test.mjs` | 15 tests, 15 pass | terminal |
-| `node --test test/file-writer-lock-races.test.mjs` | 8 tests: 7 pass, 0 fail, 1 todo (race-1 residual, OPEN) | terminal |
-| Full suite, file backend (`env -u DATABASE_URL NAIJA_ENV=test node --test test/*.test.mjs`) | **1242 tests, 1200 pass, 0 fail, 41 skip, 1 todo** | `/tmp/s35-file-full.log` |
-| Full suite, PostgreSQL (`source /tmp/pgenv34.sh`, then `node --test test/*.test.mjs`) | **1411 tests, 1406 pass, 0 fail, 4 skip, 1 todo** | `/tmp/s35-pg-full.log` |
+| `npm run build` (`tsc`, the typecheck) | exit 0 | `/tmp/s35b-build.log` |
+| `npm run lint` (eslint on `services/world-api/src`) | exit 0 | `/tmp/s35b-lint.log` |
+| `node --test test/property-actions-stage35.test.mjs`, file backend (no `DATABASE_URL`) | 56 tests, 56 pass, 0 fail, 0 skip | terminal |
+| same, PostgreSQL env sourced (both backends in one run) | 112 tests, 112 pass, 0 fail, 0 skip (56 file, 56 PostgreSQL) | terminal |
+| `node --test test/treasury-funding-stage35.test.mjs`, file backend | 5 tests, 5 pass, 0 fail | terminal |
+| same, PostgreSQL env sourced (both backends in one run) | 10 tests, 10 pass, 0 fail (5 file, 5 PostgreSQL) | terminal |
+| Full suite, file backend (`env -u DATABASE_URL NAIJA_ENV=test node --test test/*.test.mjs`) | **1303 tests: 1261 pass, 0 fail, 41 skip, 1 todo**; exit 0 | `/tmp/s35c-file.log` |
+| Full suite, PostgreSQL (`. /tmp/pgenv34.sh`, then `node --test test/*.test.mjs`) | **1533 tests: 1528 pass, 0 fail, 4 skip, 1 todo**; exit 0 | `/tmp/s35c-pg.log` |
 
-Skips. The 41 file-run skips are PostgreSQL-only tests that require `DATABASE_URL` and `NAIJA_ALLOW_DB_TESTS=true`. The
-4 PostgreSQL-run skips are the TLS live tests that require `TLS_TEST_DATABASE_URL`. A skip is not a pass. The todo count
-is the one race-1 residual. The Stage 34 logs recorded 2 todo.
+Totals are reported per backend and never added across them. The full-suite totals include every file. The per-file
+rows above are the final runs of the two new files. The property-mutation and invariant files, and the other files, were
+checked by the full-suite runs only.
 
-Counts against the old code (the test of the tests). The new property tests were run against the pre-Stage-35 code
-(`f45b80f`, extracted with `git archive` into a scratch directory, with the new test files copied in). Result: 28 tests,
-11 pass, 17 fail. The six invariant tests that fail there are: purchase from a player seller with no cash account; rent
-with a player landlord with no cash account; maintenance with insufficient funds; maintenance without a cash account;
-transfer to a recipient at the ownership limit; transfer to a recipient below the minimum age. Eleven of the twelve
-socket tests fail on the old code. The one that passes is the two-buyer race, which the old code already handled
-correctly in one process. The old code's mutation-before-check and missing-idempotency faults are what the failing tests
-detect.
+Skips. The 41 file-run skips are PostgreSQL-only tests that need `DATABASE_URL` and `NAIJA_ALLOW_DB_TESTS=true`. The
+4 PostgreSQL-run skips are the TLS live tests that need `TLS_TEST_DATABASE_URL`. A skip is not a pass. The 1 todo in each
+run is the race-1 residual (`test 283` file, `test 306` PostgreSQL), which is OPEN and not counted as passed. The Stage 34
+logs recorded 2 todo.
 
-Not run in this stage: a PostgreSQL run against a second process; a power-loss test; a multi-host test.
+Other file-level results from the earlier runs of this stage, before the stale-listing fix. They are superseded where the
+code they test changed, and the full-suite runs above are the final evidence: `property-invariants-stage35` 16 of 16 pass;
+`property-mutation-stage35` 12 of 12 pass (file) and 24 of 24 (both backends); `file-writer-lock-races` 7 pass, 0 fail, 1 todo.
+
+Counts against the old code (`f45b80f`, extracted with `git archive` into a scratch directory, with the new test files
+copied in). These show that the tests detect the old faults. They are not a claim that each test was isolated to one cause.
+
+- Invariant and socket property tests, before the stale-listing fix (earlier run): 28 tests, 11 pass, 17 fail. The six
+  invariant tests that fail are: purchase from a player seller with no cash account; rent with a player landlord and no
+  cash account; maintenance with insufficient funds; maintenance without a cash account; transfer to a recipient at the
+  ownership limit; transfer to a recipient below the minimum age. Eleven of the twelve purchase socket tests fail. The
+  two-buyer race passes on the old code, as it was already correct in one process.
+- `property-actions-stage35` (final file): 56 tests, 0 pass, 56 fail. Most fail on the request-ID contract. The three
+  stale-listing regressions fail for the stated reasons: a stale rent listing is still offered after a purchase (the
+  "expected false, actual true" failure); a listing stays open after a transfer ("1 !== 0"); and a stored stale listing
+  is still open after a load ("true !== false"). The `pay_rent` refusal test fails at its "stored matches live" check on
+  the old code. The cause was not isolated, so it is not claimed as evidence of the refusal.
 
 ## 10. Limitations and TODOs
 
@@ -240,15 +268,19 @@ Not run in this stage: a PostgreSQL run against a second process; a power-loss t
    (`docs/STAGE_28_DIRECTORY_SYNC.md`, section 6).
 4. Request-ID retention is 256 changing requests per player. An older ID can be applied again. A count, not a time, bounds
    this.
-5. Socket tests cover purchase fully. The other changing actions (list, rent, terminate, maintain, furnish, remove,
-   transfer) have service-level tests and the shared gate, but no socket test of their own.
+5. Socket tests cover all eight changing actions on both backends (the contract cases, not every service branch). The
+   fuzzing of sequences of mixed actions is not done.
 6. A cross-process property test on PostgreSQL does not exist.
-7. The one-time treasury allocation is not recreated by a restart, a retry, or a load. Evidence: `applyInitialTreasuryFunding`
+7. The one-time treasury allocation is not recreated by a restart, a retry, or a repeat. Evidence: `applyInitialTreasuryFunding`
    checks the ledger rows (`funding_rule_id`, and `source_reference` `treasury-funding:<rule_id>`); no code deletes
-   `governmentRevenue` rows; the function runs on load and fresh state; the restart test keeps the
-   funding rows identical in storage and live state. Caveat: a restore of an older snapshot that lacks the row would apply
-   the grant again. Restores must be reviewed by hand (`docs/PERSISTENCE_FILE_BACKEND.md`, section 4).
-8. `pay_rent` is suspended at the socket. Its service ordering was fixed, but it is not reachable and has no socket test.
+   `governmentRevenue` rows; `treasury-funding-stage35.test.mjs` checks the rows after repeats, a restart, a definite save
+   failure with a retry, and a committed save with a lost reply, on both backends. Caveats: (a) the allocation is applied when
+   a player joins (`reconcileGovernmentStructure` runs on the join path), not when a world is created or loaded, so a world
+   with no joins has no allocation yet. This was found by the new test, and it is documented, not changed in this stage.
+   (b) A restore of an older snapshot that lacks the row would apply the grant again. Restores must be reviewed by hand
+   (`docs/PERSISTENCE_FILE_BACKEND.md`, section 4).
+8. `pay_rent` is suspended at the socket. Its socket refusal, and its race with a termination, are tested. Its service
+   ordering is fixed but is not reachable from the socket.
 9. Furnishing and maintenance debit money to no account (a spending sink). This is existing game design and was not
    changed.
 10. Business payments remain out of scope and unchanged. No organisation payments were added.
@@ -270,10 +302,10 @@ Not run in this stage: a PostgreSQL run against a second process; a power-loss t
 
 Stage 36 candidates, in priority order:
 
-1. Socket-level tests for the remaining changing property actions (list, rent, terminate, maintain, furnish, remove,
-   transfer), on both backends.
-2. A cross-process PostgreSQL property test (two servers, one world).
-3. Close or narrow race 1 (the out-of-protocol replacement window), or stop offering the file backend outside development.
+1. A cross-process PostgreSQL property test (two servers, one world).
+2. Close or narrow race 1 (the out-of-protocol replacement window), or stop offering the file backend outside development.
+3. Decide whether the treasury allocation should be applied at world creation rather than on the first join. This changes
+   when the funds appear, so it needs a design decision.
 4. Re-audit government, treasury, election, justice, police, and life/NPC routes with the same outcome contract.
 5. A power-loss test on a disposable host.
 6. A redesign of `pay_rent` before it is reopened.
