@@ -247,9 +247,10 @@ export class PoliceService {
   // ─── Recruitment & promotion ──────────────────────────────────
 
   applyForRecruitment(params: { character_id: string; station_id: string; education: string; birth_date: CalendarDate }, worldDate: CalendarDate): RecruitmentRecord {
+    // Stage 38: stable codes (the engine reports a message as internal_error unless it is a code).
     const station = this.getStation(params.station_id);
-    if (!station) throw new Error("Station not found");
-    if (station.status !== "active") throw new Error("Station is not active");
+    if (!station) throw new Error("police_station_not_found");
+    if (station.status !== "active") throw new Error("police_station_inactive");
 
     const age = yearsSince(worldDate, params.birth_date);
     const minAge = this.catalog.getMinimumRecruitmentAge();
@@ -263,7 +264,7 @@ export class PoliceService {
       (a) => a.character_id === params.character_id &&
         (a.status === "submitted" || a.status === "under_review" || a.status === "training")
     );
-    if (existing) throw new Error("Active application already exists");
+    if (existing) throw new Error("police_duplicate_application");
 
     const id = uid("recruit");
     const record: RecruitmentRecord = {
@@ -486,12 +487,20 @@ export class PoliceService {
 
   // ─── Dispatch ─────────────────────────────────────────────────
 
+  /**
+   * Stage 38: the officer is the requesting officer (the engine takes it from the session, never from the request), and
+   * the officer must have authority for the station and the incident (see assertDutyAuthority). Every refusal is thrown
+   * before any record is created.
+   */
   dispatchUnit(params: { incident_id: string; station_id: string; priority?: DispatchPriorityId; location_id?: string; notes: string; requesting_officer_id?: string | null }, worldDate: CalendarDate): DispatchRecord {
     const inc = this.maps.policeIncidents[params.incident_id];
-    if (!inc) throw new Error("Incident not found");
-    if (!this.catalog.hasDispatchPriority(params.priority ?? "normal")) throw new Error("Invalid priority");
+    if (!inc) throw new Error("police_incident_not_found");
+    const officer = params.requesting_officer_id ? this.maps.policeOfficers[params.requesting_officer_id] : undefined;
+    if (!officer) throw new Error("police_not_an_officer");
+    this.assertDutyAuthority(officer, params.station_id, inc, ["accepted", "assigned"]);
+    if (!this.catalog.hasDispatchPriority(params.priority ?? "normal")) throw new Error("police_priority_invalid");
     const rules = this.catalog.getRules();
-    if (params.notes.length > rules.dispatch_notes_max_length) throw new Error(`Notes exceed max length of ${rules.dispatch_notes_max_length}`);
+    if (params.notes.length > rules.dispatch_notes_max_length) throw new Error("police_notes_too_long");
 
     const id = uid("dispatch");
     const record: DispatchRecord = {
@@ -517,6 +526,27 @@ export class PoliceService {
     inc.status = "assigned";
     inc.updated_at = new Date().toISOString();
     return record;
+  }
+
+  /**
+   * Stage 38: the authority an officer needs before acting on an incident for a station. The station is the officer's
+   * own: a station the request names is accepted only when it is that station (a client cannot pick another station).
+   * The incident must be assigned to that station by triage; an unassigned incident is refused, because no route yet
+   * performs triage. The officer must be on duty (active or on_duty). The incident must be in one of the given states.
+   */
+  private assertDutyAuthority(
+    officer: PoliceOfficerRecord,
+    stationId: string,
+    incident: IncidentRecord,
+    allowedStatuses: readonly IncidentStatusId[],
+  ): void {
+    if (officer.status === "suspended" || officer.status === "dismissed") throw new Error("police_officer_suspended");
+    if (officer.status !== "active" && officer.status !== "on_duty") throw new Error("police_officer_not_on_duty");
+    if (!stationId || officer.station_id !== stationId) throw new Error("police_station_not_authorized");
+    const station = this.maps.policeUnits[stationId];
+    if (!station || station.status !== "active") throw new Error("police_station_not_found");
+    if (incident.assigned_station_id !== stationId) throw new Error("police_incident_not_assigned");
+    if (!allowedStatuses.includes(incident.status)) throw new Error("police_incident_status_invalid");
   }
 
   acknowledgeDispatch(dispatchId: string, officerId: string): DispatchRecord {
@@ -545,12 +575,16 @@ export class PoliceService {
 
   // ─── Investigations ───────────────────────────────────────────
 
+  /**
+   * Stage 38: the lead officer must have authority for the station and the incident (assertDutyAuthority). The lead
+   * officer is the session's officer, so a client cannot name another officer as lead. Refusals change nothing.
+   */
   openInvestigation(params: { incident_id: string; case_id?: string | null; station_id: string; lead_officer_id: string; category: IncidentCategoryId; summary: string; relevant_law_ids?: string[] }, worldDate: CalendarDate): InvestigationRecord {
     const inc = this.maps.policeIncidents[params.incident_id];
-    if (!inc) throw new Error("Incident not found");
+    if (!inc) throw new Error("police_incident_not_found");
     const officer = this.maps.policeOfficers[params.lead_officer_id];
     if (!officer) throw new Error("Officer not found");
-    if (officer.status === "suspended" || officer.status === "dismissed") throw new Error("Officer not on active duty");
+    this.assertDutyAuthority(officer, params.station_id, inc, ["accepted", "assigned"]);
 
     // Check active investigation limit
     const rules = this.catalog.getRules();
@@ -1088,6 +1122,7 @@ export function policeErrorMessage(code: string): string {
     police_action_unknown: "That police action is not supported.",
     police_station_required: "Station ID is required.",
     police_station_not_found: "Police station not found.",
+    police_station_inactive: "That police station is not accepting applications.",
     police_incident_fields_required: "Incident category, description, and summary are required.",
     police_incident_required: "Incident ID is required.",
     police_incident_not_found: "Incident not found.",
@@ -1098,6 +1133,10 @@ export function policeErrorMessage(code: string): string {
     police_arrest_fields_required: "Character ID, reason, and legal basis are required.",
     police_complaint_fields_required: "Accused officer ID, category, and description are required.",
     police_not_an_officer: "You must be a registered police officer to perform this action.",
+    police_officer_not_on_duty: "You must be on duty to perform this police action.",
+    police_station_not_authorized: "You can only act for your own police station.",
+    police_incident_not_assigned: "This incident is not assigned to your station.",
+    police_incident_status_invalid: "This incident is not in a state that allows this police action.",
     police_age_ineligible: "You do not meet the minimum age requirement for recruitment.",
     police_education_ineligible: "You do not meet the minimum education requirement for recruitment.",
     police_officer_not_found: "Officer not found.",

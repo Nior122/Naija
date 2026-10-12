@@ -61,4 +61,48 @@ jobs:
       - name: Install dependencies
         run: npm ci
       - name: Run tests with live PostgreSQL
-        run: npm test
+        # Stage 38: the full output is kept in a file, so a failure can be read afterwards. The file holds the TAP stream:
+        # each failing test's name, its error, its stack, and whether a setup or teardown hook failed (failureType). pipefail
+        # keeps the exit code of npm test. The database is an ephemeral container with trust authentication and no password,
+        # so the connection string in the output holds no secret. This job references no repository or environment secret.
+        shell: bash
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee "$RUNNER_TEMP/world-api-live-postgres.log"
+      - name: Summarise failing live PostgreSQL tests
+        if: failure()
+        shell: bash
+        run: |
+          LOG="$RUNNER_TEMP/world-api-live-postgres.log"
+          {
+            echo "### Failing live PostgreSQL tests"
+            echo ""
+            echo "Test names, errors, and hook failures from the TAP output (the full log is in the job artifact)."
+            echo ""
+            echo '```'
+            if [ -f "$LOG" ]; then
+              grep -E "^\s*not ok |failureType:|  error:|hookFailed|testCodeFailure" "$LOG" | head -n 300 || true
+            else
+              echo "The test output file was not written."
+            fi
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Collect the PostgreSQL service log
+        if: failure()
+        shell: bash
+        run: |
+          {
+            echo ""
+            echo "=== PostgreSQL service container log (last 200 lines) ==="
+            for id in $(docker ps -a --filter "ancestor=postgres:18" -q); do
+              docker logs --tail 200 "$id" 2>&1 || true
+            done
+          } >> "$RUNNER_TEMP/world-api-live-postgres.log"
+      - name: Keep the live PostgreSQL test log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: world-api-live-postgres-log
+          path: ${{ runner.temp }}/world-api-live-postgres.log
+          retention-days: 14
+          if-no-files-found: warn

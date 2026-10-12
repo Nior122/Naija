@@ -600,6 +600,17 @@ export class CrimeService {
 export function crimeErrorMessage(code: string): string {
   const messages: Record<string, string> = {
     crime_definition_not_found: "Crime type not found.",
+    crime_victim_required: "This crime needs a victim character.",
+    crime_victim_not_found: "The named victim character was not found.",
+    crime_victim_is_perpetrator: "A character cannot be the victim of their own crime.",
+    crime_victim_unavailable: "The named victim cannot be targeted.",
+    crime_property_required: "This crime needs a target property.",
+    crime_property_not_found: "The named property was not found.",
+    crime_property_not_owned: "The named property has no active owner, so it cannot be a crime target.",
+    crime_business_required: "This crime needs a target business.",
+    crime_business_not_found: "The named business was not found.",
+    crime_target_not_applicable: "This crime does not take that kind of target.",
+    crime_target_invalid: "A target identifier is not valid.",
     crime_incident_transition_suspended: "Changing incident status is suspended until crime authority rules are in place.",
     crime_evidence_suspended: "Adding evidence to incidents is suspended until crime authority rules are in place.",
     crime_restitution_suspended: "Restitution orders are suspended until judicial authority rules are in place.",

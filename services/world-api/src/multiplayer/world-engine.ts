@@ -188,6 +188,7 @@ import { MilitaryCatalogService, MilitaryService, initializeMilitaryWorldState, 
 import type { ServiceBranchId, AssignmentTypeId, EquipmentCategoryId, NationalSecurityEventCategoryId } from "../military/types.js";
 import { CrimeCatalogService, CrimeService, initializeCrimeWorldState, seedCrimeWorld, crimeErrorMessage } from "../crime/index.js";
 import type { CrimeCategoryId, CrimeIncidentStatusId } from "../crime/types.js";
+import { parseTargetId, validateCrimeTargets } from "../crime/targets.js";
 import { CultureCatalogService, CultureService, initializeCultureWorldState, seedCultureWorld, cultureErrorMessage } from "../culture/index.js";
 import type { CommunityTypeId, InstitutionCategoryId, ProjectCategoryId, ProjectStatusId, ReligiousCategoryId } from "../culture/types.js";
 import { EntertainmentCatalogService, EntertainmentService, initializeEntertainmentWorldState, seedEntertainmentWorld, entertainmentErrorMessage } from "../entertainment/index.js";
@@ -259,6 +260,12 @@ const ENTITY_INTERACTION_RADIUS = 100;
 const GEOGRAPHIC_INTEREST_RADIUS_CHUNKS = 1;
 const GEOGRAPHIC_INTEREST_RADIUS_METERS = 1500;
 const MINUTES_PER_DAY = 1440;
+/**
+ * Stage 38 (R5). The per-game-minute character snapshot is held back for a socket whose unsent backlog is larger than
+ * this. Normal snapshots are a few kilobytes, so normal play never reaches the limit. A slow or stalled reader is then
+ * sent the latest state once its backlog drains, instead of one more copy per game minute.
+ */
+const SNAPSHOT_BACKLOG_LIMIT_BYTES = 1024 * 1024;
 const STARTING_MONEY = 5000;
 /**
  * TEMPORARY CONTAINMENT (Stage 28, government and election authorization).
@@ -926,6 +933,8 @@ export class MultiplayerWorld {
   private readonly pendingMoneyReplies = new Map<string, PendingMoneyReply>();
   /** True from the first refused save (over the size limit) until the next successful save. */
   private capacityEpisodeOpen = false;
+  /** Stage 38 (R5): online sockets whose per-minute character snapshot was held back for a backlog. */
+  private readonly snapshotHeldBack = new WeakSet<ConnectionContext>();
   /** True from the first non-capacity save failure until the next successful save. */
   private persistenceEpisodeOpen = false;
   /** When the first failure notice of the current episode was sent. Null when no notice is open (G3). */
@@ -1098,6 +1107,7 @@ export class MultiplayerWorld {
       this.advanceWorldMilliseconds(wholeGameMilliseconds, now);
       changed = true;
     }
+    this.releaseHeldSnapshots();
     if (now - this.lastBroadcastAt >= this.broadcastIntervalMs) {
       this.lastBroadcastAt = now;
       this.broadcastWorldSnapshot();
@@ -4025,7 +4035,10 @@ export class MultiplayerWorld {
           if (!stationId) throw new Error("police_station_required");
           // Education comes from the character's authoritative record only; a client-supplied value is ignored.
           const education = player.character.education_level;
-          const birthDate = player.character.date_of_birth ?? { year: worldDate.year - 20, month: 1, day: 1 };
+          // Stage 38: the age comes from the character's own date of birth. A character without one is refused, not
+          // assumed to be 20 (characters are always created with one; this removes the silent fallback).
+          if (!player.character.date_of_birth) throw new Error("police_age_ineligible");
+          const birthDate = player.character.date_of_birth;
           let app: ReturnType<PoliceService["applyForRecruitment"]>;
           try {
             app = policeService.applyForRecruitment({ character_id: characterId, station_id: stationId, education, birth_date: birthDate }, worldDate);
@@ -4361,7 +4374,9 @@ export class MultiplayerWorld {
           if (!branch) throw new Error("military_branch_invalid");
           // Education comes from the character's authoritative record only; a client-supplied value is ignored.
           const education = player.character.education_level;
-          const birthDate = player.character.date_of_birth ?? { year: worldDate.year - 20, month: 1, day: 1 };
+          // Stage 38: the age comes from the character's own date of birth. A character without one is refused.
+          if (!player.character.date_of_birth) throw new Error("military_age_ineligible");
+          const birthDate = player.character.date_of_birth;
           const app = militaryService.applyForService({ character_id: characterId, branch, education, birth_date: birthDate }, worldDate);
           responseData.application = app;
           messageText = "Military application submitted.";
@@ -4610,13 +4625,21 @@ export class MultiplayerWorld {
         case "commit_crime": {
           const crimeId = typeof data.crime_definition_id === "string" ? data.crime_definition_id : "";
           if (!crimeId) throw new Error("crime_definition_not_found");
+          const definition = this.crimeCatalog.getCrimeDefinition(crimeId);
+          if (!definition) throw new Error("crime_definition_not_found");
+          // Stage 38: each named target is checked against the saved world. Only the checked identifiers are used.
+          const targets = validateCrimeTargets(this.store.state, definition, characterId, {
+            victim_character_id: parseTargetId(data.victim_character_id),
+            victim_property_id: parseTargetId(data.victim_property_id),
+            victim_business_id: parseTargetId(data.victim_business_id),
+          });
           const perpetratorAge = player.character.age;
           const result = crimeService.resolveCrimeAction({
             crime_definition_id: crimeId,
             perpetrator_character_id: characterId,
-            victim_character_id: typeof data.victim_character_id === "string" ? data.victim_character_id : null,
-            victim_property_id: typeof data.victim_property_id === "string" ? data.victim_property_id : null,
-            victim_business_id: typeof data.victim_business_id === "string" ? data.victim_business_id : null,
+            victim_character_id: targets.victim_character_id,
+            victim_property_id: targets.victim_property_id,
+            victim_business_id: targets.victim_business_id,
             location_id: typeof data.location_id === "string" ? data.location_id : null,
             state_id: typeof data.state_id === "string" ? data.state_id : null,
             perpetrator_age: perpetratorAge,
@@ -5585,9 +5608,33 @@ export class MultiplayerWorld {
       }
       player.character.updated_at = clock.updated_at;
       player.lastSeen = clock.updated_at;
-      this.sendCharacterSnapshot(context);
+      this.sendMinuteSnapshot(context);
     }
     this.dirty = true;
+  }
+
+  /**
+   * Stage 38 (R5). Sends the per-minute character snapshot, unless this socket already has a backlog. A held-back
+   * snapshot is not lost: releaseHeldSnapshots sends the then-current state once the backlog drains. A socket that is
+   * closed is skipped by send(), as for every other message.
+   */
+  private sendMinuteSnapshot(context: ConnectionContext): void {
+    if (context.socket.bufferedAmount > SNAPSHOT_BACKLOG_LIMIT_BYTES) {
+      this.snapshotHeldBack.add(context);
+      return;
+    }
+    this.snapshotHeldBack.delete(context);
+    this.sendCharacterSnapshot(context);
+  }
+
+  /** Stage 38 (R5). Sends one held-back snapshot to each online socket whose backlog has drained. */
+  private releaseHeldSnapshots(): void {
+    for (const context of this.online.values()) {
+      if (!this.snapshotHeldBack.has(context)) continue;
+      if (context.socket.bufferedAmount > SNAPSHOT_BACKLOG_LIMIT_BYTES) continue;
+      this.snapshotHeldBack.delete(context);
+      this.sendCharacterSnapshot(context);
+    }
   }
 
   private addInventoryItem(inventory: InventoryItem[], purchased: InventoryItem): void {

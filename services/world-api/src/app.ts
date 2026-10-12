@@ -1,5 +1,5 @@
 import { createServer, type Server, type ServerResponse } from "node:http";
-import { performance } from "node:perf_hooks";
+import { monitorEventLoopDelay, performance } from "node:perf_hooks";
 import { WebSocket, WebSocketServer } from "ws";
 import { fileURLToPath } from "node:url";
 import { MultiplayerWorld, type IdentityBudgetOptions } from "./multiplayer/world-engine.js";
@@ -31,6 +31,11 @@ export interface ApiServerOptions extends ServerOptions {
   /** R4 identity-creation budget. Absent means no budget (the production entry point sets it from the environment). */
   readonly identityBudget?: IdentityBudgetOptions;
   readonly websocketPath?: string;
+  /**
+   * Heartbeat period in milliseconds. Absent means 15 000 (the production value). Tests may shorten it; the entry point
+   * does not set it, so production behaviour is unchanged.
+   */
+  readonly heartbeatIntervalMs?: number;
   /** Pre-opened world store (for example PostgreSQL). Defaults to the JSON file store at stateFile. */
   readonly worldStore?: WorldStoreLike;
   /** Persistence health reported under /health. Failing checks make the server unhealthy. */
@@ -203,16 +208,40 @@ export function createApiServer(options: ApiServerOptions = {}): ApiServer {
   });
 
   const responsiveSockets = new WeakSet<WebSocket>();
+  // Stage 38 diagnostics (R5). These record counts, times, and byte counts only: no addresses, player IDs, or tokens.
+  // They do not change when a socket is terminated, and they add no timeout.
+  const connectedAt = new WeakMap<WebSocket, number>();
+  const pingSentAt = new WeakMap<WebSocket, number>();
+  const LARGE_QUEUE_BYTES = 1024 * 1024;
+  const LOOP_BLOCK_MS = 1000;
+  const loopDelay = monitorEventLoopDelay({ resolution: 20 });
+  loopDelay.enable();
+  websocketServer.on("connection", (client) => connectedAt.set(client, performance.now()));
   const heartbeatTimer = setInterval(() => {
+    const loopMaxMs = loopDelay.max / 1e6;
+    loopDelay.reset();
+    if (loopMaxMs > LOOP_BLOCK_MS) {
+      monitoring.warn("event loop was blocked during a heartbeat interval", { max_block_ms: Math.round(loopMaxMs) });
+    }
     for (const client of websocketServer.clients) {
       if (!responsiveSockets.has(client)) {
+        // No pong arrived after the previous ping. A new connection counts as responsive, so the first tick only pings it.
+        monitoring.warn("heartbeat terminated a connection that did not answer its ping", {
+          queued_bytes: client.bufferedAmount,
+          ping_wait_ms: Math.round(performance.now() - (pingSentAt.get(client) ?? performance.now())),
+          connection_age_ms: Math.round(performance.now() - (connectedAt.get(client) ?? performance.now())),
+        });
         client.terminate();
         continue;
       }
+      if (client.bufferedAmount > LARGE_QUEUE_BYTES) {
+        monitoring.warn("a connection has a large outbound queue", { queued_bytes: client.bufferedAmount });
+      }
       responsiveSockets.delete(client);
+      pingSentAt.set(client, performance.now());
       client.ping();
     }
-  }, 15_000);
+  }, options.heartbeatIntervalMs ?? 15_000);
   heartbeatTimer.unref();
 
   const tickTimer = setInterval(() => {
@@ -232,6 +261,7 @@ export function createApiServer(options: ApiServerOptions = {}): ApiServer {
     if (shutdownPromise) return shutdownPromise;
     clearInterval(heartbeatTimer);
     clearInterval(tickTimer);
+    loopDelay.disable();
     shutdownPromise = world.shutdown().then(
       () =>
         new Promise<void>((resolve, reject) => {
@@ -243,6 +273,7 @@ export function createApiServer(options: ApiServerOptions = {}): ApiServer {
   server.on("close", () => {
     clearInterval(heartbeatTimer);
     clearInterval(tickTimer);
+    loopDelay.disable();
   });
   server.recordDeathEvent = (characterId, cause) => world.recordDeathEvent(characterId, cause);
   server.recordRetirementEvent = (characterId) => world.recordRetirementEvent(characterId);

@@ -53,11 +53,13 @@ Principles (apply to every family):
 | J-6 Fine payment | Paid from the responsible character's own balance to the designated account, atomically, with a ledger entry. | SUSPENDED (`justice_fine_payment_suspended`). No atomic ledger link. |
 | J-7 Criminal record | Only from a valid final judgment in a case, by an authorised justice process. | SUSPENDED (`crime_record_creation_suspended`). |
 
+Stage 38: `create_proposal` and `submit_proposal` (`justice.action`) have socket tests: only the sponsor submits a draft, once; a minor is refused; a request with no ID is refused; a failed save is retried once. No route enacts a law. The rules above are unchanged. `submit_evidence`, `issue_judgment`, and `file_appeal` have no Stage 38 socket test.
+
 ## 4. Military (D-04)
 
 | Rule | Adopted minimal rule | Status |
 |---|---|---|
-| M-1 Recruitment intake | A citizen may apply for themselves. Eligibility (age, education) is read from the character record. A client value is ignored. | IMPLEMENTED for `apply_for_service` (education from server state). Tested. |
+| M-1 Recruitment intake | A citizen may apply for themselves. Eligibility (age, education) is read from the character record. A client value is ignored. | IMPLEMENTED for `apply_for_service`. Stage 38: the applicant is the session character (a client-named applicant is ignored); a missing date of birth is refused (`military_age_ineligible`), with no default age. Socket-tested (file and PostgreSQL). Education eligibility is documented as open (open decision 9); the rule is unchanged. |
 | M-2 Enlistment | An approved application is enlisted by a recruiting officer of the branch, not by the applicant. | `enlist` SUSPENDED (`military_enlistment_suspended`). Recruiting-officer role not modelled. |
 | M-3 Training | Enrolment and completion by the commander of the training organisation, for a service member in that organisation. | `enroll_training`, `complete_training` SUSPENDED. |
 | M-4 Promotion | Only a commanding officer of the member's unit, with rank senior to the new rank, and within the branch's promotion rules. | `promote` SUSPENDED. |
@@ -70,9 +72,10 @@ Principles (apply to every family):
 
 | Rule | Adopted minimal rule | Status |
 |---|---|---|
-| P-1 Recruitment intake | Citizen applies for themselves; education from server state. | IMPLEMENTED for `apply_recruitment` (education from server state). Tested. |
+| P-1 Recruitment intake | Citizen applies for themselves; education from server state. | IMPLEMENTED for `apply_recruitment`. Stage 38: the applicant is the session character; a missing date of birth is refused (`police_age_ineligible`); a missing or inactive station is refused with a stable code. Socket-tested. Education eligibility is open (open decision 9). |
 | P-2 Officer appointment | Only a station commander of the station, for an eligible applicant. `enrollOfficer` has no player route. | No player route. |
 | P-3 Arrest | Only an officer of the arresting station, with a recorded legal basis that names an incident or warrant that exists and is attributable to the target. Free text is not a legal basis. | `execute_arrest` SUSPENDED (`police_arrest_suspended`). |
+| P-6 Station authority for incident actions (`dispatch_unit`, `open_investigation`) | Only an officer who is active or on duty, acting for their own station, on an incident assigned to that station by triage, and in an allowed status (`accepted` or `assigned`). The officer and station come from the session and the saved records; a client cannot name another station or officer. | IMPLEMENTED in the service and on the socket, and tested. Fail-closed in practice: no socket route assigns an incident to a station, so every incident is refused (`police_incident_not_assigned`) until triage exists (open decision 10). |
 | P-4 Misconduct complaints | Any citizen may file against an existing officer. | Open (self-service; accused officer must exist). |
 | P-5 Reads | `police_profile`, `list_stations`, `list_incidents` remain open. | Open. |
 
@@ -81,6 +84,7 @@ Principles (apply to every family):
 | Rule | Adopted minimal rule | Status |
 |---|---|---|
 | C-1 Linking an incident to a police record | Only a police officer with authority over the incident's station. | `link_to_police` SUSPENDED (`crime_link_suspended`). |
+| C-3 Crime victim (`commit_crime`) | A victim is named only if it exists in the saved world: a different character, a property with an active owner record, or a business with an owner. A target type the crime does not take is refused. A malformed identifier is refused (`crime_target_invalid`). Only checked identifiers are used. | IMPLEMENTED on the socket and tested (file and PostgreSQL). An online-only rule for victims was not found and is not added. |
 | C-2 Linking an incident to a justice case | Only a party to the case with standing over the incident, or the court's own process. Never a player-supplied case ID alone. | `link_to_justice` SUSPENDED (`crime_link_suspended`). |
 
 ## Permanent rules R-a to R-f (from STAGE_28_GOVERNMENT_AUTHORIZATION.md)
@@ -104,5 +108,8 @@ Principles (apply to every family):
 6. R-c: whether a federal office may act for a ministry, state, or locality. The current default is exact scope. The seed data's placement of every office in `gov:federal` must also be corrected (or confirmed) before any state or local office can grant authority.
 7. J-8: whether judicial conflict covers more than case parties (family, business, or prior advocacy).
 8. R-b / R-f: the budget owner table and the budget age rule.
+9. Education representation (Stage 38): character `education_level` is free text, but the police and military eligibility rules compare a code hierarchy (`none` to `postgraduate`), and an unknown value counts as `none`. Both minimums are `secondary`. Decide which representation is authoritative. The rules are unchanged until then. The police refusal is also a plain message, not a stable code.
+10. Station assignment (Stage 38): who may assign an incident to a station (triage), and whether an officer may dispatch beyond their own station. Until a triage route and rule exist, `dispatch_unit` and `open_investigation` refuse every incident.
+11. Justice socket routes for `submit_evidence`, `issue_judgment`, and `file_appeal`, and the positive path of `request_leave`, have no Stage 38 socket test. Their owner decisions are unchanged.
 
 Until these are answered, the suspended rows stay suspended. The implemented rows are the only player-reachable consequential mutations that the rules above allow. Stage 30 implemented rows are service-layer rules. Player routes that call them remain suspended.
