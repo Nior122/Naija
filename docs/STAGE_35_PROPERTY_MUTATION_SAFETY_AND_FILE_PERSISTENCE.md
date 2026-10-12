@@ -7,8 +7,13 @@ Production runs on PostgreSQL. The file backend is for development and tests (se
 
 - Branch: `arena/00cdea0e-naija`. Starting commit: `f45b80f` (Stage 34), verified at the start of this stage.
 - Stage 34 remote commit before this stage: `f45b80f` (fast-forward from `39885d8`).
-- Final commit: the commit that adds this document. A file cannot record its own hash. The final hash, the push result,
-  and the remote HEAD are in the final report for this stage and in `git log arena/00cdea0e-naija`.
+- Commits in this stage, in order:
+  - `1d38f95`: the first Stage 35 commit (property mutations under the outcome contract; file-backend lock decision).
+    Its CI run `38194580584` succeeded.
+  - `ed06f27`: the follow-up commit (closes stale property listings; the socket tests for the property actions, `pay_rent`,
+    and the treasury allocation). Its CI run `38196077165` succeeded.
+  - The commit that adds this section is documentation only. A file cannot record its own hash, so it is in
+    `git log arena/00cdea0e-naija` and in the final report.
 
 ## 2. Property actions: audit table
 
