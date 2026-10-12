@@ -136,6 +136,7 @@ Status: R5 remains an open blocker. The test is not changed and its assertion is
 - What could not be retrieved: the failing test name and error text. The run log (`gh run view --log-failed`) and the job log API both failed with `EOF`. The log is served from `productionresultssa9.blob.core.windows.net`, and a direct connection to that host fails with `SSL_ERROR_SYSCALL` from this sandbox, so the sandbox's outbound allowlist blocks it. This is an access limit of this environment, not evidence about the tests. `gh run rerun` (with and without `--failed`) was refused by GitHub with "cannot be rerun; its workflow file may be broken". The workflow file is active, and the run had already executed its jobs, so that message does not match the state seen here. No second CI attempt exists.
 - Local reproduction of the CI configuration (PostgreSQL 18.4, the same major version as CI `postgres:18`; `npm run build`, then `NAIJA_ENV=test node --test --test-concurrency=3 test/*.test.mjs`, with the disposable `naija_s37_test` database): three runs, each 1561 tests, 1557 pass, 0 fail, 4 skip, 0 TODO (about 98 s, 102 s, and 100 s). The explicit concurrency matches what Node chooses on a 4-CPU runner (the runner size is assumed from the Stage 35 record, not verified here). CI's `npm test` runs with Node's default concurrency, not the explicit flag. No failure was reproduced.
 - Earlier local observation (not CI): one serial PostgreSQL run (`/tmp/s37-pg-full.log`) had one failure, the cross-process justice race test. It has not recurred in later runs. That test's predicate was fixed (section 6). It is not linked to the CI failure.
+- Re-check by a new commit: `87ce096` (run `38210023837`) has the same code and test files as `237de19` (`git diff 237de19 87ce096` changes only this report). Both of its jobs succeeded, including the live PostgreSQL job. So the `237de19` failure did not recur on identical code. The failure is intermittent on CI. This is one failure in two runs of the same code, and it is not explained. It is not a fix. No rerun of `237de19` itself was possible.
 - Root cause of the `237de19` live-PostgreSQL failure: **unknown.** It is unreproduced, and it is unverified whether it is the same cause as the earlier `c71964b` and `825e0e8` failures. The new CI run is not evidence that the code is correct, and the Stage 37 claims must be read with this failure in mind.
 
 Changed test expectation (for review): `mutation-resend-guards.test.mjs`, "justice file_case re-sent with the same requestId". Before: `assert.equal(cases.length, 2, "current code does not deduplicate…")`, with a wait for `justice.result` only. After: the re-sent copy is `command.duplicate`, and `cases.length` must be 1.
@@ -173,7 +174,8 @@ Not separable: per-family totals for the whole suite. Those would need test-to-f
 - Lint: `npm run lint` passes.
 - `npm run check`: passes (section 10).
 - `npm test` with PostgreSQL: passes (section 10).
-- CI for `237de19` (run `38209331236`): the foundation job passed; the live PostgreSQL job **failed** (section 9). Cause unknown. Not green.
+- CI for `237de19` (run `38209331236`): the foundation job passed; the live PostgreSQL job **failed** (section 9). Cause unknown.
+- CI for `87ce096` (run `38210023837`, same code and tests as `237de19`): both jobs succeeded. The failure is intermittent and unexplained (section 9).
 - Push: `5f64523..237de19`, fast-forward only, never forced. The remote commit was verified at `237de19` after the push.
 
 ## 12. Behaviour changes (for review)
@@ -193,7 +195,7 @@ Not separable: per-family totals for the whole suite. Those would need test-to-f
 
 Verified risks:
 
-- **The live PostgreSQL CI job failed on `237de19` (section 9). Its cause is unknown, and it is not reproduced locally in three CI-configuration runs. This is the top open risk. Stage 37 is not CI-green.** The next step needs the failing test name, which the sandbox cannot download. A rerun was refused by GitHub.
+- **The live PostgreSQL CI job failed once on `237de19` and passed on `87ce096`, which has identical code and tests (section 9). The cause is unknown. It is not reproduced locally in three CI-configuration runs. It is an intermittent CI risk, not a fixed one.** The next step needs the failing test name from the `237de19` log, which this sandbox cannot download; a rerun of that exact run was refused by GitHub. Until a cause is found, treat the live PostgreSQL job as flaky.
 - Incomplete authority (section 4): station checks for police `dispatch_unit` and `open_investigation`; victim checks for `commit_crime`.
 - Unverified authority for several gated operations (section 4), and no socket tests for `submit_proposal`, `submit_evidence`, `issue_judgment`, `file_appeal`, `family.childbirth`, and the positive path of `request_leave`.
 - R5 remains open (section 8). The two older CI failures remain unexplained (section 9).
