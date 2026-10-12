@@ -628,7 +628,7 @@ test("police.action list_stations works over WebSocket", async () => {
   try {
     const { peer } = await createOnlinePeer(serverPort);
     peer.send({ type: "police.action", action: "list_stations", requestId: "req-stations-1" });
-    const result = await peer.waitFor((msg) => msg.type === "police.result" && msg.requestId === "req-stations-1", 5000);
+    const result = await peer.waitFor((msg) => msg.type === "police.result" && msg.requestId === "req-stations-1", 20000);
     assert.ok(result);
     assert.equal(result.ok, true);
     assert.equal(result.action, "list_stations");
@@ -647,13 +647,13 @@ test("police.action submit_incident and list_incidents work over WebSocket", asy
       type: "police.action", action: "submit_incident", requestId: "req-inc-1",
       category: "theft", description: "My phone was stolen at the bus stop.", summary: "Phone stolen",
     });
-    const incResult = await peer.waitFor((msg) => msg.type === "police.result" && msg.requestId === "req-inc-1", 5000);
+    const incResult = await peer.waitFor((msg) => msg.type === "police.result" && msg.requestId === "req-inc-1", 20000);
     assert.ok(incResult);
     assert.equal(incResult.ok, true);
     assert.ok(incResult.data.incident);
     assert.ok(incResult.data.incident.reference_number.startsWith("NPF-THE-"));
     peer.send({ type: "police.action", action: "list_incidents", requestId: "req-inc-list" });
-    const listResult = await peer.waitFor((msg) => msg.type === "police.result" && msg.requestId === "req-inc-list", 5000);
+    const listResult = await peer.waitFor((msg) => msg.type === "police.result" && msg.requestId === "req-inc-list", 20000);
     assert.ok(listResult);
     assert.equal(listResult.ok, true);
     assert.ok(Array.isArray(listResult.data.incidents));
@@ -669,7 +669,7 @@ test("police.action police_profile returns non-officer for regular character", a
   try {
     const { peer } = await createOnlinePeer(serverPort);
     peer.send({ type: "police.action", action: "police_profile", requestId: "req-profile-1" });
-    const result = await peer.waitFor((msg) => msg.type === "police.result" && msg.requestId === "req-profile-1", 5000);
+    const result = await peer.waitFor((msg) => msg.type === "police.result" && msg.requestId === "req-profile-1", 20000);
     assert.ok(result);
     assert.equal(result.ok, true);
     assert.equal(result.data.profile.is_officer, false);
@@ -684,7 +684,7 @@ test("police.action error returned for invalid action", async () => {
   try {
     const { peer } = await createOnlinePeer(serverPort);
     peer.send({ type: "police.action", action: "invalid_action", requestId: "req-invalid" });
-    const result = await peer.waitFor((msg) => msg.type === "police.error" && msg.requestId === "req-invalid", 5000);
+    const result = await peer.waitFor((msg) => msg.type === "police.error" && msg.requestId === "req-invalid", 20000);
     assert.ok(result);
     assert.equal(result.action, "invalid_action");
     await peer.close();

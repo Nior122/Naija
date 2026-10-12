@@ -43,7 +43,7 @@ function cashBalance(backend, characterId) {
 
 function ask(peer, message, types) {
   peer.send(message);
-  return peer.waitFor((reply) => types.includes(reply.type), 5000);
+  return peer.waitFor((reply) => types.includes(reply.type), 20000);
 }
 
 afterEach(async () => {

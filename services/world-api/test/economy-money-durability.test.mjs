@@ -186,7 +186,7 @@ const ECONOMY_REPLY = (requestId) => (message) => message.requestId === requestI
 /** Sends one economy action and waits for its reply (result, error, or duplicate) for the same request ID. */
 async function economy(peer, requestId, action, payload = {}) {
   peer.send({ type: "economy.action", action, requestId, payload });
-  return peer.waitFor(ECONOMY_REPLY(requestId), 5000);
+  return peer.waitFor(ECONOMY_REPLY(requestId), 20000);
 }
 
 const cashBalance = (backend, characterId) => cashOf(backend.store.state, characterId).balance_ngn;
@@ -355,7 +355,7 @@ for (const backendName of backendNames) {
     await waitUntil(() => entry.backend.store.heldCount > heldBefore);
     const second = economy(saver.peer, "dep-held-b", "deposit", { account_id: accountId, amount_ngn: 4_000 });
     releaseSave();
-    const a = await saver.peer.waitFor(ECONOMY_REPLY("dep-held-a"), 5000);
+    const a = await saver.peer.waitFor(ECONOMY_REPLY("dep-held-a"), 20000);
     const b = await second;
     assert.equal(a.type, "economy.result", JSON.stringify(a));
     assert.equal(b.type, "economy.result", JSON.stringify(b));

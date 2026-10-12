@@ -272,7 +272,7 @@ for (const backendName of backendNames) {
     assert.ok(isSuccess(first), "the first transfer is applied");
     const fromMid = backend.store.state.economyAccounts[fromId].balance_ngn;
     saver.peer.send(repeat);
-    const second = await saver.peer.waitFor((reply) => reply.requestId === "repeat-1" && reply.type === "command.duplicate", 5000);
+    const second = await saver.peer.waitFor((reply) => reply.requestId === "repeat-1" && reply.type === "command.duplicate", 20000);
     assert.equal(second.type, "command.duplicate", "the engine reports the resend as a duplicate");
     assert.equal(backend.store.state.economyAccounts[fromId].balance_ngn, fromMid, "a resent requestId does not debit again");
   });

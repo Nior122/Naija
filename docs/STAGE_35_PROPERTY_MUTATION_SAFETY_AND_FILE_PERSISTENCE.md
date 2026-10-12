@@ -228,29 +228,47 @@ development host and are not committed.
 
 | Command | Result | Log |
 |---|---|---|
-| `npm run build` (`tsc`, the typecheck) | exit 0 | `/tmp/s35f-build.log` |
-| `npm run lint` (eslint on `services/world-api/src`) | exit 0 | `/tmp/s35f-lint.log` |
-| `npm test` in `services/world-api`, PostgreSQL env sourced (the CI command for the live job) | **1533 tests: 1528 pass, 0 fail, 4 skip, 1 todo**; exit 0 | `/tmp/s35f-pg.log` |
+| `npm run build` (`tsc`, the typecheck) | exit 0 | `/tmp/s35k-build.log` |
+| `npm run lint` (eslint on `services/world-api/src`) | exit 0 | `/tmp/s35k-lint.log` |
+| `npm test` in `services/world-api`, PostgreSQL 18 on a new empty database (the CI command for the live job) | **1533 tests: 1528 pass, 0 fail, 4 skip, 1 todo**; exit 0 | `/tmp/s35k-pg.log` |
 | `node --test test/property-actions-stage35.test.mjs`, file backend (no `DATABASE_URL`) | 56 tests, 56 pass, 0 fail, 0 skip | terminal |
 | same, PostgreSQL env sourced (both backends in one run) | 112 tests, 112 pass, 0 fail, 0 skip (56 file, 56 PostgreSQL) | terminal |
 | `node --test test/treasury-funding-stage35.test.mjs`, file backend | 5 tests, 5 pass, 0 fail | terminal |
 | same, PostgreSQL env sourced (both backends in one run) | 10 tests, 10 pass, 0 fail (5 file, 5 PostgreSQL) | terminal |
-| Full suite, file backend (`env -u DATABASE_URL NAIJA_ENV=test node --test test/*.test.mjs`) | **1303 tests: 1261 pass, 0 fail, 41 skip, 1 todo**; exit 0 | `/tmp/s35f-file.log` |
+| Full suite, file backend (`env -u DATABASE_URL NAIJA_ENV=test node --test test/*.test.mjs`) | **1303 tests: 1261 pass, 0 fail, 41 skip, 1 todo**; exit 0 | `/tmp/s35k-file.log` |
 | `node --test test/entertainment.test.mjs` (after the fix described below) | 30 tests, 30 pass | `/tmp/s35e-ent.log` |
 
 Totals are reported per backend and never added across them. The full-suite totals include every file. The per-file
 rows above are the final runs of the two new files. The property-mutation and invariant files, and the other files, were
 checked by the full-suite runs only.
 
-A flaky test found and fixed in this stage. The CI live-PostgreSQL job failed on commit `825e0e8` (run `38196196114`,
-a documentation-only commit on top of `ed06f27`, which had passed). The failure reproduced locally on one of two full runs:
-`entertainment.test.mjs`, "createNewsReport and publishNewsReport", asserted `published.views > 0`. `publishNewsReport`
-gives initial views as `Math.floor(Math.random() * 100)`, so a draw of 0 fails the test (about 1 run in 100). The test
-now fixes the random draw for its own duration (and restores it), and the assertion is unchanged. The game code was not
-changed. The CI job log could not be downloaded (the log service returned EOF), and the run could not be re-run, so the
-failing test name is established by the local reproduction, not by the CI log. Other test files that call `Math.random`
-use it for unique IDs or ports, not for assertions. The economy test's random port is a possible rare clash that was not
-investigated.
+CI history and load-sensitive tests. Two CI runs of the live-PostgreSQL job failed after this stage's first follow-up
+commit, and both have the same test code as `ed06f27`, which passed:
+
+- `825e0e8` (run `38196196114`), a documentation-only commit. The job log could not be downloaded (the log service
+  returned EOF), and GitHub refused to re-run the run. The failure was not identified from CI.
+- `c71964b` (run `38196966222`), which contains the entertainment fix described below. The same log problem applies.
+
+Local reproduction, in order:
+
+1. `entertainment.test.mjs`, "createNewsReport and publishNewsReport", asserted `published.views > 0`.
+   `publishNewsReport` gives initial views as `Math.floor(Math.random() * 100)`, so a draw of 0 fails the test (about
+   1 run in 100). It reproduced once in two full local runs. The test now fixes the random draw for its own duration and
+   restores it. The assertion and the game code are unchanged. This fix is in `c71964b`.
+2. Under CI-like concurrency (`node --test --test-concurrency=3`, the sandbox has 2 CPUs, CI has 4) with two extra busy
+   processes, two tests failed on a 5-second WebSocket wait: `property-actions-stage35` "an open listing whose owner is no
+   longer the owner is closed on load" (5.27 s), and `world-capacity-notify` "R5 notify-once" (8.6 s). Both were timeouts,
+   not assertion failures.
+3. The explicit `waitFor` budgets (5000 ms) were raised to 20000 ms in 31 test files, and the harness default too. Only
+   the timeout literal changed (checked against `HEAD` by comparing each file with the timeout normalised). A reply that
+   never arrives still fails, only later. Under the same load, the listed test passed. R5 still fails under that load.
+4. R5 was run on its own, under the same load, on the current code (2 runs: 2 failures) and on the pre-stage code
+   `f45b80f` (2 runs: 1 failure). So R5 is a load-sensitive test that predates this stage and is not fixed here. It passes
+   without extra load, and in the CI-like concurrency run without extra load. Its mechanism was not isolated.
+
+Open: CI on the final commit is not confirmed green by this document. The final report records the CI result. If the
+live-PostgreSQL job still fails on CI, its cause is not identified, and R5 is the leading candidate. Mitigations are in
+section 10.
 
 Skips. The 41 file-run skips are PostgreSQL-only tests that need `DATABASE_URL` and `NAIJA_ALLOW_DB_TESTS=true`. The
 4 PostgreSQL-run skips are the TLS live tests that need `TLS_TEST_DATABASE_URL`. A skip is not a pass. The 1 todo in each
@@ -277,6 +295,8 @@ copied in). These show that the tests detect the old faults. They are not a clai
 
 ## 10. Limitations and TODOs
 
+0. CI: the live-PostgreSQL job failed on `825e0e8` and `c71964b` (section 9). The log was not retrievable, so the failing test
+   was not identified on CI. R5 (`world-capacity-notify.test.mjs`) is the known load-sensitive test (section 9). Not fixed.
 1. Race 1 residual: an out-of-protocol lock file replacement after the check and before the rename is not detected (the
    OPEN TODO). Not closed.
 2. Multi-host and network-filesystem use of the file backend: not supported and not tested.

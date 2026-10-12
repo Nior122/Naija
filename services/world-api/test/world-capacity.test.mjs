@@ -41,7 +41,7 @@ test("R5 capacity: a save over the size limit is refused, the saved file is unch
   try {
     const seed = await (async () => {
       peer.send(createMessage(newCreationKey(), "Seed"));
-      return peer.waitFor((message) => message.type === "identity.created", 5000);
+      return peer.waitFor((message) => message.type === "identity.created", 20000);
     })();
     assert.ok(seed.playerId);
     const durableBefore = readFileSync(backend.file);
@@ -55,7 +55,7 @@ test("R5 capacity: a save over the size limit is refused, the saved file is unch
 
     const second = await openPeer(started.websocketUrl);
     second.send(createMessage(newCreationKey(), "Over"));
-    const reply = await second.waitFor((message) => message.type === "error", 5000);
+    const reply = await second.waitFor((message) => message.type === "error", 20000);
     await second.close();
     assert.equal(reply.code, "world_capacity_reached", "a clear capacity error, not a generic failure");
 
@@ -82,7 +82,7 @@ test("R5 capacity: a shutdown whose final save exceeds the limit reports the fai
   const started = await startCreationServer(backend);
   const peer = await openPeer(started.websocketUrl);
   peer.send(createMessage(newCreationKey(), "Seed"));
-  await peer.waitFor((message) => message.type === "identity.created", 5000);
+  await peer.waitFor((message) => message.type === "identity.created", 20000);
   await peer.close();
   const durableAfterSeed = readFileSync(backend.file);
   backend.store.state.players[peerSeedId(backend)].character.test_padding = "x".repeat(17 * MiB);

@@ -29,7 +29,7 @@ async function citizen(backend, started, name) {
 
 /** The first reply for this request ID: a result, a duplicate notice, or an error. */
 function settle(peer, requestId, types) {
-  return peer.waitFor((message) => message.requestId === requestId && types.includes(message.type), 5000);
+  return peer.waitFor((message) => message.requestId === requestId && types.includes(message.type), 20000);
 }
 
 const applicationsOf = (state, characterId) =>
@@ -37,7 +37,7 @@ const applicationsOf = (state, characterId) =>
 
 /** Finds the market vacancy this character can apply for, as the careers test does. */
 async function marketVacancy(peer) {
-  const search = peer.waitFor((message) => message.type === "career.result" && message.action === "search_jobs", 5000);
+  const search = peer.waitFor((message) => message.type === "career.result" && message.action === "search_jobs", 20000);
   peer.send({ type: "career.action", action: "search_jobs", payload: { text: "market" }, requestId: `search-${Math.random()}` });
   const result = await search;
   const vacancy = result.data.jobs.find((entry) => entry.vacancy_id === "vacancy-market-sales-assistant");
@@ -131,7 +131,7 @@ for (const backendName of backendNames) {
         assert.equal((await resumeSession(again, who.sessionToken)).type, "session.ready");
         assert.equal(applicationsOf(await backend.durableState(), who.characterId), count, "the application survived the restart");
         again.send({ type: "career.action", action: "apply", payload: { vacancy_id: "vacancy-market-sales-assistant" }, requestId: "apply-restart" });
-        await again.waitFor((message) => message.type === "command.duplicate" && message.requestId === "apply-restart", 5000);
+        await again.waitFor((message) => message.type === "command.duplicate" && message.requestId === "apply-restart", 20000);
         assert.equal(applicationsOf(await backend.durableState(), who.characterId), count, "not applied a second time");
       } finally {
         await again?.close();

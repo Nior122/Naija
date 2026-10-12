@@ -30,7 +30,7 @@ export class TestPeer {
     this.socket.send(JSON.stringify(message));
   }
 
-  waitFor(predicate, timeoutMs = 5000) {
+  waitFor(predicate, timeoutMs = 20000) {
     const messageIndex = this.messages.findIndex(predicate);
     if (messageIndex >= 0) return Promise.resolve(this.messages.splice(messageIndex, 1)[0]);
     return new Promise((resolve, reject) => {

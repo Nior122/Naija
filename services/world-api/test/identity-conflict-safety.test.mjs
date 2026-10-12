@@ -34,7 +34,7 @@ async function resumes(url, token, address = "127.0.0.1") {
   const socket = await openPeerFrom(url, address);
   try {
     socket.send({ type: "session.resume", sessionToken: token });
-    const reply = await socket.waitFor((message) => message.type === "session.ready" || message.type === "error", 5000);
+    const reply = await socket.waitFor((message) => message.type === "session.ready" || message.type === "error", 20000);
     return reply.type === "session.ready" ? "session.ready" : reply.code;
   } finally {
     await socket.close();
@@ -55,12 +55,12 @@ for (const name of backendNames) {
         first.send(createMessage(key, "First"));
         await waitUntil(() => backend.store.heldCount === 1);
         second.send(createMessage(key, "Second"));
-        const secondReply = await second.waitFor((message) => message.type === "identity.created" || message.type === "error", 5000);
+        const secondReply = await second.waitFor((message) => message.type === "identity.created" || message.type === "error", 20000);
         assert.equal(secondReply.type, "error");
         assert.equal(secondReply.code, "identity_creation_in_progress", "the second request is refused while the first is in flight");
 
         release();
-        const firstReply = await first.waitFor((message) => message.type === "identity.created" || message.type === "error", 5000);
+        const firstReply = await first.waitFor((message) => message.type === "identity.created" || message.type === "error", 20000);
         assert.equal(firstReply.type, "identity.created");
 
         const durable = await backend.durableState();
@@ -194,7 +194,7 @@ for (const name of backendNames) {
 
         // Another socket cannot take the owner's session over: it is refused as already connected.
         intruder.send({ type: "session.resume", sessionToken: session.sessionToken });
-        const refused = await intruder.waitFor((message) => message.type === "error" || message.type === "session.ready", 5000);
+        const refused = await intruder.waitFor((message) => message.type === "error" || message.type === "session.ready", 20000);
         assert.equal(refused.code, "player_already_connected");
         assert.equal(owner.socket.readyState, WebSocket.OPEN, "the owner is still connected after the attempt");
       } finally {

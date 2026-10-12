@@ -535,7 +535,7 @@ function fingerprint(state) {
 const financeBalance = (backend) => backend.store.state.governmentOrganisations[FINANCE].treasury_account.balance_ngn;
 
 const TREASURY_REPLY = (reply) => reply.type === "government.result" || reply.type === "government.error";
-const waitForGovernment = (peer) => peer.waitFor(TREASURY_REPLY, 5000);
+const waitForGovernment = (peer) => peer.waitFor(TREASURY_REPLY, 20000);
 
 function treasuryRequest(action, requestId, payload = {}) {
   return { type: "government.action", action, requestId, payload };

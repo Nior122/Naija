@@ -204,7 +204,7 @@ test("R4 budget: refused, invalid, and failed creations do not use any budget", 
     for (let index = 0; index < 3; index += 1) {
       const peer = await openFrom(started.websocketUrl, "127.0.0.1");
       peer.send({ type: "identity.create", creationKey: newCreationKey(), profile: { name: "", age: 16 } });
-      const reply = await peer.waitFor((message) => message.type === "error", 5000);
+      const reply = await peer.waitFor((message) => message.type === "error", 20000);
       assert.match(reply.code, /^invalid_/, "the profile is rejected before any commit");
       await peer.close();
     }
@@ -242,7 +242,7 @@ test("R4 budget: a key-only retry of an existing identity is refused (D-05), cre
     // The original session is unaffected: its token still resumes the same identity.
     const peer = await openFrom(started.websocketUrl, "127.0.0.1");
     peer.send({ type: "session.resume", sessionToken: original.reply.sessionToken });
-    const ready = await peer.waitFor((message) => message.type === "session.ready", 5000);
+    const ready = await peer.waitFor((message) => message.type === "session.ready", 20000);
     assert.equal(ready.playerId, original.reply.playerId, "the original session still works after the refused retry");
     await peer.close();
   } finally {
@@ -267,7 +267,7 @@ test("R4 budget: existing players from a shared IP can resume while the budget i
     for (const member of members) {
       const peer = await openFrom(started.websocketUrl, "127.0.0.1");
       peer.send({ type: "session.resume", sessionToken: member.sessionToken });
-      const ready = await peer.waitFor((message) => message.type === "session.ready" || message.type === "error", 5000);
+      const ready = await peer.waitFor((message) => message.type === "session.ready" || message.type === "error", 20000);
       assert.equal(ready.type, "session.ready", "an existing member resumes normally");
       await peer.close();
     }

@@ -68,7 +68,7 @@ for (const backendName of backendNames) {
       // No request ID on a changing action.
       before = propertyContent(live(world));
       rich.peer.send({ type: "property.action", action: "purchase", payload: { listing_id: sale.listing_id } });
-      reply = await rich.peer.waitFor((message) => message.type === "property.error" && message.code === "request_id_required", 5000);
+      reply = await rich.peer.waitFor((message) => message.type === "property.error" && message.code === "request_id_required", 20000);
       assert.equal(propertyContent(live(world)), before, "live: nothing changed without a request ID");
 
       // Invalid price: a listing whose asking price is outside the rules (set in memory, as corrupt data would be).

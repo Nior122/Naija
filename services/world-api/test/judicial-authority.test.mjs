@@ -56,7 +56,7 @@ async function citizen(entry, backend, name, age) {
 
 function ask(peer, message) {
   peer.send(message);
-  return peer.waitFor((reply) => reply.requestId === message.requestId && /\.(result|error)$/.test(reply.type), 5000);
+  return peer.waitFor((reply) => reply.requestId === message.requestId && /\.(result|error)$/.test(reply.type), 20000);
 }
 
 /** The state a judgment request could change: the case, its judgments, its evidence, and its audit trail. */

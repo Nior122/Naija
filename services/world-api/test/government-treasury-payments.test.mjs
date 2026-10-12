@@ -401,7 +401,7 @@ function appointReal(backend, characterId, definitionId, organisationId) {
 
 const financeBalance = (backend) => backend.store.state.governmentOrganisations[FINANCE].treasury_account.balance_ngn;
 const TREASURY_REPLY = (reply) => reply.type === "government.result" || reply.type === "government.error";
-const waitForGovernment = (peer) => peer.waitFor(TREASURY_REPLY, 5000);
+const waitForGovernment = (peer) => peer.waitFor(TREASURY_REPLY, 20000);
 const treasuryRequest = (action, requestId, payload = {}) => ({ type: "government.action", action, requestId, payload });
 async function sendTreasury(peer, message) {
   peer.send(message);

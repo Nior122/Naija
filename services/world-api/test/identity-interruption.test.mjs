@@ -80,7 +80,7 @@ test("R2 interruption: a process killed before its save commits leaves the last 
   const baseline = await startCreationServer({ store: baselineStore });
   const baselinePeer = await openPeer(baseline.websocketUrl);
   baselinePeer.send(createMessage(newCreationKey(), "Baseline"));
-  await baselinePeer.waitFor((message) => message.type === "identity.created", 5000);
+  await baselinePeer.waitFor((message) => message.type === "identity.created", 20000);
   await baselinePeer.close();
   await baseline.stop();
   const committed = loadFile(file);
@@ -101,7 +101,7 @@ test("R2 interruption: a process killed before its save commits leaves the last 
   const peer = await openPeer(restarted.websocketUrl);
   try {
     peer.send(createMessage(key, "Restarted"));
-    const reply = await peer.waitFor((message) => message.type === "identity.created" || message.type === "error", 5000);
+    const reply = await peer.waitFor((message) => message.type === "identity.created" || message.type === "error", 20000);
     assert.equal(reply.type, "identity.created");
   } finally {
     await peer.close();
@@ -131,7 +131,7 @@ test("R2 interruption: a process killed after its save commits keeps one complet
   const peer = await openPeer(restarted.websocketUrl);
   try {
     peer.send(createMessage(key, "Restarted"));
-    const reply = await peer.waitFor((message) => message.type === "identity.created" || message.type === "error", 5000);
+    const reply = await peer.waitFor((message) => message.type === "identity.created" || message.type === "error", 20000);
     // D-05: a creation key alone does not re-issue the committed identity. The identity is kept, not duplicated.
     assert.equal(reply.type, "error");
     assert.equal(reply.code, "identity_recovery_unavailable");

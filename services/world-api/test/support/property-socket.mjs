@@ -50,12 +50,12 @@ export function settle(peer, requestId) {
 
 /** Waits for a property error with this code (for refusals that carry no request ID, or whose ID is not matched). */
 export function refusal(peer, code) {
-  return peer.waitFor((message) => message.type === "property.error" && message.code === code, 5000);
+  return peer.waitFor((message) => message.type === "property.error" && message.code === code, 20000);
 }
 
 export async function market(peer) {
   peer.send({ type: "property.action", action: "market", requestId: `market-${Math.random()}` });
-  const reply = await peer.waitFor((message) => message.type === "property.result" || message.type === "property.error", 5000);
+  const reply = await peer.waitFor((message) => message.type === "property.result" || message.type === "property.error", 20000);
   assert.equal(reply.type, "property.result", JSON.stringify(reply));
   return reply.data.market.listings;
 }

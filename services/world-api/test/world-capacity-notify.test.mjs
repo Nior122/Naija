@@ -74,10 +74,10 @@ test("R5 notify-once: refused creations in one episode notify the online player 
   const online = await openPeer(started.websocketUrl);
   try {
     seedPeer.send(createMessage(newCreationKey(), "Seed"));
-    const seed = await seedPeer.waitFor((message) => message.type === "identity.created", 5000);
+    const seed = await seedPeer.waitFor((message) => message.type === "identity.created", 20000);
     await seedPeer.close();
     online.send({ type: "session.resume", sessionToken: seed.sessionToken });
-    await online.waitFor((message) => message.type === "session.ready", 5000);
+    await online.waitFor((message) => message.type === "session.ready", 20000);
     await waitForResumeSave(backend.file, seed.playerId, backend.store);
 
     // Pad the online player's record so every save from now on is over the limit.
@@ -91,7 +91,7 @@ test("R5 notify-once: refused creations in one episode notify the online player 
         const requester = await openPeer(started.websocketUrl);
         requesters.push(requester);
         requester.send(createMessage(newCreationKey(), `Over${index}`));
-        const reply = await requester.waitFor((message) => message.type === "error", 5000);
+        const reply = await requester.waitFor((message) => message.type === "error", 20000);
         assert.equal(reply.code, "world_capacity_reached", "each requester is told its own creation was refused");
         await requester.close();
       }
@@ -124,7 +124,7 @@ test("R5 notify-once: a refused periodic save retries silently until a save succ
   const online = await openPeer(started.websocketUrl);
   try {
     seedPeer.send(createMessage(newCreationKey(), "Seed"));
-    const seed = await seedPeer.waitFor((message) => message.type === "identity.created", 5000);
+    const seed = await seedPeer.waitFor((message) => message.type === "identity.created", 20000);
     await seedPeer.close();
 
     backend.store.state.players[seed.playerId].character.test_padding = "x".repeat(17 * MiB);
@@ -133,7 +133,7 @@ test("R5 notify-once: a refused periodic save retries silently until a save succ
     const firstErrors = await captureErrors(async () => {
       // Resuming marks the player dirty and flushes; the flush is refused.
       online.send({ type: "session.resume", sessionToken: seed.sessionToken });
-      await online.waitFor((message) => message.type === "session.ready", 5000);
+      await online.waitFor((message) => message.type === "session.ready", 20000);
       // Let several one-second retries run while the limit is still exceeded.
       await new Promise((resolve) => setTimeout(resolve, 2500));
     });

@@ -488,7 +488,7 @@ test("military.action list_branches works over WebSocket", async () => {
   try {
     const { peer } = await createOnlinePeer(serverPort);
     peer.send({ type: "military.action", action: "list_branches", requestId: "req-branches-1" });
-    const result = await peer.waitFor((msg) => msg.type === "military.result" && msg.requestId === "req-branches-1", 5000);
+    const result = await peer.waitFor((msg) => msg.type === "military.result" && msg.requestId === "req-branches-1", 20000);
     assert.ok(result);
     assert.equal(result.ok, true);
     assert.ok(Array.isArray(result.data.branches));
@@ -504,7 +504,7 @@ test("military.action military_profile returns non-service-member for regular ch
   try {
     const { peer } = await createOnlinePeer(serverPort);
     peer.send({ type: "military.action", action: "military_profile", requestId: "req-profile-1" });
-    const result = await peer.waitFor((msg) => msg.type === "military.result" && msg.requestId === "req-profile-1", 5000);
+    const result = await peer.waitFor((msg) => msg.type === "military.result" && msg.requestId === "req-profile-1", 20000);
     assert.ok(result);
     assert.equal(result.ok, true);
     assert.equal(result.data.profile.is_service_member, false);
@@ -519,7 +519,7 @@ test("military.action error returned for invalid action", async () => {
   try {
     const { peer } = await createOnlinePeer(serverPort);
     peer.send({ type: "military.action", action: "invalid_action", requestId: "req-invalid" });
-    const result = await peer.waitFor((msg) => msg.type === "military.error" && msg.requestId === "req-invalid", 5000);
+    const result = await peer.waitFor((msg) => msg.type === "military.error" && msg.requestId === "req-invalid", 20000);
     assert.ok(result);
     assert.equal(result.action, "invalid_action");
     await peer.close();

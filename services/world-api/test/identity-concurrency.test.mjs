@@ -67,7 +67,7 @@ describe("R1 concurrent identity creation", () => {
 
       // The first request's token must still be the working token.
       first.send({ type: "session.resume", sessionToken: firstReply.sessionToken });
-      const ready = await first.waitFor((message) => message.type === "session.ready" || message.type === "error", 5000);
+      const ready = await first.waitFor((message) => message.type === "session.ready" || message.type === "error", 20000);
       assert.equal(ready.type, "session.ready", "the winning token must still resume");
     } finally {
       await first.close();
@@ -118,11 +118,11 @@ describe("R1 concurrent identity creation", () => {
     try {
       backend.store.failNextWrite();
       first.send(createMessage(key, "Failed"));
-      const failed = await first.waitFor((message) => message.type === "error", 5000);
+      const failed = await first.waitFor((message) => message.type === "error", 20000);
       assert.equal(failed.code, "persistence_failed");
 
       retry.send(createMessage(key, "Retry"));
-      const created = await retry.waitFor((message) => message.type === "identity.created" || message.type === "error", 5000);
+      const created = await retry.waitFor((message) => message.type === "identity.created" || message.type === "error", 20000);
       assert.equal(created.type, "identity.created");
       const state = durable(backend.file);
       assert.equal(Object.values(state.players).filter((player) => player.creationKeyHash === keyHashOf(key)).length, 1);
@@ -141,11 +141,11 @@ describe("R1 concurrent identity creation", () => {
     const later = await openPeer(started.websocketUrl);
     try {
       first.send(createMessage(key, "Original"));
-      const created = await first.waitFor((message) => message.type === "identity.created", 5000);
+      const created = await first.waitFor((message) => message.type === "identity.created", 20000);
       await first.close();
 
       later.send(createMessage(key, "Original"));
-      const refused = await later.waitFor((message) => message.type === "error", 5000);
+      const refused = await later.waitFor((message) => message.type === "error", 20000);
       assert.equal(refused.code, "identity_recovery_unavailable", "a creation key alone does not re-issue the identity");
       const state = durable(backend.file);
       assert.equal(Object.keys(state.players).length, 1);
@@ -153,7 +153,7 @@ describe("R1 concurrent identity creation", () => {
       const resumed = await openPeer(started.websocketUrl);
       try {
         resumed.send({ type: "session.resume", sessionToken: created.sessionToken });
-        const ready = await resumed.waitFor((message) => message.type === "session.ready" || message.type === "error", 5000);
+        const ready = await resumed.waitFor((message) => message.type === "session.ready" || message.type === "error", 20000);
         assert.equal(ready.type, "session.ready", "the original token still works");
         assert.equal(ready.playerId, created.playerId);
       } finally {
@@ -181,7 +181,7 @@ describe("R1 concurrent identity creation", () => {
       await waitUntil(() => Object.keys(backend.store.state.players).length === 1);
 
       other.send(createMessage(key, "Dropped"));
-      const reply = await other.waitFor((message) => message.type === "identity.created" || message.type === "error", 5000);
+      const reply = await other.waitFor((message) => message.type === "identity.created" || message.type === "error", 20000);
       assert.equal(reply.type, "error", "a key-only request must not re-issue the committed identity (D-05)");
       assert.equal(reply.code, "identity_recovery_unavailable");
       const state = durable(backend.file);
@@ -203,7 +203,7 @@ describe("R1 concurrent key-only requests for an existing identity (D-05)", () =
     let original;
     try {
       creator.send(createMessage(key, "Recovered"));
-      original = await creator.waitFor((message) => message.type === "identity.created", 5000);
+      original = await creator.waitFor((message) => message.type === "identity.created", 20000);
     } finally {
       await creator.close();
     }
@@ -226,7 +226,7 @@ describe("R1 concurrent key-only requests for an existing identity (D-05)", () =
       assert.equal(Object.values(state.players).filter((player) => player.creationKeyHash === keyHashOf(key)).length, 1);
       // The original token was not rotated: it still resumes the identity.
       first.send({ type: "session.resume", sessionToken: original.sessionToken });
-      const ready = await first.waitFor((message) => message.type === "session.ready" || message.type === "error", 5000);
+      const ready = await first.waitFor((message) => message.type === "session.ready" || message.type === "error", 20000);
       assert.equal(ready.type, "session.ready");
       assert.equal(ready.playerId, original.playerId);
     } finally {

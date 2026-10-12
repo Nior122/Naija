@@ -225,7 +225,7 @@ for (const name of backendNames) {
         const marker = "changed-during-save";
         backend.store.state.players[existingId].character.updated_at = marker;
         release();
-        const reply = await failing.waitFor((message) => message.type === "error", 5000);
+        const reply = await failing.waitFor((message) => message.type === "error", 20000);
         await failing.close();
         assert.equal(reply.code, "persistence_failed");
         assert.equal(backend.store.state.players[existingId].character.updated_at, marker, "live change kept");
@@ -257,8 +257,8 @@ for (const name of backendNames) {
           succeeding.send(createMessage(okKey, "Succeeding"));
           await new Promise((resolve) => setTimeout(resolve, 50));
           release();
-          const failedReply = await failing.waitFor((message) => message.type === "error", 5000);
-          const okReply = await succeeding.waitFor((message) => message.type === "identity.created" || message.type === "error", 5000);
+          const failedReply = await failing.waitFor((message) => message.type === "error", 20000);
+          const okReply = await succeeding.waitFor((message) => message.type === "identity.created" || message.type === "error", 20000);
           assert.equal(failedReply.code, "persistence_failed");
           assert.equal(okReply.type, "identity.created");
         } finally {

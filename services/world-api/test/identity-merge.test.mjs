@@ -89,7 +89,7 @@ describe("R2 merge conflict during identity creation", () => {
       const before = structuredClone(backend.store.state);
       armed = true;
       peer.send(createMessage(key, "Conflicted"));
-      const reply = await peer.waitFor((message) => message.type === "error" || message.type === "identity.created", 5000);
+      const reply = await peer.waitFor((message) => message.type === "error" || message.type === "identity.created", 20000);
       assert.equal(reply.type, "error");
       assert.equal(reply.code, "identity_creation_conflict");
       assert.ok(!JSON.stringify(reply).includes(key), "the error must not echo the creation key");
@@ -129,11 +129,11 @@ describe("R2 merge conflict during identity creation", () => {
     try {
       armed = true;
       first.send(createMessage(key, "First"));
-      const failed = await first.waitFor((message) => message.type === "error" || message.type === "identity.created", 5000);
+      const failed = await first.waitFor((message) => message.type === "error" || message.type === "identity.created", 20000);
       assert.equal(failed.code, "identity_creation_conflict");
 
       retry.send(createMessage(key, "Retry"));
-      const created = await retry.waitFor((message) => message.type === "identity.created" || message.type === "error", 5000);
+      const created = await retry.waitFor((message) => message.type === "identity.created" || message.type === "error", 20000);
       assert.equal(created.type, "identity.created");
       const players = Object.values(backend.store.state.players).filter((player) => player.creationKeyHash === keyHashOf(key));
       assert.equal(players.length, 1);
@@ -163,7 +163,7 @@ describe("R2 change inventory: identity creation only adds records", () => {
         const peer = await openPeer(started.websocketUrl);
         try {
           peer.send(createMessage(newCreationKey(), `Inventory${index}`));
-          const reply = await peer.waitFor((message) => message.type === "identity.created" || message.type === "error", 5000);
+          const reply = await peer.waitFor((message) => message.type === "identity.created" || message.type === "error", 20000);
           assert.equal(reply.type, "identity.created");
         } finally {
           await peer.close();

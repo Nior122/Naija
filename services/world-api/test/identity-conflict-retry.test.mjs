@@ -55,7 +55,7 @@ async function resumes(url, token) {
   const socket = await openPeerFrom(url, "127.0.0.1");
   try {
     socket.send({ type: "session.resume", sessionToken: token });
-    const reply = await socket.waitFor((message) => message.type === "session.ready" || message.type === "error", 5000);
+    const reply = await socket.waitFor((message) => message.type === "session.ready" || message.type === "error", 20000);
     return reply.type === "session.ready" ? "session.ready" : reply.code;
   } finally {
     await socket.close();

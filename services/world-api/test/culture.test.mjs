@@ -478,7 +478,7 @@ test("culture.action list_community_types works over WebSocket", async () => {
   try {
     const { peer } = await createOnlinePeer(serverPort);
     peer.send({ type: "culture.action", action: "list_community_types", requestId: "req-types-1" });
-    const result = await peer.waitFor((msg) => msg.type === "culture.result" && msg.requestId === "req-types-1", 5000);
+    const result = await peer.waitFor((msg) => msg.type === "culture.result" && msg.requestId === "req-types-1", 20000);
     assert.ok(result);
     assert.equal(result.ok, true);
     assert.ok(Array.isArray(result.data.types));
@@ -494,7 +494,7 @@ test("culture.action view_cultural_profile works over WebSocket", async () => {
   try {
     const { peer } = await createOnlinePeer(serverPort);
     peer.send({ type: "culture.action", action: "view_cultural_profile", requestId: "req-prof-1" });
-    const result = await peer.waitFor((msg) => msg.type === "culture.result" && msg.requestId === "req-prof-1", 5000);
+    const result = await peer.waitFor((msg) => msg.type === "culture.result" && msg.requestId === "req-prof-1", 20000);
     assert.ok(result);
     assert.equal(result.ok, true);
     assert.ok(typeof result.data.profile === "object");
@@ -510,7 +510,7 @@ test("culture.action error returned for invalid action", async () => {
   try {
     const { peer } = await createOnlinePeer(serverPort);
     peer.send({ type: "culture.action", action: "invalid_action", requestId: "req-inv" });
-    const result = await peer.waitFor((msg) => msg.type === "culture.error" && msg.requestId === "req-inv", 5000);
+    const result = await peer.waitFor((msg) => msg.type === "culture.error" && msg.requestId === "req-inv", 20000);
     assert.ok(result);
     assert.equal(result.action, "invalid_action");
     await peer.close();

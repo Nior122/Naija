@@ -34,7 +34,7 @@ async function citizen(backend, started, name, money) {
 
 /** The first reply for this request ID: a result, a duplicate notice, or an error. */
 function settle(peer, requestId, types = ["business.result", "business.error", "command.duplicate"]) {
-  return peer.waitFor((message) => message.requestId === requestId && types.includes(message.type), 5000);
+  return peer.waitFor((message) => message.requestId === requestId && types.includes(message.type), 20000);
 }
 
 /** Waits until the saved world holds the expected value. Used after a confirmed reply, when the save has finished. */

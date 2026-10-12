@@ -52,7 +52,7 @@ async function citizen(entry, backend, name, age, educationLevel) {
 /** Sends one request and waits for the reply that carries the same requestId. */
 function ask(peer, message) {
   peer.send(message);
-  return peer.waitFor((reply) => reply.requestId === message.requestId && /\.(result|error)$/.test(reply.type), 5000);
+  return peer.waitFor((reply) => reply.requestId === message.requestId && /\.(result|error)$/.test(reply.type), 20000);
 }
 
 /** Deterministic copy of every military, police, crime, and criminal-record map on the test state. */

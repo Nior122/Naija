@@ -147,7 +147,7 @@ for (const scenario of SCENARIOS) {
       const resumed = await openPeerFrom(restarted.websocketUrl, "127.0.0.1");
       try {
         resumed.send({ type: "session.resume", sessionToken: ownerIdentity.sessionToken });
-        const reply = await resumed.waitFor((message) => message.type === "session.ready" || message.type === "error", 5000);
+        const reply = await resumed.waitFor((message) => message.type === "session.ready" || message.type === "error", 20000);
         assert.equal(reply.type, "session.ready", "the owner's token resumes after the restart");
       } finally {
         await resumed.close();

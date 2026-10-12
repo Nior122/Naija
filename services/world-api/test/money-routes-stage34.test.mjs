@@ -287,9 +287,9 @@ for (const backendName of backendNames) {
           assert.equal((await savedCharacter(backend, session.playerId)).money, money - route.charge, "the saved charge survived the restart");
 
           again.send({ type: route.type, requestId: `${route.family}-3` });
-          const duplicate = await again.waitFor((message) => message.type === "command.duplicate" && message.requestId === `${route.family}-3`, 5000);
+          const duplicate = await again.waitFor((message) => message.type === "command.duplicate" && message.requestId === `${route.family}-3`, 20000);
           assert.equal(duplicate.requestId, `${route.family}-3`);
-          await again.waitFor((message) => message.type === "character.snapshot" && message.requestId === `${route.family}-3`, 5000);
+          await again.waitFor((message) => message.type === "character.snapshot" && message.requestId === `${route.family}-3`, 20000);
           assert.equal((await savedCharacter(backend, session.playerId)).money, money - route.charge, "not charged a second time");
         } finally {
           await again?.close();
@@ -327,7 +327,7 @@ for (const backendName of backendNames) {
           assert.equal((await resumeSession(again, session.sessionToken)).type, "session.ready");
           assert.equal((await savedCharacter(backend, session.playerId)).money, money - route.charge, "the committed charge is in storage");
           again.send({ type: route.type, requestId: `${route.family}-4` });
-          await again.waitFor((message) => message.requestId === `${route.family}-4` && (message.type === "command.duplicate" || message.type === "character.snapshot"), 5000);
+          await again.waitFor((message) => message.requestId === `${route.family}-4` && (message.type === "command.duplicate" || message.type === "character.snapshot"), 20000);
           assert.equal((await savedCharacter(backend, session.playerId)).money, money - route.charge, "charged once across the crash");
         } finally {
           await again?.close();
@@ -351,7 +351,7 @@ for (const backendName of backendNames) {
         const savedBefore = contentOf(await backend.durableState());
 
         peer.send({ type: "property.action", action: "pay_rent", requestId: "rent-1", payload: { agreement_id: "agreement-none" } });
-        const refused = await peer.waitFor((message) => message.type === "property.error" && message.requestId === "rent-1", 5000);
+        const refused = await peer.waitFor((message) => message.type === "property.error" && message.requestId === "rent-1", 20000);
         assert.equal(refused.code, "property_rent_payment_suspended");
         assert.equal(refused.action, "pay_rent");
 

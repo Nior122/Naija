@@ -499,7 +499,7 @@ test("entertainment.action list_professions works over WebSocket", async () => {
   try {
     const { peer } = await createOnlinePeer(serverPort);
     peer.send({ type: "entertainment.action", action: "list_professions", requestId: "req-profs-1" });
-    const result = await peer.waitFor((msg) => msg.type === "entertainment.result" && msg.requestId === "req-profs-1", 5000);
+    const result = await peer.waitFor((msg) => msg.type === "entertainment.result" && msg.requestId === "req-profs-1", 20000);
     assert.ok(result);
     assert.equal(result.ok, true);
     assert.ok(Array.isArray(result.data.professions));
@@ -515,7 +515,7 @@ test("entertainment.action view_profile returns null for non-creator", async () 
   try {
     const { peer } = await createOnlinePeer(serverPort);
     peer.send({ type: "entertainment.action", action: "view_profile", requestId: "req-prof-1" });
-    const result = await peer.waitFor((msg) => msg.type === "entertainment.result" && msg.requestId === "req-prof-1", 5000);
+    const result = await peer.waitFor((msg) => msg.type === "entertainment.result" && msg.requestId === "req-prof-1", 20000);
     assert.ok(result);
     assert.equal(result.ok, true);
     assert.equal(result.message, "No entertainment profile found.");
@@ -530,7 +530,7 @@ test("entertainment.action error returned for invalid action", async () => {
   try {
     const { peer } = await createOnlinePeer(serverPort);
     peer.send({ type: "entertainment.action", action: "invalid_action", requestId: "req-inv" });
-    const result = await peer.waitFor((msg) => msg.type === "entertainment.error" && msg.requestId === "req-inv", 5000);
+    const result = await peer.waitFor((msg) => msg.type === "entertainment.error" && msg.requestId === "req-inv", 20000);
     assert.ok(result);
     assert.equal(result.action, "invalid_action");
     await peer.close();

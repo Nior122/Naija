@@ -548,7 +548,7 @@ test("crime.action list_crime_definitions works over WebSocket", async () => {
   try {
     const { peer } = await createOnlinePeer(serverPort);
     peer.send({ type: "crime.action", action: "list_crime_definitions", requestId: "req-defs-1" });
-    const result = await peer.waitFor((msg) => msg.type === "crime.result" && msg.requestId === "req-defs-1", 5000);
+    const result = await peer.waitFor((msg) => msg.type === "crime.result" && msg.requestId === "req-defs-1", 20000);
     assert.ok(result);
     assert.equal(result.ok, true);
     assert.ok(Array.isArray(result.data.definitions));
@@ -564,7 +564,7 @@ test("crime.action criminal_profile works over WebSocket", async () => {
   try {
     const { peer } = await createOnlinePeer(serverPort);
     peer.send({ type: "crime.action", action: "criminal_profile", requestId: "req-prof-1" });
-    const result = await peer.waitFor((msg) => msg.type === "crime.result" && msg.requestId === "req-prof-1", 5000);
+    const result = await peer.waitFor((msg) => msg.type === "crime.result" && msg.requestId === "req-prof-1", 20000);
     assert.ok(result);
     assert.equal(result.ok, true);
     assert.equal(result.data.profile.has_criminal_record, false);
@@ -579,7 +579,7 @@ test("crime.action error returned for invalid action", async () => {
   try {
     const { peer } = await createOnlinePeer(serverPort);
     peer.send({ type: "crime.action", action: "invalid_action", requestId: "req-inv" });
-    const result = await peer.waitFor((msg) => msg.type === "crime.error" && msg.requestId === "req-inv", 5000);
+    const result = await peer.waitFor((msg) => msg.type === "crime.error" && msg.requestId === "req-inv", 20000);
     assert.ok(result);
     assert.equal(result.action, "invalid_action");
     await peer.close();

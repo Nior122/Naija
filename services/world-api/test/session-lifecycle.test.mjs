@@ -151,13 +151,13 @@ async function createWithKey(entry, name, creationKey) {
 /** Sends one request and waits for the reply carrying the same requestId (any reply type). */
 function ask(peer, message) {
   peer.send(message);
-  return peer.waitFor((reply) => reply.requestId === message.requestId, 5000);
+  return peer.waitFor((reply) => reply.requestId === message.requestId, 20000);
 }
 
 /** Resumes with a token on a socket and returns the first session.ready or error reply. */
 async function resumeReply(peer, sessionToken) {
   peer.send({ type: "session.resume", sessionToken });
-  return peer.waitFor((reply) => reply.type === "session.ready" || reply.type === "error", 5000);
+  return peer.waitFor((reply) => reply.type === "session.ready" || reply.type === "error", 20000);
 }
 
 /** Captures everything written to the console while `run` executes. */
@@ -241,7 +241,7 @@ for (const backendName of backendNames) {
     const other = await openPeer(entry.started.websocketUrl);
     entry.peers.push(other);
     other.send(identityMessage("Keyed again", key));
-    const reply = await other.waitFor((message) => message.type === "error" || message.type === "identity.created", 5000);
+    const reply = await other.waitFor((message) => message.type === "error" || message.type === "identity.created", 20000);
     assert.equal(reply.type, "error");
     assert.equal(reply.code, "identity_recovery_unavailable");
     assert.equal(Object.keys(backend.store.state.players).length, before, "no second identity");
@@ -376,7 +376,7 @@ for (const backendName of backendNames) {
       entry.peers.push(refused);
       await resumeReply(refused, token);
       refused.send(identityMessage("Quiet again", key));
-      await refused.waitFor((message) => message.type === "error", 5000);
+      await refused.waitFor((message) => message.type === "error", 20000);
     });
     assert.ok(token.length > 0, "premise: a token was issued");
     const joined = lines.join("\n");
