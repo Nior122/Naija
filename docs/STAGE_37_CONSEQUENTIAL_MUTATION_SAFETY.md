@@ -8,7 +8,8 @@ suspension maps. It does not rewrite the game and does not add a new persistence
 ## 1. Starting and final hashes
 
 - Starting HEAD: `5f645230a392ac169cccb58048dc915adeadcd70` (`5f64523`, branch `arena/00cdea0e-naija`). `origin/arena/00cdea0e-naija` was the same commit. The working tree was clean.
-- Final HEAD: the commit that adds this document. Its hash is verified after the push (section 11). It is a fast-forward of `5f64523`.
+- Code commit: `237de197cc62111df7e67c4da67752df781f80ae` (`237de19`), pushed as a fast-forward of `5f64523` (`5f64523..237de19`). Remote `arena/00cdea0e-naija` was verified at `237de19` after the push.
+- Final HEAD: the commit that adds this report update, on top of `237de19`. Its hash is verified after the push (section 11). The push is a fast-forward; nothing is force-pushed.
 
 ## 2. Summary
 
@@ -131,7 +132,11 @@ Status: R5 remains an open blocker. The test is not changed and its assertion is
 - Current head `5f64523`: run `38204941533` ("Foundation checks"), both jobs succeeded: "World API build, lint, and tests" and "World API live PostgreSQL tests (disposable service)". Verified with `gh run view`.
 - `3252af1` (run `38200747332`) and `cbcd72e` (run `38198636400`): succeeded.
 - `c71964b` (run `38196966222`) and `825e0e8` (run `38196196114`): failed. The logs for these two runs could not be downloaded in this session (the log download returned `EOF`; the record is in `/tmp/ci-doc-failed.log`, outside the repository). The Stage 35 record says the live PostgreSQL job failed on both. The cause is unknown. R5 is a load-sensitive test that may be involved, but no link has been shown. No root cause is asserted here. The log fetch was not retried.
-- Local equivalents on this branch: the full file-backend check and the full PostgreSQL suite pass (section 10). These are not CI evidence for the commit after the push. CI for the new commit must be checked after the push.
+- `237de19` (run `38209331236`, pushed for this stage): **failed.** The job "World API build, lint, and tests" succeeded. The job "World API live PostgreSQL tests (disposable service)" failed at its step "Run tests with live PostgreSQL" (`npm test`). The job took about 109 s (started 05:45:24Z, completed 05:47:13Z). The check-run annotation says only "Process completed with exit code 1." It names no test.
+- What could not be retrieved: the failing test name and error text. The run log (`gh run view --log-failed`) and the job log API both failed with `EOF`. The log is served from `productionresultssa9.blob.core.windows.net`, and a direct connection to that host fails with `SSL_ERROR_SYSCALL` from this sandbox, so the sandbox's outbound allowlist blocks it. This is an access limit of this environment, not evidence about the tests. `gh run rerun` (with and without `--failed`) was refused by GitHub with "cannot be rerun; its workflow file may be broken". The workflow file is active, and the run had already executed its jobs, so that message does not match the state seen here. No second CI attempt exists.
+- Local reproduction of the CI configuration (PostgreSQL 18.4, the same major version as CI `postgres:18`; `npm run build`, then `NAIJA_ENV=test node --test --test-concurrency=3 test/*.test.mjs`, with the disposable `naija_s37_test` database): three runs, each 1561 tests, 1557 pass, 0 fail, 4 skip, 0 TODO (about 98 s, 102 s, and 100 s). The explicit concurrency matches what Node chooses on a 4-CPU runner (the runner size is assumed from the Stage 35 record, not verified here). CI's `npm test` runs with Node's default concurrency, not the explicit flag. No failure was reproduced.
+- Earlier local observation (not CI): one serial PostgreSQL run (`/tmp/s37-pg-full.log`) had one failure, the cross-process justice race test. It has not recurred in later runs. That test's predicate was fixed (section 6). It is not linked to the CI failure.
+- Root cause of the `237de19` live-PostgreSQL failure: **unknown.** It is unreproduced, and it is unverified whether it is the same cause as the earlier `c71964b` and `825e0e8` failures. The new CI run is not evidence that the code is correct, and the Stage 37 claims must be read with this failure in mind.
 
 Changed test expectation (for review): `mutation-resend-guards.test.mjs`, "justice file_case re-sent with the same requestId". Before: `assert.equal(cases.length, 2, "current code does not deduplicate…")`, with a wait for `justice.result` only. After: the re-sent copy is `command.duplicate`, and `cases.length` must be 1.
 
@@ -143,6 +148,9 @@ Run with `npm run check` (file backend; lint, build, and tests), and `npm test` 
 |---|---|---|---|---|---|
 | File backend (`npm run check`) | 1324 | 1270 | 0 | 54 | 0 |
 | PostgreSQL (`npm test`, live DB) | 1561 | 1557 | 0 | 4 | 0 |
+| PostgreSQL, CI configuration (`npm run build`; `node --test --test-concurrency=3`; three runs) | 1561 each | 1557 each | 0 each | 4 each | 0 each |
+
+The three CI-configuration runs are a diagnostic against the CI failure in section 9. Their result is the same as the main PostgreSQL run. They do not reproduce the CI failure.
 
 The 54 file-backend skips are database-gated tests (for example the Stage 36 cross-process and request-gate tests, and the backup and migration live tests) that need `DATABASE_URL` and `NAIJA_ALLOW_DB_TESTS=true`. The 4 PostgreSQL skips are live-TLS tests that need `TLS_TEST_DATABASE_URL`. No skipped test is counted as passed.
 
@@ -165,8 +173,8 @@ Not separable: per-family totals for the whole suite. Those would need test-to-f
 - Lint: `npm run lint` passes.
 - `npm run check`: passes (section 10).
 - `npm test` with PostgreSQL: passes (section 10).
-- CI: the status of the pushed commit is recorded in the final report, after the push. It is verified with `gh run list` and `gh run view`.
-- Push: fast-forward only, never forced. The remote commit is verified after the push.
+- CI for `237de19` (run `38209331236`): the foundation job passed; the live PostgreSQL job **failed** (section 9). Cause unknown. Not green.
+- Push: `5f64523..237de19`, fast-forward only, never forced. The remote commit was verified at `237de19` after the push.
 
 ## 12. Behaviour changes (for review)
 
@@ -185,6 +193,7 @@ Not separable: per-family totals for the whole suite. Those would need test-to-f
 
 Verified risks:
 
+- **The live PostgreSQL CI job failed on `237de19` (section 9). Its cause is unknown, and it is not reproduced locally in three CI-configuration runs. This is the top open risk. Stage 37 is not CI-green.** The next step needs the failing test name, which the sandbox cannot download. A rerun was refused by GitHub.
 - Incomplete authority (section 4): station checks for police `dispatch_unit` and `open_investigation`; victim checks for `commit_crime`.
 - Unverified authority for several gated operations (section 4), and no socket tests for `submit_proposal`, `submit_evidence`, `issue_judgment`, `file_appeal`, `family.childbirth`, and the positive path of `request_leave`.
 - R5 remains open (section 8). The two older CI failures remain unexplained (section 9).
