@@ -61,10 +61,10 @@ test("parallel migrations of an empty database all succeed, and each migration i
       // Four connections start together, as four processes would.
       const counts = await Promise.all(connections.map((connection) => new MigrationManager(connection).migrate()));
       // Exactly one connection applies each migration; the others see it applied under the lock and skip it.
-      assert.equal(counts.reduce((sum, count) => sum + count, 0), 2, `applied counts ${counts.join(",")}`);
+      assert.equal(counts.reduce((sum, count) => sum + count, 0), 3, `applied counts ${counts.join(",")}`);
 
       const rows = await connections[0].query("SELECT version, name FROM schema_migrations ORDER BY version");
-      assert.deepEqual(rows.map((row) => row.version), [1, 2]);
+      assert.deepEqual(rows.map((row) => row.version), [1, 2, 3]);
       const tables = await connections[0].query("SELECT to_regclass('public.accounts') AS accounts");
       assert.notEqual(tables[0].accounts, null, "the schema was created");
     } finally {
@@ -79,11 +79,11 @@ test("a migration that is already applied is skipped when it is applied again", 
   await connection.connect();
   try {
     const manager = new MigrationManager(connection);
-    assert.equal(await manager.migrate(), 2);
+    assert.equal(await manager.migrate(), 3);
     // A caller with a stale view calls applyMigration directly: the re-check under the lock skips it, with no error.
     await manager.applyMigration({ version: 1, name: "initial_schema", up: "CREATE TABLE should_not_exist (id INT)" });
     const rows = await connection.query("SELECT version FROM schema_migrations ORDER BY version");
-    assert.deepEqual(rows.map((row) => row.version), [1, 2]);
+    assert.deepEqual(rows.map((row) => row.version), [1, 2, 3]);
     const absent = await connection.query("SELECT to_regclass('public.should_not_exist') AS t");
     assert.equal(absent[0].t, null, "the stale migration's SQL did not run");
     assert.equal(await manager.migrate(), 0);

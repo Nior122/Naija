@@ -84,6 +84,18 @@ export class FaultyStore {
     return this.#write(() => this.inner.saveState(candidate));
   }
 
+  /**
+   * Stage 36: durable request records are forwarded unchanged. They are written by the wrapped store's save, so a
+   * record is never written by this wrapper directly, and a fault injected here applies to the whole save.
+   */
+  queueOperation(record) {
+    this.inner.queueOperation?.(record);
+  }
+
+  findOperation(playerId, requestId) {
+    return this.inner.findOperation ? this.inner.findOperation(playerId, requestId) : Promise.resolve(undefined);
+  }
+
   async #write(perform) {
     this.writeCount += 1;
     if (this.killed) throw new Error("the process has stopped");

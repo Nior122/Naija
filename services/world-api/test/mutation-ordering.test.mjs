@@ -181,6 +181,7 @@ for (const name of backendNames) {
       let session;
       let startMoney;
       let saved;
+      let savedRecords;
       let peer;
       try {
         const setup = await setUpBuyer(backend, started);
@@ -193,6 +194,7 @@ for (const name of backendNames) {
         await peer.waitFor((message) => message.type === "error" && message.code === "persistence_failed", 20000);
         // The file as the failed save left it. Taken now, before shutdown, because shutdown writes the live world.
         saved = await backend.durableState();
+        savedRecords = await backend.durableRecords();
         assert.equal(saved.players[session.playerId].character.money, startMoney, "premise: the file does not hold the purchase");
         await peer.close();
         peer = undefined;
@@ -200,7 +202,7 @@ for (const name of backendNames) {
         await started.stop();
       }
       // A restart from that file: the purchase was never saved, so the process that made it is gone without it.
-      await backend.restoreDurable(saved);
+      await backend.restoreDurable(saved, savedRecords);
       await backend.reopen();
 
       const restarted = await startOver(backend, {});

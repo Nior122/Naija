@@ -39,7 +39,9 @@ export async function disconnectBackends() {
 
 /**
  * Opens a backend. The returned object exposes `store` (a FaultyStore over the backend), `durableState()` (what the
- * backend holds), `restoreDurable(snapshot)` (writes a snapshot back, for restart tests), `reopen()` (a fresh store over
+ * backend holds), `durableRecords()` (the durable request records for the world: PostgreSQL only, [] for files),
+ * `restoreDurable(snapshot, records)` (writes a snapshot back, for restart tests; when `records` is given, the world's
+ * durable request records are replaced with them too, because a snapshot of the world includes its records), `reopen()` (a fresh store over
  * the same storage, as after a process restart), and `cleanup()`.
  */
 export async function openBackend(name) {
@@ -56,6 +58,9 @@ function openFileBackend() {
     store: new FaultyStore(new WorldStore(file, Date.now())),
     async durableState() {
       return JSON.parse(readFileSync(file, "utf8"));
+    },
+    async durableRecords() {
+      return [];
     },
     async restoreDurable(snapshot) {
       writeFileSync(file, JSON.stringify(snapshot));
@@ -80,16 +85,32 @@ async function openPostgresBackend() {
       const row = await database.queryOne("SELECT value FROM world_state WHERE key = $1", [worldKey]);
       return row.value;
     },
-    async restoreDurable(snapshot) {
+    async durableRecords() {
+      return database.query(
+        "SELECT player_id, request_id, command, fingerprint, world_version, recorded_at FROM world_operations WHERE world_key = $1 ORDER BY player_id, request_id",
+        [worldKey],
+      );
+    },
+    async restoreDurable(snapshot, records) {
       await database.query(
         "UPDATE world_state SET value = $1::jsonb, version = version + 1, updated_at = NOW() WHERE key = $2",
         [JSON.stringify(snapshot), worldKey],
       );
+      if (records === undefined) return;
+      // The records of the world are replaced by the given rows, as a restore of both tables would do.
+      await database.query("DELETE FROM world_operations WHERE world_key = $1", [worldKey]);
+      for (const row of records) {
+        await database.query(
+          "INSERT INTO world_operations (world_key, player_id, request_id, command, fingerprint, world_version, recorded_at) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+          [worldKey, row.player_id, row.request_id, row.command, row.fingerprint, row.world_version, row.recorded_at],
+        );
+      }
     },
     async reopen() {
       backend.store = new FaultyStore(await PostgresWorldStore.open({ worldKey, db: database }));
     },
     async cleanup() {
+      await database.query("DELETE FROM world_operations WHERE world_key = $1", [worldKey]);
       await database.query("DELETE FROM world_state WHERE key = $1", [worldKey]);
     },
   };

@@ -141,6 +141,11 @@ function isPersistentPlayerBase(value: unknown, playerId: string): value is Reco
       value.recentPropertyRequests.length <= 256 &&
       value.recentPropertyRequests.every((entry) => isRecord(entry) && typeof entry.request_id === "string" &&
         entry.request_id.length <= 80 && typeof entry.fingerprint === "string" && /^[a-f0-9]{64}$/.test(entry.fingerprint)))) &&
+    (value.recentRequestRecords === undefined || (Array.isArray(value.recentRequestRecords) &&
+      value.recentRequestRecords.length <= 256 &&
+      value.recentRequestRecords.every((entry) => isRecord(entry) && typeof entry.request_id === "string" &&
+        entry.request_id.length <= 80 && typeof entry.command === "string" && entry.command.length <= 64 &&
+        typeof entry.fingerprint === "string" && /^[a-f0-9]{64}$/.test(entry.fingerprint)))) &&
     typeof value.createdAt === "string" && typeof value.lastSeen === "string" &&
     isCharacterBase(value.character) && value.character.player_id === playerId &&
     (value.session === undefined || isSessionMetadata(value.session));
@@ -1026,6 +1031,17 @@ export interface WorldStoreLike {
    * with an outcome of not_saved. Optional: a store without fencing does not implement it.
    */
   isFenced?(): boolean;
+  /**
+   * Stage 36: queue a durable request record. It is written in the same transaction as the next successful save, so it
+   * exists if and only if the world update that applied the request committed. A store without durable records omits it.
+   */
+  queueOperation?(record: import("../persistence/request-records.js").OperationRecord): void;
+  /**
+   * Stage 36: the durable record of a request that some save committed, or undefined. Used when the request is not in
+   * the live world's memory (for example, applied by another process). Throws if the lookup itself fails: the caller
+   * must then refuse the request, not treat it as new.
+   */
+  findOperation?(playerId: string, requestId: string): Promise<import("../persistence/request-records.js").StoredOperation | undefined>;
 }
 
 export type WorldFileFormat = "pretty" | "compact";

@@ -1,5 +1,11 @@
 import { database, type DatabaseConnection } from "./connection.js";
-import { CREATE_SCHEMA_SQL, MIGRATION_V2_UP_SQL, MIGRATION_V2_DOWN_SQL } from "./schema.js";
+import {
+  CREATE_SCHEMA_SQL,
+  MIGRATION_V2_UP_SQL,
+  MIGRATION_V2_DOWN_SQL,
+  MIGRATION_V3_UP_SQL,
+  MIGRATION_V3_DOWN_SQL,
+} from "./schema.js";
 
 /**
  * Database migration system for Naija: One World
@@ -146,6 +152,12 @@ export class MigrationManager {
         name: "scope_idempotency_keys_per_character",
         up: MIGRATION_V2_UP_SQL,
         down: MIGRATION_V2_DOWN_SQL,
+      },
+      {
+        version: 3,
+        name: "world_operations_durable_request_records",
+        up: MIGRATION_V3_UP_SQL,
+        down: MIGRATION_V3_DOWN_SQL,
       },
     ];
   }

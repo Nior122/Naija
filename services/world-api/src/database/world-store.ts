@@ -5,6 +5,7 @@ import type { HealthCheck } from "../monitoring.js";
 import { monitoring } from "../monitoring.js";
 import { performance } from "node:perf_hooks";
 import { classifySaveFailure, markSaveOutcome, SaveStatusTracker } from "../persistence-status.js";
+import { OPERATION_RECORD_RETENTION_DAYS, type OperationRecord, type StoredOperation } from "../persistence/request-records.js";
 
 /**
  * PostgreSQL-backed world state for Naija: One World.
@@ -29,6 +30,10 @@ import { classifySaveFailure, markSaveOutcome, SaveStatusTracker } from "../pers
  * - A process killed while its UPDATE waits on a row lock can still have that UPDATE commit once
  *   the lock is released (observed in test/multiprocess-persistence.test.mjs). A restart loads
  *   whatever is committed; the killed process never learns the outcome.
+ *
+ * Stage 36: the UPDATE and the durable request records (world_operations, migration 3) are one transaction. A save
+ * commits the world and the records of the requests it applied together, or neither. A save whose COMMIT outcome is
+ * unknown is reported as unknown, and the instance fences on its next save.
  */
 
 export const MAX_SNAPSHOT_BYTES = 16 * 1024 * 1024;
@@ -61,6 +66,8 @@ export class PostgresWorldStore implements WorldStoreLike {
   private version: number;
   private fenced = false;
   private writeQueue: Promise<void> = Promise.resolve();
+  /** Stage 36: durable request records waiting for the next successful save (see queueOperation). */
+  private queuedOperations: OperationRecord[] = [];
   /** Outcome of every save this instance has attempted (G1). Reported by health(). */
   readonly saveStatus = new SaveStatusTracker();
 
@@ -145,6 +152,28 @@ export class PostgresWorldStore implements WorldStoreLike {
     await nextWrite;
   }
 
+  /**
+   * Stage 36: record a request that the engine applied. The record is written by the next save that commits, in the same
+   * transaction as the world. A record that is queued but never committed is never visible to another process.
+   */
+  queueOperation(record: OperationRecord): void {
+    this.queuedOperations.push({ ...record });
+  }
+
+  /**
+   * Stage 36: the durable record of a request ID for this world, or undefined when none exists. A query failure throws;
+   * the caller must refuse the request in that case, not treat it as new.
+   */
+  async findOperation(playerId: string, requestId: string): Promise<StoredOperation | undefined> {
+    const row = await this.db.queryOne<{ command: string; fingerprint: string; world_version: string | number }>(
+      `SELECT command, fingerprint, world_version FROM world_operations
+        WHERE world_key = $1 AND player_id = $2 AND request_id = $3`,
+      [this.worldKey, playerId, requestId],
+    );
+    if (!row) return undefined;
+    return { command: row.command, fingerprint: row.fingerprint, worldVersion: Number(row.world_version) };
+  }
+
   private async writeSnapshot(state: PersistentWorldState): Promise<void> {
     if (this.fenced) {
       throw new WorldStateConflictError();
@@ -154,18 +183,57 @@ export class PostgresWorldStore implements WorldStoreLike {
     if (Buffer.byteLength(snapshot, "utf8") > MAX_SNAPSHOT_BYTES) {
       throw new WorldStateCapacityError();
     }
-    const rows = await this.db.query<{ version: string | number }>(
-      `UPDATE world_state
-          SET value = $1::jsonb, version = version + 1, updated_at = NOW()
-        WHERE key = $2 AND version = $3
-        RETURNING version`,
-      [snapshot, this.worldKey, this.version],
-    );
-    if (rows.length === 0) {
-      this.fenced = true;
-      throw new WorldStateConflictError();
+    // Records queued so far are written by this save. Records queued during the save stay queued for the next one.
+    const batch = this.queuedOperations.slice();
+    // Set once every statement in the transaction has run. An error after that point comes from COMMIT, so the
+    // outcome is unknown: the commit may have happened. An error before it means the transaction was rolled back.
+    let bodyFinished = false;
+    let version: number;
+    try {
+      version = await this.db.transaction(async (client) => {
+        const updated = await client.query<{ version: string | number }>(
+          `UPDATE world_state
+              SET value = $1::jsonb, version = version + 1, updated_at = NOW()
+            WHERE key = $2 AND version = $3
+            RETURNING version`,
+          [snapshot, this.worldKey, this.version],
+        );
+        if (updated.rows.length === 0) {
+          throw new WorldStateConflictError();
+        }
+        const newVersion = Number(updated.rows[0]!.version);
+        for (const record of batch) {
+          await client.query(
+            `INSERT INTO world_operations (world_key, player_id, request_id, command, fingerprint, world_version)
+             VALUES ($1, $2, $3, $4, $5, $6)`,
+            [this.worldKey, record.playerId, record.requestId, record.command, record.fingerprint, newVersion],
+          );
+        }
+        await client.query(
+          `DELETE FROM world_operations
+            WHERE ctid IN (
+              SELECT ctid FROM world_operations
+               WHERE world_key = $1 AND recorded_at < NOW() - make_interval(days => $2)
+               LIMIT 1000
+            )`,
+          [this.worldKey, OPERATION_RECORD_RETENTION_DAYS],
+        );
+        bodyFinished = true;
+        return newVersion;
+      });
+    } catch (error) {
+      if (error instanceof WorldStateConflictError) {
+        this.fenced = true;
+      } else if (bodyFinished) {
+        markSaveOutcome(error, "unknown");
+      } else {
+        markSaveOutcome(error, "not_saved");
+      }
+      throw error;
     }
-    this.version = Number(rows[0]!.version);
+    this.version = version;
+    // The batch is committed with the world. Only those records are removed from the queue.
+    this.queuedOperations = this.queuedOperations.filter((record) => !batch.includes(record));
     monitoring.recordWorldStateSaved(Buffer.byteLength(snapshot, "utf8"), Object.keys(state.players).length, MAX_SNAPSHOT_BYTES);
   }
 

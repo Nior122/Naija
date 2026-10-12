@@ -316,13 +316,16 @@ for (const backendName of backendNames) {
     assert.equal(accountBalance(entry.backend, accountId), base + 9_000);
   });
 
-  test(label("a request ID reused with a different amount replays the first result and changes nothing more"), async () => {
+  test(label("a request ID reused with a different amount is refused as reused and changes nothing more"), async () => {
     const entry = await session(backendName);
     const { saver, accountId, base } = await bankSetup(entry);
     const first = await economy(saver.peer, "dep-conflict", "deposit", { account_id: accountId, amount_ngn: 10_000 });
     assert.equal(first.type, "economy.result", JSON.stringify(first));
-    const conflicting = await economy(saver.peer, "dep-conflict", "deposit", { account_id: accountId, amount_ngn: 99_000 });
-    assert.equal(conflicting.type, "command.duplicate", "a resend after the success was sent is a duplicate, as for any idempotent command");
+    // Stage 36: the same ID with a different amount is refused as a reused request ID. It is no longer answered as a
+    // duplicate, because a duplicate would tell the client that its different request had succeeded.
+    saver.peer.send({ type: "economy.action", action: "deposit", requestId: "dep-conflict", payload: { account_id: accountId, amount_ngn: 99_000 } });
+    const conflicting = await saver.peer.waitFor((message) => message.requestId === "dep-conflict" && message.type === "error", 20000);
+    assert.equal(conflicting.code, "request_id_reused", JSON.stringify(conflicting));
     assert.equal(accountBalance(entry.backend, accountId), base + 10_000);
     assert.equal(depositCount(entry.backend), 1);
   });

@@ -633,12 +633,22 @@ test("authenticated career actions use the caller identity, return private profi
       assert.equal(application.character_id, firstIdentity.ready.character.character_id);
       assert.equal(application.status, "under_review");
 
+      // A byte-identical retry is a duplicate (Stage 36 compares the request body with the recorded request).
       const duplicate = first.waitForType("command.duplicate");
+      first.send({
+        type: "career.action", action: "apply",
+        payload: { vacancy_id: marketVacancy.vacancy_id, character_id: secondIdentity.ready.character.character_id },
+        requestId: "career-apply-001",
+      });
+      await duplicate;
+
+      // The same ID with a different body is a different request: refused, and not applied.
+      const reused = first.waitFor((message) => message.type === "error" && message.requestId === "career-apply-001", 20000);
       first.send({
         type: "career.action", action: "apply", payload: { vacancy_id: marketVacancy.vacancy_id },
         requestId: "career-apply-001",
       });
-      await duplicate;
+      assert.equal((await reused).code, "request_id_reused");
 
       const unauthorized = second.waitFor((message) => message.type === "career.error" && message.action === "withdraw_application");
       second.send({

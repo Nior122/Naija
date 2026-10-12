@@ -337,6 +337,7 @@ for (const backendName of backendNames) {
       const before = balanceOf(live(world), buyer.characterId);
       const ownerBefore = activeOwnersOf(live(world), sale.property_id);
       const snapshotBefore = await stored(world);
+      const recordsBefore = await world.backend.durableRecords();
       world.backend.store.failNextWrite("disk full");
       purchase(buyer.peer, "crash-1", sale.listing_id);
       assert.equal((await settle(buyer.peer, "crash-1")).code, "property_not_saved");
@@ -347,7 +348,7 @@ for (const backendName of backendNames) {
       // A crash writes nothing more. Simulated by putting back the snapshot from before the failed request, and stopping
       // without a shutdown save (the server is stopped after the storage is restored, so its last save is undone).
       await world.started.stop();
-      await world.backend.restoreDurable(snapshotBefore);
+      await world.backend.restoreDurable(snapshotBefore, recordsBefore);
       await world.backend.reopen();
       const restarted = { started: await startOver(world.backend, STARTUP) };
       try {

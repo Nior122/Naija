@@ -244,3 +244,30 @@ DROP INDEX IF EXISTS financial_transactions_character_idempotency_key;
 -- Restoring the global constraint fails if keys are reused across characters; resolve duplicates first.
 ALTER TABLE financial_transactions ADD CONSTRAINT financial_transactions_idempotency_key_key UNIQUE (idempotency_key);
 `;
+
+/**
+ * Migration 3: durable request records (Stage 36).
+ * One row per consequential request that changed the world. The row is written in the same transaction as the
+ * world_state update that applied the request, so a committed request has a record and an uncommitted one has none.
+ * `fingerprint` is a SHA-256 of the command and its payload without the request ID, timestamps, or other per-attempt
+ * fields. A repeated ID with a different fingerprint is refused; with the same fingerprint it is a duplicate.
+ * Rows are kept for a retention period (see OPERATION_RECORD_RETENTION_DAYS) and pruned during saves.
+ */
+export const MIGRATION_V3_UP_SQL = `
+CREATE TABLE IF NOT EXISTS world_operations (
+  world_key TEXT NOT NULL,
+  player_id TEXT NOT NULL,
+  request_id TEXT NOT NULL,
+  command TEXT NOT NULL,
+  fingerprint TEXT NOT NULL,
+  world_version BIGINT NOT NULL,
+  recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (world_key, player_id, request_id)
+);
+CREATE INDEX IF NOT EXISTS world_operations_recorded_at_idx ON world_operations (world_key, recorded_at);
+`;
+
+export const MIGRATION_V3_DOWN_SQL = `
+DROP INDEX IF EXISTS world_operations_recorded_at_idx;
+DROP TABLE IF EXISTS world_operations;
+`;

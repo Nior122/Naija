@@ -121,6 +121,12 @@ export interface PersistentPlayer {
    * created before Stage 35, and then treated as empty. Bounded like recentRequestIds.
    */
   recentPropertyRequests?: { request_id: string; fingerprint: string }[];
+  /**
+   * Stage 36: the request IDs of recent consequential requests (money and property), with the command and a fingerprint
+   * of each request. A repeated ID is a duplicate only when command and fingerprint both match; otherwise it is refused.
+   * Bounded like recentRequestIds. Requests recorded before Stage 36 have no entry here and are answered from recentRequestIds.
+   */
+  recentRequestRecords?: { request_id: string; command: string; fingerprint: string }[];
   createdAt: string;
   lastSeen: string;
   character: CharacterRecord;

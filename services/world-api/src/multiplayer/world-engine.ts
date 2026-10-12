@@ -224,6 +224,7 @@ import {
 } from "../education/service.js";
 import type { EducationCatalog } from "../education/types.js";
 import { WorldStateCapacityError, type WorldStoreLike } from "./persistence.js";
+import { compareWithRecord, propertyRequestFingerprint, requestFingerprint, type StoredOperation } from "../persistence/request-records.js";
 import { diffState, mergeStateChanges } from "./state-merge.js";
 import {
   MAP_HEIGHT,
@@ -361,19 +362,6 @@ const PROPERTY_CHANGING_ACTIONS: ReadonlySet<string> = new Set([
 ]);
 
 /** JSON with object keys sorted at every level, so that equal payloads have equal text. */
-function canonicalJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
-  if (value !== null && typeof value === "object") {
-    const record = value as Record<string, unknown>;
-    return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`).join(",")}}`;
-  }
-  return JSON.stringify(value) ?? "null";
-}
-
-/** The fingerprint of a property request: its action and payload. A reused request ID must match it (Stage 35). */
-function propertyRequestFingerprint(action: string, payload: Record<string, unknown>): string {
-  return createHash("sha256").update(canonicalJson({ action, payload })).digest("hex");
-}
 
 const PROPERTY_SUSPENDED_ACTIONS: ReadonlyMap<string, string> = new Map([
   ["pay_rent", "property_rent_payment_suspended"],
@@ -467,6 +455,35 @@ function moneyPausedMessage(family: MoneyFamily): string {
 
 function moneyReplyKey(player: PersistentPlayer, requestId: string): string {
   return `${player.playerId}\u0000${requestId}`;
+}
+
+/** A consequential request that is being processed (Stage 36). `released` resolves when it is no longer in flight. */
+interface InFlightRequest {
+  command?: string;
+  fingerprint?: string;
+  released: Promise<void>;
+  release: () => void;
+}
+
+function newInFlightRequest(): InFlightRequest {
+  let release: () => void = () => undefined;
+  const released = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return { released, release: () => release() };
+}
+
+/** Requests whose ID is recorded durably: the money commands, and property changes (Stage 36). */
+function isTrackedRequest(message: Record<string, unknown> & { type: string }): boolean {
+  return IDEMPOTENT_COMMANDS.has(message.type) || message.type === "property.action";
+}
+
+/** The request body that a fingerprint covers: the message without its type and request ID. */
+function requestBodyOf(message: Record<string, unknown>): Record<string, unknown> {
+  const body: Record<string, unknown> = { ...message };
+  delete body.type;
+  delete body.requestId;
+  return body;
 }
 
 const SKIN_TONES: Record<string, string> = {
@@ -831,6 +848,12 @@ export class MultiplayerWorld {
   private lastPersistAt: number;
   private gameMillisecondRemainder = 0;
   private dirty = false;
+  /**
+   * Stage 36: consequential requests (money and property) that are being processed, by player and request ID. The
+   * command and fingerprint are set by the gate and read by markRequestProcessed. A second copy of an in-flight request
+   * is refused, so two copies cannot both apply.
+   */
+  private readonly requestsInFlight = new Map<string, InFlightRequest>();
   private flushInFlight = false;
   /**
    * Treasury durability (Stage 32). changeGeneration counts treasury changes whose reply promises a saved world.
@@ -1164,11 +1187,47 @@ export class MultiplayerWorld {
     return true;
   }
 
+  /**
+   * Records an applied request. Its command and fingerprint come from the in-flight entry for this request (Stage 36).
+   * The durable record is queued here and written by the save that commits this change.
+   */
   private markRequestProcessed(player: PersistentPlayer, requestId: string | undefined): void {
     if (requestId === undefined || player.recentRequestIds.includes(requestId)) return;
     player.recentRequestIds.push(requestId);
     if (player.recentRequestIds.length > MAX_RECENT_REQUESTS) player.recentRequestIds.shift();
+    const entry = this.requestsInFlight.get(moneyReplyKey(player, requestId));
+    if (entry?.command !== undefined && entry.fingerprint !== undefined) {
+      const records = player.recentRequestRecords ?? (player.recentRequestRecords = []);
+      records.push({ request_id: requestId, command: entry.command, fingerprint: entry.fingerprint });
+      while (records.length > MAX_RECENT_REQUESTS) records.shift();
+      this.store.queueOperation?.({ playerId: player.playerId, requestId, command: entry.command, fingerprint: entry.fingerprint });
+    }
     this.dirty = true;
+  }
+
+  /**
+   * Compares a request ID with the record of an earlier request that used it (Stage 36). Memory is checked first, then
+   * the durable record, so a request applied by another process is recognised. A request recorded before Stage 36 has
+   * no fingerprint; it is answered as a duplicate and is not applied again. Throws when the durable lookup fails: the
+   * caller must refuse the request then, because it cannot tell whether the ID is new.
+   */
+  private async priorRequestVerdict(
+    player: PersistentPlayer,
+    requestId: string,
+    command: string,
+    fingerprint: string,
+  ): Promise<"new" | "duplicate" | "reused"> {
+    const record = (player.recentRequestRecords ?? []).find((entry) => entry.request_id === requestId);
+    if (record !== undefined) return compareWithRecord(record, command, fingerprint);
+    if (player.recentRequestIds.includes(requestId)) return "duplicate";
+    const stored = await this.durableRequest(player, requestId);
+    return stored === undefined ? "new" : compareWithRecord(stored, command, fingerprint);
+  }
+
+  /** The durable record of a request ID for this player, or undefined. Stores without durable records return undefined. */
+  private async durableRequest(player: PersistentPlayer, requestId: string): Promise<StoredOperation | undefined> {
+    if (typeof this.store.findOperation !== "function") return undefined;
+    return this.store.findOperation(player.playerId, requestId);
   }
 
   private async handleMessage(context: ConnectionContext, message: Record<string, unknown> & { type: string }): Promise<void> {
@@ -1219,12 +1278,63 @@ export class MultiplayerWorld {
       this.sendError(context, "character_deceased", "This character is deceased; active world actions are unavailable.", requestId);
       return;
     }
+    if (requestId !== undefined && isTrackedRequest(message)) {
+      const key = moneyReplyKey(player, requestId);
+      // A request with a pending (unconfirmed) change is answered from that record once its save succeeds (Stage 34).
+      if (this.pendingMoneyReplies.has(key)) {
+        await this.routePlayerMessage(context, player, message, requestId, now);
+        return;
+      }
+      // A second copy waits until the first has finished, so two copies never apply at once. The gate then answers the
+      // second copy: a duplicate once the first is recorded (the same answer as a later retry).
+      let earlier = this.requestsInFlight.get(key);
+      while (earlier !== undefined) {
+        await earlier.released;
+        earlier = this.requestsInFlight.get(key);
+      }
+      const entry = newInFlightRequest();
+      this.requestsInFlight.set(key, entry);
+      try {
+        await this.routePlayerMessage(context, player, message, requestId, now);
+      } finally {
+        this.releaseRequest(key, entry);
+      }
+      return;
+    }
+    await this.routePlayerMessage(context, player, message, requestId, now);
+  }
+
+  private async routePlayerMessage(
+    context: ConnectionContext,
+    player: PersistentPlayer,
+    message: Record<string, unknown> & { type: string },
+    requestId: string | undefined,
+    now: number,
+  ): Promise<void> {
     if (IDEMPOTENT_COMMANDS.has(message.type)) {
       if (requestId === undefined) {
         this.sendError(context, "request_id_required", "This action requires a unique request ID.");
         return;
       }
-      if (player.recentRequestIds.includes(requestId)) {
+      // Stage 36: a repeat is a duplicate only when its command and fingerprint match the recorded request.
+      const fingerprint = requestFingerprint(message.type, requestBodyOf(message));
+      const entry = this.requestsInFlight.get(moneyReplyKey(player, requestId));
+      if (entry !== undefined) {
+        entry.command = message.type;
+        entry.fingerprint = fingerprint;
+      }
+      let verdict: "new" | "duplicate" | "reused";
+      try {
+        verdict = await this.priorRequestVerdict(player, requestId, message.type, fingerprint);
+      } catch {
+        this.sendError(context, "request_check_unavailable", "The request could not be checked against saved records. Nothing was changed; retry later.", requestId);
+        return;
+      }
+      if (verdict === "reused") {
+        this.sendRequestReused(context, requestId);
+        return;
+      }
+      if (verdict === "duplicate") {
         // Stage 34: a request whose money change is not confirmed yet is answered only after its save succeeds.
         const key = moneyReplyKey(player, requestId);
         const pending = this.pendingMoneyReplies.get(key);
@@ -2764,6 +2874,11 @@ export class MultiplayerWorld {
       }
       fingerprint = propertyRequestFingerprint(action, payload);
       const key = moneyReplyKey(player, requestId);
+      const inFlight = this.requestsInFlight.get(key);
+      if (inFlight !== undefined) {
+        inFlight.command = "property.action";
+        inFlight.fingerprint = fingerprint;
+      }
       const pending = this.pendingMoneyReplies.get(key);
       const recorded = (player.recentPropertyRequests ?? []).find((entry) => entry.request_id === requestId);
       if (pending !== undefined) {
@@ -2786,6 +2901,26 @@ export class MultiplayerWorld {
       }
       if (player.recentRequestIds.includes(requestId)) {
         this.sendPropertyRequestReused(context, action, requestId);
+        return;
+      }
+      // Stage 36: a request applied by another process is recorded durably. It is answered here, not applied again.
+      let stored: StoredOperation | undefined;
+      try {
+        stored = await this.durableRequest(player, requestId);
+      } catch {
+        this.send(context, appendOptionalRequestId({
+          type: "property.error", action, code: "property_persistence_unavailable",
+          message: SAVE_OUTCOME_MESSAGES.property_persistence_unavailable,
+        }, requestId));
+        return;
+      }
+      if (stored !== undefined) {
+        if (compareWithRecord(stored, "property.action", fingerprint) === "reused") {
+          this.sendPropertyRequestReused(context, action, requestId);
+          return;
+        }
+        this.send(context, { type: "command.duplicate", requestId });
+        this.sendCharacterSnapshot(context, requestId);
         return;
       }
       if (!this.financialWritesOpen()) {
@@ -2984,6 +3119,22 @@ export class MultiplayerWorld {
     records.push({ request_id: requestId, fingerprint });
     while (records.length > MAX_RECENT_REQUESTS) records.shift();
     this.dirty = true;
+  }
+
+  /** Stage 36: ends the in-flight state of a request, and wakes any copy that waits for it. */
+  private releaseInFlight(key: string): void {
+    const entry = this.requestsInFlight.get(key);
+    if (entry !== undefined) this.releaseRequest(key, entry);
+  }
+
+  private releaseRequest(key: string, entry: InFlightRequest): void {
+    if (this.requestsInFlight.get(key) === entry) this.requestsInFlight.delete(key);
+    entry.release();
+  }
+
+  /** Stage 36: a reused request ID with a different command or payload. Nothing is changed. */
+  private sendRequestReused(context: ConnectionContext, requestId: string): void {
+    this.sendError(context, "request_id_reused", "This request ID was already used for a different request. Nothing was changed; use a new request ID for a new request.", requestId);
   }
 
   private sendPropertyRequestReused(context: ConnectionContext, action: string, requestId: string): void {
@@ -5704,6 +5855,10 @@ export class MultiplayerWorld {
     // The first success for this request. Once sent, the record is no longer needed: a later resend is a duplicate.
     pending.delivered = true;
     this.pendingMoneyReplies.delete(key);
+    // The request is answered and recorded, so a retry is a duplicate from here on (the record is in memory). Releasing
+    // the in-flight guard now means a retry that arrives during the flush below is answered from the record at once,
+    // rather than waiting behind this reply.
+    this.releaseInFlight(key);
     if (pending.kind !== "snapshot") {
       const reply = replay
         ? { ...pending.reply, data: { ...(pending.reply.data as Record<string, unknown>), replayed: true } }
