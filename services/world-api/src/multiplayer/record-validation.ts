@@ -240,6 +240,21 @@ class RecordValidator {
     this.expect(rec, field, nullable, (v) => isValidDate(v), "must be a valid world calendar date");
   }
 
+  /**
+   * Stage 39: an optional field that older records do not have. An absent value is left absent (it is not normalised to
+   * null, so a valid older record is not rewritten on load). A present value must be a valid world date; null is allowed
+   * only when `allowNull` is set.
+   */
+  optionalWorldDate(rec: Rec, field: string, allowNull: boolean): void {
+    const value = rec[field];
+    if (value === undefined) return;
+    if (value === null) {
+      if (!allowNull) this.fail(field, "must not be null");
+      return;
+    }
+    if (!isValidDate(value)) this.fail(field, "must be a valid world calendar date");
+  }
+
   stringArray(rec: Rec, field: string): void {
     this.expect(rec, field, false, (v) => Array.isArray(v) && v.every((item) => typeof item === "string"),
       "must be an array of text");
@@ -421,6 +436,7 @@ export function validatePropertyRecords(maps: PersistentPropertyMaps): RecordVal
     v.num(r, "total_paid_ngn", { min: 0 });
     v.timestamp(r, "last_payment_date", true);
     v.worldDate(r, "last_payment_world_date", true);
+    v.optionalWorldDate(r, "paid_through_world_date", true);
     v.timestamp(r, "created_at");
     v.timestamp(r, "updated_at");
     const listing = recordOf(listings?.[String(r.listing_id)]);
@@ -439,6 +455,8 @@ export function validatePropertyRecords(maps: PersistentPropertyMaps): RecordVal
     v.timestamp(r, "payment_date");
     v.worldDate(r, "payment_world_date");
     v.nonEmptyText(r, "idempotency_key");
+    v.optionalWorldDate(r, "covered_from_world_date", false);
+    v.optionalWorldDate(r, "covered_until_world_date", false);
     const agreement = recordOf(agreements?.[String(r.agreement_id)]);
     v.invariant("property_id", !isIdentifier(r.agreement_id) || agreement.property_id === undefined ||
       agreement.property_id === r.property_id, "must match the property of its rental agreement");

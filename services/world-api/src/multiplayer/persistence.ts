@@ -441,6 +441,8 @@ const ECONOMY_TRANSACTION_KINDS = new Set([
   "salary_credit", "market_purchase", "bank_deposit", "bank_withdrawal", "bank_transfer", "bank_fee",
   "bank_interest", "tax_payment", "loan_disbursement", "loan_repayment", "loan_origination_fee",
   "loan_late_fee", "initial_credit", "clinic_payment", "bus_fare", "government_payment",
+  "rent_payment", "rent_receipt", "property_purchase", "property_sale_proceeds", "property_furnishing",
+  "property_maintenance",
 ]);
 
 function isEconomyAccount(value: unknown, key: string): boolean {

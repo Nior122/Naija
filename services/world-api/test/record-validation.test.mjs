@@ -145,6 +145,9 @@ const PROPERTY_MUTATIONS = [
     "rentalAgreements", "agr-1", "listing_id"],
   ["payment property does not match agreement", (m) => { m.rentalPayments["pay-1"].property_id = "prop:test-2"; },
     "rentalPayments", "pay-1", "property_id"],
+  // Stage 39: optional period fields. Absent is accepted (older records); present must be a valid world date.
+  ["agreement paid-through not a world date", (m) => { m.rentalAgreements["agr-1"].paid_through_world_date = "next month"; }, "rentalAgreements", "agr-1", "paid_through_world_date"],
+  ["payment covered-until not a world date", (m) => { m.rentalPayments["pay-1"].covered_until_world_date = { year: 2026, month: 13, day: 1 }; }, "rentalPayments", "pay-1", "covered_until_world_date"],
   ["payment period reversed", (m) => { m.rentalPayments["pay-1"].period_end = "2024-01-01T00:00:00.000Z"; },
     "rentalPayments", "pay-1", "period_end"],
   ["sale references missing listing", (m) => { m.propertySales["sale-1"].listing_id = "prop-list-missing"; },

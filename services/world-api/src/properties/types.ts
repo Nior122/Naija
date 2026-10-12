@@ -200,6 +200,11 @@ export interface RentalAgreementRecord {
   total_paid_ngn: number;
   last_payment_date: string | null;
   last_payment_world_date: CalendarDate | null;
+  /**
+   * Stage 39: the day up to which rent is paid (the end of the last covered period). The next period is due from this
+   * day. Optional so that older saved agreements load: a missing value means the due date is the start date.
+   */
+  paid_through_world_date?: CalendarDate | null;
   created_at: string;
   updated_at: string;
 }
@@ -216,6 +221,9 @@ export interface RentalPaymentRecord {
   payment_date: string;
   payment_world_date: CalendarDate;
   idempotency_key: string;
+  /** Stage 39: the period this payment covers, from (inclusive) to until (exclusive). Optional for older records. */
+  covered_from_world_date?: CalendarDate;
+  covered_until_world_date?: CalendarDate;
 }
 
 export interface PropertySaleRecord {

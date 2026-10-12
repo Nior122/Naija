@@ -22,6 +22,9 @@ import type {
 } from "./types.js";
 import type { PersistentWorldState, PersistentPlayer } from "../multiplayer/types.js";
 import type { CalendarDate } from "../life/types.js";
+import { addMonthsClamped, compareDates } from "../life/calendar.js";
+import { openNonPlayerCashAccount } from "../economy/service.js";
+import type { EconomyAccountRecord, EconomyTransactionKind } from "../economy/types.js";
 
 function cloneDate(date: CalendarDate): CalendarDate {
   return { year: date.year, month: date.month, day: date.day };
@@ -119,32 +122,131 @@ function cashBalanceForCharacter(state: PersistentWorldState, characterId: strin
   return account ? account.balance_ngn : 0;
 }
 
-function deductFromCashAccount(state: PersistentWorldState, characterId: string, amountNgn: number, timestamp: string): void {
-  const cashAccounts = Object.values(state.economyAccounts).filter((a) => a.kind === "cash" && a.character_id === characterId);
-  const account = cashAccounts[0];
+/** Refuses when the character has no cash account. Used before any debit, so a refusal changes nothing. */
+function assertCashAccountExists(state: PersistentWorldState, characterId: string): void {
+  if (!cashAccountFor(state, characterId)) throw new Error("property_no_cash_account");
+}
+
+/** Stage 39: the property money kinds written to the economy ledger. */
+export type PropertyMoneyKind = Extract<EconomyTransactionKind,
+  "rent_payment" | "rent_receipt" | "property_purchase" | "property_sale_proceeds" | "property_furnishing" | "property_maintenance">;
+
+/** Stage 39: one property money movement. It is written as a ledger row in the same mutation as its balance change. */
+interface PropertyMoneyMove {
+  readonly kind: PropertyMoneyKind;
+  readonly reference_id: string;
+  readonly description: string;
+  readonly date: CalendarDate;
+  readonly minuteOfDay: number;
+}
+
+function cashAccountFor(state: PersistentWorldState, characterId: string): EconomyAccountRecord | undefined {
+  return Object.values(state.economyAccounts).find((a) => a.kind === "cash" && a.character_id === characterId);
+}
+
+function recordMoneyMove(
+  state: PersistentWorldState,
+  account: EconomyAccountRecord,
+  amountNgn: number,
+  direction: "debit" | "credit",
+  balanceBefore: number,
+  timestamp: string,
+  move: PropertyMoneyMove,
+): void {
+  const transactionId = `economy-tx-${randomUUID()}`;
+  state.economyTransactions[transactionId] = {
+    transaction_id: transactionId,
+    account_id: account.account_id,
+    character_id: account.character_id,
+    kind: move.kind,
+    amount_ngn: amountNgn,
+    balance_before_ngn: balanceBefore,
+    balance_after_ngn: account.balance_ngn,
+    fee_ngn: 0,
+    description: move.description,
+    world_date: cloneDate(move.date),
+    minute_of_day: move.minuteOfDay,
+    posted_at: timestamp,
+    reference_id: move.reference_id,
+    counterparty_account_id: null,
+    idempotency_key: createHash("sha256")
+      .update(`property-money:${move.kind}:${move.reference_id}:${direction}:${account.account_id}`).digest("hex"),
+  };
+}
+
+function deductFromCashAccount(
+  state: PersistentWorldState,
+  characterId: string,
+  amountNgn: number,
+  timestamp: string,
+  move: PropertyMoneyMove,
+): void {
+  const account = cashAccountFor(state, characterId);
   if (!account) throw new Error("property_no_cash_account");
   if (account.balance_ngn < amountNgn) throw new Error("property_insufficient_funds");
+  const balanceBefore = account.balance_ngn;
   account.balance_ngn -= amountNgn;
   account.total_withdrawn_ngn += amountNgn;
   account.updated_at = timestamp;
-}
-
-function creditToCashAccount(state: PersistentWorldState, characterId: string, amountNgn: number, timestamp: string): void {
-  const cashAccounts = Object.values(state.economyAccounts).filter((a) => a.kind === "cash" && a.character_id === characterId);
-  const account = cashAccounts[0];
-  if (!account) throw new Error("property_no_cash_account");
-  account.balance_ngn += amountNgn;
-  account.total_deposited_ngn += amountNgn;
-  account.updated_at = timestamp;
+  recordMoneyMove(state, account, amountNgn, "debit", balanceBefore, timestamp, move);
 }
 
 /**
- * Stage 35: a money path checks the receiving account before it debits the payer. creditToCashAccount throws when the
- * account is missing, and a throw after the debit would leave the payer charged with no ownership or rent change.
+ * Stage 39: credits a counterparty. A player receives into the player's cash account. An NPC receives into its own cash
+ * account, opened once in the same ledger (openNonPlayerCashAccount). Callers must have run counterpartyKind first, so
+ * a credit never follows a debit that cannot be credited.
  */
-function assertCashAccountExists(state: PersistentWorldState, characterId: string): void {
-  const exists = Object.values(state.economyAccounts).some((a) => a.kind === "cash" && a.character_id === characterId);
-  if (!exists) throw new Error("property_no_cash_account");
+function creditHolder(
+  state: PersistentWorldState,
+  holderId: string,
+  holderKind: "player" | "npc",
+  amountNgn: number,
+  timestamp: string,
+  move: PropertyMoneyMove,
+): void {
+  const account = holderKind === "npc"
+    ? openNonPlayerCashAccount(state, holderId, move.date, Date.parse(timestamp))
+    : cashAccountFor(state, holderId);
+  if (!account) throw new Error("property_no_cash_account");
+  const balanceBefore = account.balance_ngn;
+  account.balance_ngn += amountNgn;
+  account.total_deposited_ngn += amountNgn;
+  account.updated_at = timestamp;
+  recordMoneyMove(state, account, amountNgn, "credit", balanceBefore, timestamp, move);
+}
+
+/**
+ * Stage 39: decides, before any debit, whether a counterparty can be credited. A player must have a cash account. An
+ * NPC is accepted (its account is opened when it is credited). Any other owner kind (business, government, community,
+ * joint, or an unknown owner) is refused with property_counterparty_unsupported, because no account model exists for it
+ * yet (Stage 34). Refusing here keeps money from leaving the payer for an unrecorded payee.
+ */
+function counterpartyKind(
+  state: PersistentWorldState,
+  holderId: string,
+  holderKind: PropertyOwnershipKind | undefined,
+): "player" | "npc" {
+  if (characterForId(state, holderId)) {
+    if (!cashAccountFor(state, holderId)) throw new Error("property_no_cash_account");
+    return "player";
+  }
+  if (holderKind === "npc") return "npc";
+  throw new Error("property_counterparty_unsupported");
+}
+
+/** Stage 39: months covered by one payment of each rent period. */
+function rentPeriodMonths(period: PropertyRentPeriod): number {
+  switch (period) {
+    case "monthly": return 1;
+    case "quarterly": return 3;
+    case "half_yearly": return 6;
+    case "yearly": return 12;
+    default: throw new Error("property_rent_period_invalid");
+  }
+}
+
+function isoDay(date: CalendarDate): string {
+  return `${String(date.year).padStart(4, "0")}-${String(date.month).padStart(2, "0")}-${String(date.day).padStart(2, "0")}`;
 }
 
 export function initializePropertyWorldState(state: PersistentWorldState): void {
@@ -378,17 +480,19 @@ export function purchaseProperty(
   if (currentOwner.owner_id === characterId) throw new Error("property_already_owner");
   // A listing made by a previous owner is not a sale by the current owner (Stage 35). Refused before any change.
   if (listing.owner_id !== currentOwner.owner_id) throw new Error("property_listing_unavailable");
-  // A player seller must have a cash account to be credited. Checked before the debit (Stage 35).
-  const sellerPlayer = characterForId(state, currentOwner.owner_id);
-  if (sellerPlayer) assertCashAccountExists(state, currentOwner.owner_id);
+  // Stage 39: the seller must be a player with a cash account, or an NPC. Checked before the debit.
+  const sellerKind = counterpartyKind(state, currentOwner.owner_id, currentOwner.owner_kind);
 
   const timestamp = new Date(now).toISOString();
 
   // Every check has passed. From here on nothing below can throw: the debit and the credit are the same sale.
-  deductFromCashAccount(state, characterId, price, timestamp);
-  if (sellerPlayer) {
-    creditToCashAccount(state, currentOwner.owner_id, price, timestamp);
-  }
+  const saleReference = `${property.property_id}:${timestamp}`;
+  deductFromCashAccount(state, characterId, price, timestamp, {
+    kind: "property_purchase", reference_id: saleReference, description: "Property purchase.", date, minuteOfDay,
+  });
+  creditHolder(state, currentOwner.owner_id, sellerKind, price, timestamp, {
+    kind: "property_sale_proceeds", reference_id: saleReference, description: "Property sale proceeds.", date, minuteOfDay,
+  });
 
   // Deactivate current ownership
   currentOwner.active = false;
@@ -613,28 +717,33 @@ export function createRentalAgreement(
   const balance = cashBalanceForCharacter(state, characterId);
   if (balance < totalDue) throw new Error("property_insufficient_funds");
 
-  // A player landlord must have a cash account. Checked before the tenant is debited (Stage 35).
-  const landlordPlayer = characterForId(state, listing.owner_id);
-  if (landlordPlayer) assertCashAccountExists(state, listing.owner_id);
+  // Stage 39: the landlord must be a player with a cash account, or an NPC. Checked before the tenant is debited.
+  const landlordKind = counterpartyKind(state, listing.owner_id, currentOwner?.owner_kind);
+  // The first period is paid here, so it is covered from the start date.
+  const paidThrough = addMonthsClamped(date, rentPeriodMonths(listing.rent_period));
+  const agreementId = `prop-rent-${randomUUID()}`;
 
   // Every check has passed: the debit and the credit below are one rental start.
-  deductFromCashAccount(state, characterId, totalDue, timestamp);
-  if (landlordPlayer) {
-    creditToCashAccount(state, listing.owner_id, totalDue, timestamp);
-  }
+  deductFromCashAccount(state, characterId, totalDue, timestamp, {
+    kind: "rent_payment", reference_id: agreementId, description: "Rent and deposit for a new rental.", date, minuteOfDay,
+  });
+  creditHolder(state, listing.owner_id, landlordKind, totalDue, timestamp, {
+    kind: "rent_receipt", reference_id: agreementId, description: "Rent and deposit received.", date, minuteOfDay,
+  });
 
   const agreement: RentalAgreementRecord = {
-    agreement_id: `prop-rent-${randomUUID()}`,
+    agreement_id: agreementId,
     property_id: property.property_id,
     listing_id: listingId,
     landlord_id: listing.owner_id,
-    landlord_kind: currentOwner?.owner_kind ?? "npc",
+    landlord_kind: landlordKind,
     tenant_id: characterId,
     rent_ngn: rent,
     rent_period: listing.rent_period,
     deposit_ngn: deposit,
     start_date: timestamp,
     start_world_date: cloneDate(date),
+    paid_through_world_date: cloneDate(paidThrough),
     end_date: null,
     end_world_date: null,
     status: "active",
@@ -654,11 +763,13 @@ export function createRentalAgreement(
     tenant_id: characterId,
     landlord_id: listing.owner_id,
     amount_ngn: totalDue,
-    period_start: timestamp,
-    period_end: new Date(now + 365 * 24 * 60 * 60 * 1000).toISOString(),
+    period_start: isoDay(date),
+    period_end: isoDay(paidThrough),
     payment_date: timestamp,
     payment_world_date: cloneDate(date),
     idempotency_key: createHash("sha256").update(`prop-rent-initial:${listingId}:${characterId}`).digest("hex"),
+    covered_from_world_date: cloneDate(date),
+    covered_until_world_date: cloneDate(paidThrough),
   };
   state.rentalPayments[payment.payment_id] = payment;
 
@@ -688,41 +799,52 @@ export function payRent(
   if (agreement.tenant_id !== characterId) throw new Error("property_unauthorized");
   if (agreement.status !== "active") throw new Error("property_agreement_not_active");
 
+  // Stage 39: one payment covers one rent period. The period is due from the day the previous covered period ends
+  // (the agreement start for the first period). A payment before it is due, or a second one for the same period, is
+  // refused with no change.
+  // An agreement saved before Stage 39 has no paid-through date. It is derived from the last payment (or the start), one
+  // period on. This is the fail-closed reading: the last payment is taken to have covered one period from its date.
+  const dueFrom = agreement.paid_through_world_date ??
+    addMonthsClamped(agreement.last_payment_world_date ?? agreement.start_world_date, rentPeriodMonths(agreement.rent_period));
+  if (compareDates(date, dueFrom) < 0) throw new Error("property_rent_not_due");
+  const coveredUntil = addMonthsClamped(dueFrom, rentPeriodMonths(agreement.rent_period));
+
   const rent = agreement.rent_ngn;
-  const balance = cashBalanceForCharacter(state, characterId);
-  if (balance < rent) throw new Error("property_insufficient_funds");
+  if (cashBalanceForCharacter(state, characterId) < rent) throw new Error("property_insufficient_funds");
+  const landlordKind = counterpartyKind(state, agreement.landlord_id, agreement.landlord_kind);
 
   const timestamp = new Date(now).toISOString();
-
-  // Idempotency
-  const idemKey = createHash("sha256").update(`prop-rent-pay:${agreementId}:${timestamp}`).digest("hex");
+  // Keyed by agreement and period, not by time, so a repeat for the same period has the same key.
+  const idemKey = createHash("sha256").update(`prop-rent-period:${agreementId}:${isoDay(dueFrom)}`).digest("hex");
   const existing = Object.values(state.rentalPayments).find((p) => p.idempotency_key === idemKey);
   if (existing) return existing;
 
-  // A player landlord must have a cash account. Checked before the tenant is debited (Stage 35).
-  const landlordPlayer = characterForId(state, agreement.landlord_id);
-  if (landlordPlayer) assertCashAccountExists(state, agreement.landlord_id);
-
-  deductFromCashAccount(state, characterId, rent, timestamp);
-  if (landlordPlayer) {
-    creditToCashAccount(state, agreement.landlord_id, rent, timestamp);
-  }
+  const paymentId = `prop-pay-${randomUUID()}`;
+  deductFromCashAccount(state, characterId, rent, timestamp, {
+    kind: "rent_payment", reference_id: paymentId, description: "Rent payment.", date, minuteOfDay,
+  });
+  creditHolder(state, agreement.landlord_id, landlordKind, rent, timestamp, {
+    kind: "rent_receipt", reference_id: paymentId, description: "Rent received.", date, minuteOfDay,
+  });
 
   const payment: RentalPaymentRecord = {
-    payment_id: `prop-pay-${randomUUID()}`,
+    payment_id: paymentId,
     agreement_id: agreementId,
     property_id: agreement.property_id,
     tenant_id: characterId,
     landlord_id: agreement.landlord_id,
     amount_ngn: rent,
-    period_start: agreement.last_payment_date ?? agreement.start_date,
-    period_end: timestamp,
+    period_start: isoDay(dueFrom),
+    period_end: isoDay(coveredUntil),
     payment_date: timestamp,
     payment_world_date: cloneDate(date),
     idempotency_key: idemKey,
+    covered_from_world_date: cloneDate(dueFrom),
+    covered_until_world_date: cloneDate(coveredUntil),
   };
   state.rentalPayments[payment.payment_id] = payment;
 
+  agreement.paid_through_world_date = cloneDate(coveredUntil);
   agreement.total_paid_ngn += rent;
   agreement.last_payment_date = timestamp;
   agreement.last_payment_world_date = cloneDate(date);
@@ -811,7 +933,9 @@ export function recordMaintenance(
   const conditionBefore = property.condition;
   const timestamp = new Date(now).toISOString();
   if (costNgn > 0) {
-    deductFromCashAccount(state, characterId, costNgn, timestamp);
+    deductFromCashAccount(state, characterId, costNgn, timestamp, {
+      kind: "property_maintenance", reference_id: `${propertyId}:${timestamp}`, description: "Property maintenance.", date, minuteOfDay,
+    });
   }
 
   const maintenance: PropertyMaintenanceRecord = {
@@ -876,7 +1000,10 @@ export function purchaseFurniture(
   if (balance < totalCost) throw new Error("property_insufficient_funds");
 
   const timestamp = new Date(now).toISOString();
-  deductFromCashAccount(state, characterId, totalCost, timestamp);
+  deductFromCashAccount(state, characterId, totalCost, timestamp, {
+    kind: "property_furnishing", reference_id: `${propertyId}:${furnitureDefinitionId}:${timestamp}`,
+    description: "Furnishing purchase.", date, minuteOfDay,
+  });
 
   if (existingFurnishing) {
     existingFurnishing.quantity += quantity;
@@ -1103,6 +1230,8 @@ export function propertyErrorMessage(code: string): string {
     property_not_owner: "You do not own this property.",
     property_unauthorized: "You are not authorized to perform this action.",
     property_price_invalid: "The price is outside the allowed range.",
+    property_rent_not_due: "Rent for this period is not due yet, or has already been paid.",
+    property_counterparty_unsupported: "This property's owner cannot receive payments yet. Nothing was charged.",
     property_rent_price_invalid: "The rent price is outside the allowed range.",
     property_rent_period_invalid: "Invalid rent period.",
     property_deposit_invalid: "Invalid deposit amount.",

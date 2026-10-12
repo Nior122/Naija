@@ -9,7 +9,8 @@
 //   - a retry with the same request ID never charges twice, and is answered once the change is saved;
 //   - while saving is failing, a new charge is refused before it changes anything ("<family>_persistence_unavailable");
 //   - a confirmed charge survives a restart, and its request ID is then a duplicate, not a second charge.
-// pay_rent is refused on player routes with property_rent_payment_suspended, and nothing changes.
+// pay_rent for an unknown agreement is refused with property_agreement_not_found, and nothing changes (Stage 39: pay_rent
+// is no longer suspended; its rules are tested in housing-rent-stage39.test.mjs).
 //
 // This server runs with timed ticks off (startOver's NO_TICKS), so a save happens only when a request needs one.
 import assert from "node:assert/strict";
@@ -338,8 +339,8 @@ for (const backendName of backendNames) {
     });
   }
 
-  describe(`pay_rent containment (${backendName} backend)`, () => {
-    test("pay_rent is refused with property_rent_payment_suspended, and no state changes in memory or storage", async () => {
+  describe(`pay_rent unknown-agreement refusal (${backendName} backend)`, () => {
+    test("pay_rent for an unknown agreement is refused with property_agreement_not_found, and no state changes in memory or storage", async () => {
       const backend = await openBackend(backendName);
       const started = await startOver(backend, {});
       let peer;
@@ -352,7 +353,7 @@ for (const backendName of backendNames) {
 
         peer.send({ type: "property.action", action: "pay_rent", requestId: "rent-1", payload: { agreement_id: "agreement-none" } });
         const refused = await peer.waitFor((message) => message.type === "property.error" && message.requestId === "rent-1", 20000);
-        assert.equal(refused.code, "property_rent_payment_suspended");
+        assert.equal(refused.code, "property_agreement_not_found");
         assert.equal(refused.action, "pay_rent");
 
         assert.equal(contentOf(backend.store.state), liveBefore, "live world content unchanged");

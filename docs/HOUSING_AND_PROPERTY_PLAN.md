@@ -79,7 +79,7 @@ The server accepts `property.action` commands over the existing authenticated We
 | `list_for_sale` | List an owned property for sale. |
 | `list_for_rent` | List an owned property for rent. |
 | `rent` | Enter a rental agreement from a rent listing. |
-| `pay_rent` | Make a recurring rent payment on an active agreement. |
+| `pay_rent` | Pay the next rent period on an active agreement, once that period is due (Stage 39). |
 | `terminate_rental` | Terminate a rental agreement (tenant or landlord). |
 | `maintain` | Record maintenance and update property condition. |
 | `furnish` | Purchase and place furniture in an owned property. |
@@ -92,3 +92,24 @@ The server accepts `property.action` commands over the existing authenticated We
 npm run check                    # lint + 105 Node tests (48 retained + 16 economy + 22 business + 19 property)
 node --test services/world-api/test/properties.test.mjs   # focused Stage 9 suite
 ```
+
+## Rent periods, counterparties, and the ledger (Stage 39)
+
+Stage 39 removes the `pay_rent` suspension. Rent is paid per period, and every property money movement is a ledger row.
+
+**Periods.** A rental start pays the first period and the deposit, and the agreement records `paid_through_world_date`, the day the first period ends (the start date plus the period, clamped to the month end: 31 January + 1 month = 28 February). The period lengths are monthly 1, quarterly 3, half-yearly 6, yearly 12 months.
+
+**Due dates.** The next period is due from `paid_through_world_date`. A `pay_rent` before that day is refused with `property_rent_not_due`, and nothing changes. A payment covers the period from the due day until `addMonths` later, and advances `paid_through_world_date` to the end of that period. A second payment for the same period is refused the same way. An agreement saved before Stage 39 has no paid-through date; for it, the due day is one period after its last payment (or after its start, if it has none). That reading is fail-closed, and it assumes the last payment covered one period from its date. The idempotency key is per agreement and period, not per timestamp, so a repeat for the same period cannot pay twice.
+
+**Counterparties.** Money is only moved to a holder that has an account:
+- a **player** (landlord or seller) must already have a cash account;
+- an **NPC** (the seeded `npc-landlord-*` owners) receives into its own cash account in the economy ledger, opened on first credit. It has no bank product, so no interest or monthly fee applies;
+- any other owner kind (business, government, community, joint, or an unknown owner) is refused with `property_counterparty_unsupported` before anything is debited. Business and organisation payments stay closed until a shared business-account model exists (Stage 34).
+
+These checks run before the debit, so a refusal leaves both sides unchanged.
+
+**Ledger.** The debit and credit of a rent start, rent payment, purchase, sale, furnishing, and maintenance each write an `economyTransactions` row in the same mutation as the balance change. The kinds are `rent_payment`, `rent_receipt`, `property_purchase`, `property_sale_proceeds`, `property_furnishing`, and `property_maintenance`. Before Stage 39 these money moves changed balances without a row.
+
+**Not covered.** Rent is not collected automatically; a tenant must send `pay_rent`. Arrears, eviction, and late fees are not implemented. Rental records are checked on load by `record-validation.ts`. The Stage 39 fields (`paid_through_world_date`, `covered_from_world_date`, `covered_until_world_date`) are optional: an absent value is left absent, and a present value must be a valid world date. Concurrent payments are serialised within one process only; see the Stage 35 notes.
+
+Tests: `test/housing-rent-stage39.test.mjs` (both backends), and the rewritten `pay_rent` tests in `test/property-actions-stage35.test.mjs` and `test/money-routes-stage34.test.mjs`.

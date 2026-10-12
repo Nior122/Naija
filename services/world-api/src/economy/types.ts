@@ -16,7 +16,14 @@ export type EconomyTransactionKind =
   | "initial_credit"
   | "clinic_payment"
   | "bus_fare"
-  | "government_payment";
+  | "government_payment"
+  // Stage 39: property money moves (rent, purchase, sale proceeds, furnishing, maintenance).
+  | "rent_payment"
+  | "rent_receipt"
+  | "property_purchase"
+  | "property_sale_proceeds"
+  | "property_furnishing"
+  | "property_maintenance";
 
 export type EconomyAccountKind = "cash" | "savings" | "current" | "fixed_deposit";
 export type EconomyLoanStatus = "active" | "paid_off" | "defaulted" | "cancelled";

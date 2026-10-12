@@ -478,41 +478,59 @@ for (const backendName of backendNames) {
   }));
 }
 
-// Rent payment (Stage 35). pay_rent is suspended (property_rent_payment_suspended) until its money route is made safe.
-// Socket tests here check that the refusal changes nothing, and that it cannot race a termination into a payment.
+// Rent payment (Stage 39). pay_rent is no longer suspended: it pays one rent period once that period is due.
+// These socket tests check two things: a payment before the period is due changes nothing, and a termination and a
+// payment sent together cannot both apply. The full rent contract (periods, ledger, counterparties, restart) is in
+// housing-rent-stage39.test.mjs.
+
+/** Moves the disposable world's calendar date (test-side setup, flushed), as a real day change would. */
+async function setWorldDate(world, date) {
+  live(world).worldClock.world_date = { ...date };
+  await world.backend.store.flush();
+}
+
 for (const backendName of backendNames) {
-  test(`${backendName}: pay_rent is refused while suspended, and changes no money, agreement, or payment row`, () => inWorld(backendName, async (world) => {
+  test(`${backendName}: pay_rent before the period is due is refused with property_rent_not_due, and changes no money, agreement, or payment row`, () => inWorld(backendName, async (world) => {
     const ctx = await rentedWorld(world);
-    const before = { tenant: balanceOf(live(world), ctx.other.characterId), landlord: balanceOf(live(world), ctx.owner.characterId), payments: Object.keys(live(world).rentalPayments).length };
+    const agreement = live(world).rentalAgreements[ctx.agreement_id];
+    // The first period is paid at the start, so the next is due a year later. The start day is well before it.
+    await setWorldDate(world, agreement.start_world_date);
+    const before = { tenant: balanceOf(live(world), ctx.other.characterId), landlord: balanceOf(live(world), ctx.owner.characterId), payments: Object.keys(live(world).rentalPayments).length, paidThrough: JSON.stringify(agreement.paid_through_world_date) };
 
     ctx.other.peer.send(message("pay_rent", "pay-1", { agreement_id: ctx.agreement_id }));
     const refused = await settle(ctx.other.peer, "pay-1");
-    assert.equal(refused.type, "property.error");
-    assert.equal(refused.code, "property_rent_payment_suspended");
+    assert.equal(refused.type, "property.error", JSON.stringify(refused));
+    assert.equal(refused.code, "property_rent_not_due");
     assert.equal(refused.action, "pay_rent");
 
     assert.equal(balanceOf(live(world), ctx.other.characterId), before.tenant, "tenant not charged");
     assert.equal(balanceOf(live(world), ctx.owner.characterId), before.landlord, "landlord not credited");
     assert.equal(Object.keys(live(world).rentalPayments).length, before.payments, "no payment row");
+    assert.equal(JSON.stringify(live(world).rentalAgreements[ctx.agreement_id].paid_through_world_date), before.paidThrough, "paid-through unchanged");
     assert.equal(live(world).rentalAgreements[ctx.agreement_id].status, "active", "agreement still active");
     assert.equal(propertyContent(await stored(world)), propertyContent(live(world)), "stored matches live");
   }));
 
-  test(`${backendName}: a termination and a pay_rent sent together: the termination applies once, and the payment never applies`, () => inWorld(backendName, async (world) => {
+  test(`${backendName}: a termination and a pay_rent sent together, with the period due: the termination applies once, and money always matches the payment rows`, () => inWorld(backendName, async (world) => {
     const ctx = await rentedWorld(world);
+    const agreement = live(world).rentalAgreements[ctx.agreement_id];
+    const rent = agreement.rent_ngn;
+    await setWorldDate(world, agreement.paid_through_world_date);
     const before = { tenant: balanceOf(live(world), ctx.other.characterId), landlord: balanceOf(live(world), ctx.owner.characterId), payments: Object.keys(live(world).rentalPayments).length };
 
     ctx.other.peer.send(message("terminate_rental", "race-end", { agreement_id: ctx.agreement_id, reason: "moved out" }));
     ctx.other.peer.send(message("pay_rent", "race-pay", { agreement_id: ctx.agreement_id }));
     const [ended, paid] = await Promise.all([settle(ctx.other.peer, "race-end"), settle(ctx.other.peer, "race-pay")]);
     assert.equal(ended.type, "property.result", JSON.stringify(ended));
-    assert.equal(paid.type, "property.error");
-    assert.equal(paid.code, "property_rent_payment_suspended");
+    // Either order is allowed. If the payment ran second it is refused, because the agreement is no longer active.
+    const applied = paid.type === "property.result";
+    if (!applied) assert.equal(paid.code, "property_agreement_not_active", JSON.stringify(paid));
 
+    const newPayments = Object.keys(live(world).rentalPayments).length - before.payments;
+    assert.equal(newPayments, applied ? 1 : 0, "a payment row exists only if the payment applied");
+    assert.equal(balanceOf(live(world), ctx.other.characterId), before.tenant - rent * newPayments, "tenant charged once per payment row");
+    assert.equal(balanceOf(live(world), ctx.owner.characterId), before.landlord + rent * newPayments, "landlord credited once per payment row");
     assert.equal(live(world).rentalAgreements[ctx.agreement_id].status, "terminated", "terminated once");
-    assert.equal(balanceOf(live(world), ctx.other.characterId), before.tenant, "tenant not charged");
-    assert.equal(balanceOf(live(world), ctx.owner.characterId), before.landlord, "landlord not credited");
-    assert.equal(Object.keys(live(world).rentalPayments).length, before.payments, "no new payment row");
     assert.equal(propertyContent(await stored(world)), propertyContent(live(world)), "stored matches live");
   }));
 }

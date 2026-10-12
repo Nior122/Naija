@@ -362,12 +362,9 @@ const POLICE_SUSPENDED_ACTIONS: ReadonlyMap<string, string> = new Map([
   ["execute_arrest", "police_arrest_suspended"],
 ]);
 
-/**
- * TEMPORARY CONTAINMENT (Stage 34). `pay_rent` is refused on player routes. Each call debits the tenant and credits the
- * landlord, but the payment has no per-period check: a repeated request pays again, and the idempotency key is built
- * from the request time, so a retry is not recognised. Reopen it only with a period model, a request-ID record, and
- * tests for retries. The service function (payRent) is unchanged for trusted callers.
- */
+// Stage 39: pay_rent was contained in Stage 34 (no period model, time-based idempotency key). It now has a period model,
+// per-period idempotency, and counterparty checks (docs/HOUSING_AND_PROPERTY_PLAN.md, "Rent periods, counterparties, and
+// the ledger"). It is no longer suspended.
 /**
  * Stage 35: property actions that change persistent state (money, ownership, listings, rentals, furnishing, condition).
  * Each needs a request ID. Its success reply (property.result) is sent only after a save covers the change, as for the
@@ -380,9 +377,9 @@ const PROPERTY_CHANGING_ACTIONS: ReadonlySet<string> = new Set([
 
 /** JSON with object keys sorted at every level, so that equal payloads have equal text. */
 
-const PROPERTY_SUSPENDED_ACTIONS: ReadonlyMap<string, string> = new Map([
-  ["pay_rent", "property_rent_payment_suspended"],
-]);
+// Stage 39: pay_rent is no longer suspended. It now uses the period-based rule and the counterparty checks in
+// properties/service.ts. The map stays as the fail-closed hook for any future property suspension.
+const PROPERTY_SUSPENDED_ACTIONS: ReadonlyMap<string, string> = new Map<string, string>();
 
 const IDEMPOTENT_COMMANDS = new Set([
   "world.travel",

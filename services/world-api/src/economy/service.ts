@@ -24,7 +24,42 @@ function cloneDate(date: CalendarDate): CalendarDate {
   return { year: date.year, month: date.month, day: date.day };
 }
 
-function accountKey(characterId: string, kind: EconomyAccountKind, suffix: string): string {
+/**
+ * Stage 39: opens the cash account of a non-player holder (an NPC landlord or seller), once. The account is an ordinary
+ * cash account in the same ledger: no bank product, so no interest or monthly fee. No session route can act on it,
+ * because player routes act only on the session character's own accounts. Business and government holders are not
+ * opened here; the caller refuses them.
+ */
+export function openNonPlayerCashAccount(state: PersistentWorldState, holderId: string, date: CalendarDate, now: number): EconomyAccountRecord {
+  const key = accountKey(holderId, "cash", "default");
+  const existing = state.economyAccounts[key];
+  if (existing) return existing;
+  const timestamp = new Date(now).toISOString();
+  const account: EconomyAccountRecord = {
+    account_id: key,
+    character_id: holderId,
+    kind: "cash",
+    bank_product_id: null,
+    balance_ngn: 0,
+    status: "active",
+    created_at: timestamp,
+    created_world_date: cloneDate(date),
+    updated_at: timestamp,
+    opened_world_date: cloneDate(date),
+    last_interest_date: null,
+    last_fee_date: null,
+    total_deposited_ngn: 0,
+    total_withdrawn_ngn: 0,
+    total_fees_paid_ngn: 0,
+    total_interest_earned_ngn: 0,
+    daily_withdrawal_total_ngn: 0,
+    daily_withdrawal_date: null,
+  };
+  state.economyAccounts[key] = account;
+  return account;
+}
+
+export function accountKey(characterId: string, kind: EconomyAccountKind, suffix: string): string {
   return createHash("sha256").update(`${characterId}${ECONOMY_KEY_SEPARATOR}${kind}${ECONOMY_KEY_SEPARATOR}${suffix}`).digest("hex").slice(0, 32);
 }
 

@@ -69,3 +69,9 @@ node --test services/world-api/test/economy.test.mjs   # focused Stage 7 suite
 ## Next roadmap line
 
 **Stage 8 — Player Businesses.** Stage 7 must remain the economic authority before businesses add staffing, costs, stock, compliance, and customer demand.
+
+## Non-player cash accounts and property money (Stage 39)
+
+- A non-player holder that receives property money (an NPC landlord or seller) gets one cash account in `economyAccounts`, with `character_id` set to the NPC's ID and `bank_product_id` null. It is opened when first credited. The interest and fee loops skip it, because they only charge accounts with a bank product. No player route can act on it, because player routes act only on the session character's accounts.
+- Property money moves write `economyTransactions` rows with the kinds `rent_payment`, `rent_receipt`, `property_purchase`, `property_sale_proceeds`, `property_furnishing`, and `property_maintenance`. Each row is written in the same mutation as its balance change.
+- Business, government, and other organisation holders are not credited. Their property payments are refused before any debit. The shared business-account model is still outstanding (Stage 34).
