@@ -1083,6 +1083,7 @@ export class PoliceService {
 export function policeErrorMessage(code: string): string {
   const messages: Record<string, string> = {
     police_arrest_suspended: "Arrests are suspended until police authority and legal-basis rules are in place.",
+    police_wanted_request_suspended: "Wanted requests are suspended until police authority and legal-basis rules are in place.",
     police_action_invalid: "Choose a supported police action.",
     police_action_unknown: "That police action is not supported.",
     police_station_required: "Station ID is required.",

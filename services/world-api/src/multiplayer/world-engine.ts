@@ -322,6 +322,10 @@ const JUSTICE_SUSPENDED_ACTIONS: ReadonlyMap<string, string> = new Map([
   ["pay_fine", "justice_fine_payment_suspended"],
 ]);
 const CRIME_SUSPENDED_ACTIONS: ReadonlyMap<string, string> = new Map([
+  // Stage 37: no authority check exists for these; each would let any player change an incident, add evidence, or create a debt.
+  ["transition_incident", "crime_incident_transition_suspended"],
+  ["add_evidence", "crime_evidence_suspended"],
+  ["create_restitution", "crime_restitution_suspended"],
   ["create_criminal_record", "crime_record_creation_suspended"],
   // Linking an incident to a case or police record is an authority act with no ownership or authority check yet.
   ["link_to_justice", "crime_link_suspended"],
@@ -334,6 +338,10 @@ const CRIME_SUSPENDED_ACTIONS: ReadonlyMap<string, string> = new Map([
  * Reads (profiles, branch and course lists, rank history, arrest and incident lists) remain open.
  */
 const MILITARY_SUSPENDED_ACTIONS: ReadonlyMap<string, string> = new Map([
+  // Stage 37: no authority check exists; the caller was recorded as the authority for these.
+  ["create_asset", "military_asset_creation_suspended"],
+  ["create_security_event", "military_security_event_suspended"],
+  ["file_disciplinary_case", "military_disciplinary_suspended"],
   ["enlist", "military_enlistment_suspended"],
   ["enroll_training", "military_training_suspended"],
   ["complete_training", "military_training_suspended"],
@@ -342,6 +350,8 @@ const MILITARY_SUSPENDED_ACTIONS: ReadonlyMap<string, string> = new Map([
   ["assign", "military_assignment_suspended"],
 ]);
 const POLICE_SUSPENDED_ACTIONS: ReadonlyMap<string, string> = new Map([
+  // Stage 37: no station or authority check exists, and repeated requests created duplicate requested records.
+  ["request_wanted", "police_wanted_request_suspended"],
   ["execute_arrest", "police_arrest_suspended"],
 ]);
 
@@ -384,6 +394,32 @@ const IDEMPOTENT_COMMANDS = new Set([
 ]);
 
 /**
+ * Stage 37: the changing requests of the consequential families. Each needs a request ID, is checked against the saved
+ * record, and replies only after its save succeeds (replyAfterSave). Read-only actions of these families are not listed.
+ */
+const CONSEQUENTIAL_TYPE_FAMILIES: ReadonlyMap<string, ConsequentialFamily> = new Map([
+  ["character.rest", "rest"],
+  ["relationship.progress", "relationship"],
+  ["family.childbirth", "family"],
+]);
+const CONSEQUENTIAL_ACTION_FAMILIES: ReadonlyMap<string, { family: ConsequentialFamily; actions: ReadonlySet<string> }> = new Map([
+  ["justice.action", { family: "justice", actions: new Set(["create_proposal", "submit_proposal", "file_case", "submit_evidence", "issue_judgment", "file_appeal"]) }],
+  ["police.action", { family: "police", actions: new Set(["apply_recruitment", "submit_incident", "dispatch_unit", "open_investigation", "submit_evidence", "file_complaint"]) }],
+  ["military.action", { family: "military", actions: new Set(["apply_for_service", "request_leave"]) }],
+  ["crime.action", { family: "crime", actions: new Set(["commit_crime", "report_crime", "start_rehabilitation"]) }],
+]);
+
+/** Stage 37: the consequential family of a request, or undefined when the request is not a changing consequential one. */
+function consequentialFamilyOf(message: Record<string, unknown>): ConsequentialFamily | undefined {
+  if (typeof message.type !== "string") return undefined;
+  const byType = CONSEQUENTIAL_TYPE_FAMILIES.get(message.type);
+  if (byType !== undefined) return byType;
+  const entry = CONSEQUENTIAL_ACTION_FAMILIES.get(message.type);
+  if (entry !== undefined && typeof message.action === "string" && entry.actions.has(message.action)) return entry.family;
+  return undefined;
+}
+
+/**
  * Stage 34: money-moving economy actions. Their reply says "economy.result" only after the change is saved. Until then
  * the reply is "economy.error" with economy_not_saved or economy_outcome_unknown, and the retry uses the same request ID.
  */
@@ -399,13 +435,16 @@ const ECONOMY_MONEY_ACTIONS: ReadonlySet<string> = new Set([
 /** Replay records kept in memory (not saved) for unconfirmed or recently confirmed money requests. */
 const MAX_PENDING_MONEY_REPLIES = 256;
 
+/** Stage 37: the families whose changing actions reply only after their save. */
+type ConsequentialFamily = "justice" | "police" | "military" | "crime" | "relationship" | "family" | "rest";
+
 /**
  * A money change whose reply waits for its save (Stage 34). `generation` is the changeGeneration that holds the change.
  * Kept only in memory: a restart keeps a change only if its save succeeded, and then the request ID is saved with it.
  * Used for every changing family (Stage 34). A change is answered only after a save covers it.
  */
 type PendingMoneyReply =
-  | { kind: "economy" | "business" | "education" | "career" | "property"; generation: number; reply: Record<string, unknown>; delivered: boolean; fingerprint?: string }
+  | { kind: "economy" | "business" | "education" | "career" | "property" | ConsequentialFamily; generation: number; reply: Record<string, unknown>; delivered: boolean; fingerprint?: string; afterConfirm?: () => void }
   | { kind: "snapshot"; generation: number; family: MoneyFamily; delivered: boolean };
 
 /**
@@ -435,17 +474,37 @@ const SAVE_OUTCOME_MESSAGES: Readonly<Record<string, string>> = {
   career_persistence_unavailable: "Saving is failing, so career changes are paused. Nothing was changed.",
   career_not_saved: "The career change could not be saved, so it is not confirmed. Retry with the same request ID; it will not be applied twice.",
   career_outcome_unknown: "The career change may or may not have been saved, so it is not confirmed. Retry with the same request ID; it will not be applied twice.",
+  justice_persistence_unavailable: "Saving is failing, so justice changes are paused. Nothing was changed.",
+  justice_not_saved: "The justice change could not be saved, so it is not confirmed. Retry with the same request ID; it will not be applied twice.",
+  justice_outcome_unknown: "The justice change may or may not have been saved, so it is not confirmed. Retry with the same request ID; it will not be applied twice.",
+  police_persistence_unavailable: "Saving is failing, so police changes are paused. Nothing was changed.",
+  police_not_saved: "The police change could not be saved, so it is not confirmed. Retry with the same request ID; it will not be applied twice.",
+  police_outcome_unknown: "The police change may or may not have been saved, so it is not confirmed. Retry with the same request ID; it will not be applied twice.",
+  military_persistence_unavailable: "Saving is failing, so military changes are paused. Nothing was changed.",
+  military_not_saved: "The military change could not be saved, so it is not confirmed. Retry with the same request ID; it will not be applied twice.",
+  military_outcome_unknown: "The military change may or may not have been saved, so it is not confirmed. Retry with the same request ID; it will not be applied twice.",
+  crime_persistence_unavailable: "Saving is failing, so crime changes are paused. Nothing was changed.",
+  crime_not_saved: "The crime change could not be saved, so it is not confirmed. Retry with the same request ID; it will not be applied twice.",
+  crime_outcome_unknown: "The crime change may or may not have been saved, so it is not confirmed. Retry with the same request ID; it will not be applied twice.",
+  relationship_persistence_unavailable: "Saving is failing, so relationship changes are paused. Nothing was changed.",
+  relationship_not_saved: "The relationship change could not be saved, so it is not confirmed. Retry with the same request ID; it will not be applied twice.",
+  relationship_outcome_unknown: "The relationship change may or may not have been saved, so it is not confirmed. Retry with the same request ID; it will not be applied twice.",
+  family_persistence_unavailable: "Saving is failing, so family changes are paused. Nothing was changed.",
+  family_not_saved: "The family change could not be saved, so it is not confirmed. Retry with the same request ID; it will not be applied twice.",
+  family_outcome_unknown: "The family change may or may not have been saved, so it is not confirmed. Retry with the same request ID; it will not be applied twice.",
+  rest_persistence_unavailable: "Saving is failing, so resting is paused. Nothing was changed.",
 };
 
 /**
  * Player charges whose confirmation is the character snapshot carrying the request ID (Stage 34). The family names the
  * error codes (`<family>_not_saved`, `<family>_outcome_unknown`, `<family>_persistence_unavailable`) and the wording.
  */
-type MoneyFamily = "shop" | "bus" | "clinic";
+type MoneyFamily = "shop" | "bus" | "clinic" | "rest";
 const MONEY_FAMILY_TEXT: Readonly<Record<MoneyFamily, string>> = {
   shop: "The purchase",
   bus: "The bus fare",
   clinic: "The clinic charge",
+  rest: "The rest",
 };
 
 /** Refuses a new money change while saving is failing, before anything changes (Stage 34). */
@@ -473,9 +532,9 @@ function newInFlightRequest(): InFlightRequest {
   return { released, release: () => release() };
 }
 
-/** Requests whose ID is recorded durably: the money commands, and property changes (Stage 36). */
+/** Requests whose ID is recorded durably: the money commands, property changes (Stage 36), and the Stage 37 consequential families. */
 function isTrackedRequest(message: Record<string, unknown> & { type: string }): boolean {
-  return IDEMPOTENT_COMMANDS.has(message.type) || message.type === "property.action";
+  return IDEMPOTENT_COMMANDS.has(message.type) || message.type === "property.action" || consequentialFamilyOf(message) !== undefined;
 }
 
 /** The request body that a fingerprint covers: the message without its type and request ID. */
@@ -1311,7 +1370,7 @@ export class MultiplayerWorld {
     requestId: string | undefined,
     now: number,
   ): Promise<void> {
-    if (IDEMPOTENT_COMMANDS.has(message.type)) {
+    if (IDEMPOTENT_COMMANDS.has(message.type) || consequentialFamilyOf(message) !== undefined) {
       if (requestId === undefined) {
         this.sendError(context, "request_id_required", "This action requires a unique request ID.");
         return;
@@ -1344,6 +1403,14 @@ export class MultiplayerWorld {
         }
         this.send(context, { type: "command.duplicate", requestId });
         this.sendCharacterSnapshot(context, requestId);
+        return;
+      }
+      // Stage 37: a new change in a consequential family starts only while saving works (as for money, Stage 33).
+      // Nothing is changed or recorded when it is refused, and a retry with the same request ID is then a new request.
+      const family = consequentialFamilyOf(message);
+      if (family !== undefined && !this.financialWritesOpen()) {
+        const code = `${family}_persistence_unavailable`;
+        this.sendError(context, code, SAVE_OUTCOME_MESSAGES[code] ?? "Saving is failing, so this change is paused. Nothing was changed.", requestId);
         return;
       }
     }
@@ -1995,6 +2062,10 @@ export class MultiplayerWorld {
   }
 
   private async rest(context: ConnectionContext, player: PersistentPlayer, requestId?: string): Promise<void> {
+    if (requestId === undefined) {
+      this.sendError(context, "request_id_required", "This action requires a unique request ID.");
+      return;
+    }
     if (player.character.current_location !== "home" ||
       distance(player.character.position, { x: 440, y: 350 }) > ENTITY_INTERACTION_RADIUS) {
       this.sendError(context, "interaction_out_of_range", "Rest at your bed at home.", requestId);
@@ -2005,8 +2076,8 @@ export class MultiplayerWorld {
     player.character.hunger = clamp(player.character.hunger - 18, 0, 100);
     player.character.health = clamp(player.character.health + 5, 0, 100);
     this.touchPlayer(player);
-    this.sendCharacterSnapshot(context, requestId);
-    await this.flushDirty();
+    // Stage 37: the rest is confirmed only once its save succeeds (it was replied before the save).
+    await this.chargeAndConfirm(context, requestId, "rest", player);
   }
 
   private beginLesson(context: ConnectionContext, player: PersistentPlayer, requestId?: string, preferFinalExam = false): void {
@@ -3890,11 +3961,9 @@ export class MultiplayerWorld {
 
     this.markRequestProcessed(player, requestId);
     if (!["search_laws", "active_laws", "list_courts", "view_court", "my_cases", "view_case", "my_fines", "legal_profile"].includes(action)) this.touchPlayer(player);
-    this.send(context, appendOptionalRequestId({
+    await this.answerFamilyReply(context, player, message, requestId, "justice", {
       type: "justice.result", action, ok: true, message: messageText, data: responseData,
-    }, requestId));
-    this.sendCharacterSnapshot(context);
-    await this.flushDirty();
+    });
   }
 
   private async policeAction(
@@ -4205,11 +4274,9 @@ export class MultiplayerWorld {
 
     this.markRequestProcessed(player, requestId);
     if (!["list_stations", "view_station", "list_officers", "list_incidents", "view_incident", "list_investigations", "list_wanted", "list_arrests", "list_complaints", "police_profile"].includes(action)) this.touchPlayer(player);
-    this.send(context, appendOptionalRequestId({
+    await this.answerFamilyReply(context, player, message, requestId, "police", {
       type: "police.result", action, ok: true, message: messageText, data: responseData,
-    }, requestId));
-    this.sendCharacterSnapshot(context);
-    await this.flushDirty();
+    });
   }
 
   private async militaryAction(
@@ -4391,6 +4458,10 @@ export class MultiplayerWorld {
           const endDate = typeof data.end_date === "string" ? data.end_date : "";
           const reason = typeof data.reason === "string" ? data.reason : "";
           if (!serviceId || !startDate || !endDate) throw new Error("military_leave_not_found");
+          // Stage 37: leave is requested only on the caller's own service record. Another character's record is
+          // reported as not found, the same as a missing one.
+          const ownRecord = militaryService.getServiceRecord(serviceId);
+          if (!ownRecord || ownRecord.character_id !== player.character.character_id) throw new Error("military_service_not_found");
           const l = militaryService.requestLeave({
             service_id: serviceId, leave_type: leaveType,
             start_date: startDate, end_date: endDate, reason,
@@ -4486,11 +4557,9 @@ export class MultiplayerWorld {
 
     this.markRequestProcessed(player, requestId);
     if (!["list_branches", "list_organizations", "view_organization", "list_bases", "view_base", "list_units", "list_training", "list_assets", "list_security_events", "list_disciplinary_cases", "military_profile", "service_profile", "rank_history"].includes(action)) this.touchPlayer(player);
-    this.send(context, appendOptionalRequestId({
+    await this.answerFamilyReply(context, player, message, requestId, "military", {
       type: "military.result", action, ok: true, message: messageText, data: responseData,
-    }, requestId));
-    this.sendCharacterSnapshot(context);
-    await this.flushDirty();
+    });
   }
 
   private async crimeAction(
@@ -4690,11 +4759,9 @@ export class MultiplayerWorld {
 
     this.markRequestProcessed(player, requestId);
     if (!["list_crime_definitions", "list_categories", "view_incident", "list_incidents", "criminal_profile", "list_criminal_records", "notoriety"].includes(action)) this.touchPlayer(player);
-    this.send(context, appendOptionalRequestId({
+    await this.answerFamilyReply(context, player, message, requestId, "crime", {
       type: "crime.result", action, ok: true, message: messageText, data: responseData,
-    }, requestId));
-    this.sendCharacterSnapshot(context);
-    await this.flushDirty();
+    });
   }
 
   private async cultureAction(
@@ -5352,6 +5419,10 @@ export class MultiplayerWorld {
     message: Record<string, unknown>,
     requestId?: string,
   ): Promise<void> {
+    if (requestId === undefined) {
+      this.sendError(context, "request_id_required", "This action requires a unique request ID.");
+      return;
+    }
     const targetCharacterId = message.targetCharacterId;
     if (typeof targetCharacterId !== "string" || targetCharacterId.length > 96) {
       this.sendError(context, "relationship_target_invalid", "Select another character first.", requestId);
@@ -5387,11 +5458,12 @@ export class MultiplayerWorld {
       targetCharacterId,
       ...(result.marriage ? { marriageId: result.marriage.marriage_id } : {}),
     }, requestId);
-    this.send(context, payload);
-    if (targetEntry.context !== context) this.send(targetEntry.context, payload);
-    this.sendCharacterSnapshot(context);
-    this.sendCharacterSnapshot(targetEntry.context);
-    await this.flushDirty();
+    // Stage 37: the reply and the partner's notice are sent only once the change is saved.
+    const notifyPartner = (): void => {
+      if (targetEntry.context !== context) this.send(targetEntry.context, payload);
+      this.sendCharacterSnapshot(targetEntry.context);
+    };
+    await this.replyAfterSave(context, actor, requestId, "relationship", payload, notifyPartner);
   }
 
   private async recordChildbirth(
@@ -5400,6 +5472,10 @@ export class MultiplayerWorld {
     message: Record<string, unknown>,
     requestId?: string,
   ): Promise<void> {
+    if (requestId === undefined) {
+      this.sendError(context, "request_id_required", "This action requires a unique request ID.");
+      return;
+    }
     const parentId = parent.character.character_id;
     const marriage = Object.values(this.store.state.marriages).find((entry) =>
       entry.status === "active" && entry.spouse_ids.includes(parentId) &&
@@ -5440,16 +5516,22 @@ export class MultiplayerWorld {
     }, requestId);
     for (const spouseId of marriage.spouse_ids) {
       const spouse = Object.values(this.store.state.players).find((entry) => entry.character.character_id === spouseId);
-      if (!spouse) continue;
-      this.touchPlayer(spouse);
-      const spouseContext = this.online.get(spouse.playerId);
-      if (spouseContext) {
-        this.send(spouseContext, payload);
-        this.sendCharacterSnapshot(spouseContext);
-      }
+      if (spouse) this.touchPlayer(spouse);
     }
-    if (!this.online.has(parent.playerId)) this.send(context, payload);
-    await this.flushDirty();
+    // Stage 37: the parent's reply and the spouses' notices are sent only once the birth is saved.
+    const notifySpouses = (): void => {
+      for (const spouseId of marriage.spouse_ids) {
+        const spouse = Object.values(this.store.state.players).find((entry) => entry.character.character_id === spouseId);
+        // The parent receives the reply itself.
+        if (!spouse || spouse.playerId === parent.playerId) continue;
+        const spouseContext = this.online.get(spouse.playerId);
+        if (spouseContext) {
+          this.send(spouseContext, payload);
+          this.sendCharacterSnapshot(spouseContext);
+        }
+      }
+    };
+    await this.replyAfterSave(context, parent, requestId, "family", payload, notifySpouses);
   }
 
   private advanceWorldMilliseconds(milliseconds: number, now: number): void {
@@ -5838,9 +5920,11 @@ export class MultiplayerWorld {
       } else {
         const code = `${pending.family}_${unknown ? "outcome_unknown" : "not_saved"}`;
         const what = MONEY_FAMILY_TEXT[pending.family];
+        // A rest changes no money, so its retry wording does not mention a charge.
+        const effect = pending.family === "rest" ? "applied" : "charged";
         this.sendError(context, code, unknown
-          ? `${what} may or may not have been saved, so it is not confirmed. Retry with the same request ID; it will not be charged twice.`
-          : `${what} could not be saved, so it is not confirmed. Retry with the same request ID; it will not be charged twice.`,
+          ? `${what} may or may not have been saved, so it is not confirmed. Retry with the same request ID; it will not be ${effect} twice.`
+          : `${what} could not be saved, so it is not confirmed. Retry with the same request ID; it will not be ${effect} twice.`,
         requestId);
       }
       return;
@@ -5865,6 +5949,8 @@ export class MultiplayerWorld {
         : pending.reply;
       this.send(context, appendOptionalRequestId(reply, requestId));
       this.sendCharacterSnapshot(context);
+      // Stage 37: effects on other players (a partner's or spouse's notice) are sent only once the change is saved.
+      pending.afterConfirm?.();
     } else {
       this.sendCharacterSnapshot(context, requestId);
     }
@@ -5872,8 +5958,51 @@ export class MultiplayerWorld {
   }
 
   /**
-   * Charges a player's cash (shop, bus, clinic) and confirms it with the character snapshot carrying the request ID,
-   * only once the change is saved (Stage 34). Callers have validated the request and checked the write gate.
+   * Stage 37: answers a changing request of a consequential family once its change is saved. A read-only action of the
+   * same family keeps its immediate reply and flush.
+   */
+  private async answerFamilyReply(
+    context: ConnectionContext,
+    player: PersistentPlayer,
+    message: Record<string, unknown>,
+    requestId: string | undefined,
+    family: ConsequentialFamily,
+    reply: Record<string, unknown>,
+  ): Promise<void> {
+    if (requestId !== undefined && consequentialFamilyOf(message) !== undefined) {
+      await this.replyAfterSave(context, player, requestId, family, reply);
+      return;
+    }
+    this.send(context, appendOptionalRequestId(reply, requestId));
+    this.sendCharacterSnapshot(context);
+    await this.flushDirty();
+  }
+
+  /**
+   * Stage 37: the reply for a changing consequential request, sent only after its save succeeds (through the same
+   * confirmMoneyReply path as Stage 34). afterConfirm sends any notice to another player, once the change is saved.
+   */
+  private async replyAfterSave(
+    context: ConnectionContext,
+    player: PersistentPlayer,
+    requestId: string,
+    family: ConsequentialFamily,
+    reply: Record<string, unknown>,
+    afterConfirm?: () => void,
+  ): Promise<void> {
+    this.changeGeneration += 1;
+    const key = moneyReplyKey(player, requestId);
+    const pending: PendingMoneyReply = {
+      kind: family, generation: this.changeGeneration, reply, delivered: false,
+      ...(afterConfirm !== undefined ? { afterConfirm } : {}),
+    };
+    this.pendingMoneyReplies.set(key, pending);
+    await this.confirmMoneyReply(context, key, requestId, pending, false);
+  }
+
+  /**
+   * Confirms a change whose reply waits for its save (Stage 34): a cash charge (shop, bus, clinic) or a rest (Stage 37),
+   * replied with the character snapshot carrying the request ID. Callers have validated the request and checked the write gate.
    */
   private async chargeAndConfirm(
     context: ConnectionContext,

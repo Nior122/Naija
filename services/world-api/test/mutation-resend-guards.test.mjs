@@ -2,7 +2,8 @@
 // Commands listed in IDEMPOTENT_COMMANDS (world-engine.ts) are deduplicated by the engine. Changing property actions
 // are deduplicated by the propertyAction gate instead (Stage 35): a re-sent purchase is answered with command.duplicate
 // and is not charged again (the purchase test below asserts that). Tests marked "gap" assert the current, unfixed behaviour so the gap stays visible; they are not
-// evidence that the behaviour is correct.
+// evidence that the behaviour is correct. Stage 37 closed the file_case gap: its test now asserts the fixed behaviour
+// (one case, command.duplicate). The "gap" wording is kept only for tests that still document an open gap.
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { after, afterEach, before, test } from "node:test";
@@ -87,7 +88,7 @@ for (const backendName of backendNames) {
     assert.equal(cashBalance(backend, characterId), afterFirst, "the re-sent purchase must not charge again");
   });
 
-  test(`${backendName}: justice file_case re-sent with the same requestId files a second case (gap, current behaviour)`, async () => {
+  test(`${backendName}: justice file_case re-sent with the same requestId files one case and reports command.duplicate (Stage 37)`, async () => {
     const { backend, peer } = await session(backendName);
     const identity = await createIdentity(peer, "Filer");
     await resumeSession(peer, identity.sessionToken);
@@ -104,12 +105,13 @@ for (const backendName of backendNames) {
     };
     const first = await ask(peer, filing, ["justice.result", "justice.error"]);
     assert.equal(first.type, "justice.result", first.code);
-    const resent = await ask(peer, filing, ["justice.result", "justice.error"]);
-    assert.equal(resent.type, "justice.result", resent.code);
+    // Stage 37: the first request is saved and recorded, so the re-sent copy is a duplicate, as for every idempotent command.
+    const resent = await ask(peer, filing, ["command.duplicate", "justice.result", "justice.error"]);
+    assert.equal(resent.type, "command.duplicate", resent.code);
 
     const mine = await ask(peer, { type: "justice.action", action: "my_cases", requestId: "guard-my-cases" }, ["justice.result", "justice.error"]);
     const cases = mine.data?.cases ?? [];
-    assert.equal(cases.length, 2, "current code does not deduplicate file_case on requestId");
+    assert.equal(cases.length, 1, "the re-sent file_case must not file a second case");
   });
 
   test(`${backendName}: government create_budget re-sent with the same requestId is refused while government writes are suspended`, async () => {

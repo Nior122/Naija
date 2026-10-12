@@ -1048,6 +1048,9 @@ export class MilitaryService {
 export function militaryErrorMessage(code: string): string {
   const messages: Record<string, string> = {
     military_enlistment_suspended: "Enlistment is suspended until military authority rules are in place.",
+    military_asset_creation_suspended: "Asset records are suspended until military authority rules are in place.",
+    military_security_event_suspended: "Security event records are suspended until military authority rules are in place.",
+    military_disciplinary_suspended: "Disciplinary cases are suspended until military authority rules are in place.",
     military_training_suspended: "Military training is suspended until military authority rules are in place.",
     military_promotion_suspended: "Promotions are suspended until military authority rules are in place.",
     military_appointment_suspended: "Command appointments are suspended until military authority rules are in place.",

@@ -600,6 +600,9 @@ export class CrimeService {
 export function crimeErrorMessage(code: string): string {
   const messages: Record<string, string> = {
     crime_definition_not_found: "Crime type not found.",
+    crime_incident_transition_suspended: "Changing incident status is suspended until crime authority rules are in place.",
+    crime_evidence_suspended: "Adding evidence to incidents is suspended until crime authority rules are in place.",
+    crime_restitution_suspended: "Restitution orders are suspended until judicial authority rules are in place.",
     crime_link_suspended: "Linking incidents to cases or police records is suspended until ownership and authority are checked.",
     crime_record_creation_suspended: "Criminal records cannot be created by players until a conviction can be linked to a final judgment.",
     crime_age_ineligible: "Character does not meet minimum age requirement.",

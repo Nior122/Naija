@@ -145,3 +145,9 @@ CI-like local runs 1 to 3 are described in section 3.
 - R5 notify-once is still open.
 - A queued record that conflicts with an existing record (the same player and request ID) makes that save fail, closed, on every attempt. The current protocol does not produce this case (a repeated ID is answered from memory or the record, not queued again), and no test covers it. It should get a test, or a defined recovery, before multi-writer use is extended.
 - The business and organisation payment work, and the treasury allocation timing decision from Stage 35, are unchanged.
+
+## Stage 37 update
+
+- `character.rest` no longer replies before its save. Stage 37 confirms it after the save (section 7 of `docs/STAGE_37_CONSEQUENTIAL_MUTATION_SAFETY.md`). The statement that it "answers before its save" was true for Stage 36 only.
+- The `file_case` duplicate that Stage 36 did not cover is now deduplicated (Stage 37). The justice, police, military, and crime changing actions are gated the same way.
+- R5 is still open (Stage 37 section 8). The two older CI failures are still unexplained (Stage 37 section 9).

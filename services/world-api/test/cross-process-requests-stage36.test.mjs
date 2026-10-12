@@ -286,8 +286,8 @@ test("Stage 36 cross-process: a request committed by one process is a duplicate 
   current.peer.send({ type: "character.rest", requestId: "rest-1" });
   const applied = await current.peer.waitFor((message) => message.requestId === "rest-1" && (message.type === "character.snapshot" || message.type === "error"), 20_000);
   assert.equal(applied.type, "character.snapshot", JSON.stringify(applied));
-  // character.rest answers before its save (existing behaviour, recorded in the Stage 36 doc). The retry must wait for
-  // the save, or it would correctly find no record yet.
+  // character.rest was answered before its save in Stage 36; Stage 37 confirms it only after the save. The wait for the
+  // save is kept, so the retry does not race the first request's save.
   await settled(worldKey);
   stale.peer.send({ type: "character.rest", requestId: "rest-1" });
   const restDuplicate = await stale.peer.waitFor((message) => message.requestId === "rest-1" && (message.type === "command.duplicate" || message.type === "error"), 20_000);
@@ -507,4 +507,75 @@ test("Stage 36 store: records are kept for 90 days, pruned during a save, and a 
     await database.query("DELETE FROM world_operations WHERE world_key = $1", [worldKey]);
     await database.query("DELETE FROM world_state WHERE key = $1", [worldKey]);
   }
+});
+
+// ---------------------------------------------------------------- Stage 37: consequential families across processes
+
+/** Waits for a reply that matches; on timeout, the error names the step and shows the last messages the peer received. */
+function replyWithin(peer, label, predicate, timeoutMs = 20_000) {
+  return peer.waitFor(predicate, timeoutMs).catch((error) => {
+    throw new Error(`${label}: ${error.message}; last messages: ${JSON.stringify(peer.messages.slice(-6))}`);
+  });
+}
+
+test("Stage 37 cross-process: a justice filing sent to a stale and a current process at once is filed once; the stale copy never reports a filing", live_, async () => {
+  const { worldKey, buyers } = await seedWorld();
+  const stale = await activate(worldKey, buyers.a);
+  const current = await activate(worldKey, buyers.a);
+
+  stale.peer.send({ type: "justice.action", action: "list_courts", requestId: "s37-courts" });
+  const courts = await stale.peer.waitFor((message) => message.requestId === "s37-courts" && message.type === "justice.result", 20_000);
+  const court = courts.data.courts.find((entry) => entry.court_id === "court:federal-high" && entry.status === "active");
+  assert.ok(court, "premise: the seeded world has an active Federal High Court");
+
+  const filing = {
+    type: "justice.action", action: "file_case", requestId: "s37-race-1", category: "civil_general",
+    court_id: court.court_id, summary: "S37 race", description: "Two processes",
+  };
+  stale.peer.send(filing);
+  current.peer.send(filing);
+  // Any reply carrying this request ID. A refused write may be a justice.error or the shared error reply (type "error",
+  // as the persistence gate sends it), so the type is checked below, not by the wait.
+  const reply = (peer, label) => replyWithin(peer, label, (message) => message.requestId === "s37-race-1");
+  const [staleReply, currentReply] = await Promise.all([reply(stale.peer, "stale"), reply(current.peer, "current")]);
+
+  assert.equal(currentReply.type, "justice.result", JSON.stringify(currentReply));
+  assert.ok(
+    staleReply.type === "command.duplicate"
+      || (staleReply.type === "justice.error" && /^justice_(not_saved|outcome_unknown)$/.test(staleReply.code))
+      || (staleReply.type === "error" && staleReply.code === "justice_persistence_unavailable"),
+    `the stale copy is a duplicate or a refused write, never a second filing: ${JSON.stringify(staleReply)}`,
+  );
+  const after = await settled(worldKey);
+  const filed = Object.values(after.state.cases).filter((entry) => entry.summary === "S37 race");
+  assert.equal(filed.length, 1, "one case is in the saved world");
+  assert.deepEqual(await recordsOf(worldKey), ["s37-race-1:justice.action"]);
+});
+
+test("Stage 37 cross-process: a stale process's rest is never confirmed; a current process applies the same request once", live_, async () => {
+  const { worldKey, buyers } = await seedWorld();
+  const stale = await activate(worldKey, buyers.a);
+  const current = await activate(worldKey, buyers.a);
+  const start = await settled(worldKey);
+  const hungerBefore = start.state.players[buyers.a.playerId].character.hunger;
+  // Rest lowers hunger by 18, clamped at 0. The premise keeps the drop visible: a second application would show as 36.
+  assert.ok(hungerBefore >= 40, `premise: hunger ${hungerBefore} leaves room to see a second application`);
+
+  stale.peer.send({ type: "character.rest", requestId: "s37-stale-rest" });
+  const refused = await stale.peer.waitFor((message) => message.requestId === "s37-stale-rest" && (
+    message.type === "error" || message.type === "character.snapshot" || message.type === "command.duplicate"), 20_000);
+  assert.ok(
+    refused.type === "error" && /^rest_(not_saved|outcome_unknown|persistence_unavailable)$/.test(refused.code),
+    `a stale process does not confirm a rest it could not save: ${JSON.stringify(refused)}`,
+  );
+  const midway = await settled(worldKey);
+  assert.equal(midway.state.players[buyers.a.playerId].character.hunger, hungerBefore, "the refused rest is absent from storage");
+
+  current.peer.send({ type: "character.rest", requestId: "s37-stale-rest" });
+  const applied = await current.peer.waitFor((message) => message.requestId === "s37-stale-rest" && (
+    message.type === "character.snapshot" || message.type === "error"), 20_000);
+  assert.equal(applied.type, "character.snapshot", JSON.stringify(applied));
+  const after = await settled(worldKey);
+  assert.equal(after.state.players[buyers.a.playerId].character.hunger, Math.max(0, hungerBefore - 18), "the rest is applied once");
+  assert.deepEqual((await recordsOf(worldKey)).filter((row) => row.startsWith("s37-stale-rest")), ["s37-stale-rest:character.rest"]);
 });
