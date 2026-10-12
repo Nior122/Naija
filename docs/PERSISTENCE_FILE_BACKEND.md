@@ -34,8 +34,15 @@ This document is the operating contract for `PERSISTENCE_BACKEND=file`. It was w
 
 ## 3. The lock: how it works
 
-- The lock is held by a small holder process (`/bin/sh` running `flock -n`, then `cat`, which waits on a pipe from the
-  server). Node has no `flock` binding, so the holder is the mechanism.
+- The lock is held by a small holder process (`/bin/sh` with the world file's **directory** open on descriptor 9, running
+  `flock -n 9`, then `cat`, which waits on a pipe from the server). Node has no `flock` binding, so the holder is the
+  mechanism.
+- **One directory, one file-backend writer.** The lock is on the directory, not on the lock file, so a process that
+  replaces the lock file cannot admit a second writer. The cost: two world files in one directory cannot be served at
+  once. The second start is refused with `world_file_locked`. Give each world file its own directory.
+- The lock file `<world>.lock` is the record (pid and token) and the fence. The owner checks it before each save and again
+  immediately before the rename. The owner keeps the lock file open while it holds the lock, so the inode cannot be reused
+  while the check runs.
 - The kernel releases the lock when the holder exits for any reason, including a SIGKILL of the server. A dead holder
   frees the lock at once. A restart needs no manual step.
 - A live holder blocks every other start, however old the lock record looks. Process IDs are used only to name the holder
@@ -63,10 +70,11 @@ These are limits, not bugs to be fixed quietly. Treat each as a reason to use Po
 1. **Multi-host use.** Two hosts sharing the world file over a network filesystem are not protected. `flock` semantics
    over NFS and similar filesystems are not relied on, and no test covers them. Do not run two servers that share a world
    file across hosts.
-2. **Processes that do not follow the protocol.** A person or script that removes, moves, or rewrites the lock file while a
-   server runs can defeat the lock. Replacement before the check is detected and fences the store (tested). Replacement
-   after the check and before the rename is **not** detected. That window is open. It is documented as an open race
-   (Stage 35, race 1 residual) and is not counted as passed. Do not edit lock files by hand.
+2. **Processes that do not follow the protocol.** A person or script that removes, moves, or rewrites the lock file, or that
+   writes the world file without taking the directory lock, is outside this guarantee. For a protocol-following starter,
+   replacing the lock file at any point (including between the owner's check and its rename) does not admit a second
+   writer (Stage 35, race 1; tested). The owner's next save is then fenced. Do not edit lock files by hand. Do not write
+   the world file from any other process.
 3. **Old builds.** A server built before Stage 35 wrote the lock file without `flock`. Do not run an old build against a
    world file that a Stage 35 server is using.
 4. **Restoring old snapshots.** Restoring a backup copy over the live world file is not a safe operation. A snapshot that
@@ -81,6 +89,7 @@ These are limits, not bugs to be fixed quietly. Treat each as a reason to use Po
 
 - Run one server process per world file. Do not start a second server with the same `DATA_FILE`. It will be refused with
   `world_file_locked` while the first is alive, which is the intended result. Do not work around it by deleting the lock.
+- Give each world file its own directory. Two world files in one directory cannot be served at once (section 3).
 - Stop the server with SIGTERM, not SIGKILL, so the shutdown save runs. Check the log for a
   failed shutdown save.
 - If the server was killed, starting it again is safe. The dead holder's lock is taken over. Check the world file and the
@@ -103,7 +112,9 @@ What the tests show (separate OS processes where noted):
   handling, a clean SIGTERM releasing the lock, and a fenced store refusing saves.
 - `file-writer-lock-races.test.mjs`: two starter processes racing for one stale lock (separate processes, five rounds):
   exactly one wins. A starter that tries while the owner saves is refused. Out-of-protocol replacement before the check
-  fences the store. One race-1 residual is an OPEN TODO and is not counted as passed.
+  fences the store. A lock file replaced after the check and before the rename (the "race 1, window" test) does not admit
+  a second protocol-following starter, and the owner's next save is fenced. A second world file in one directory is
+  refused. These tests fail on the code before the directory lock.
 
 Each test uses its own temporary directory.
 

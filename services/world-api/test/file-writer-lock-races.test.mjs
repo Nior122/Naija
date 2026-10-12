@@ -7,10 +7,11 @@
 // Status of each race, as the tests show (see docs/STAGE_35_PROPERTY_MUTATION_SAFETY_AND_FILE_PERSISTENCE.md section 7):
 //   - Race 2 (two starters take one stale lock): RESOLVED for protocol-following starters on one Linux host. Tested with
 //     separate processes, five rounds, below. A starter that did not take the flock cannot take the lock.
-//   - Race 1 (a lock replaced between the check and the rename): PARTLY RESOLVED. A replacement that happens before the
-//     check, or that is done by a protocol-following process while the owner holds the lock, is refused (tested). A
-//     replacement made by a process outside the protocol in the window after the check and before the rename is NOT
-//     closed. That window is an `OPEN` todo below. A todo test is reported as todo, never as a pass.
+//   - Race 1 (a lock replaced between the check and the rename): RESOLVED for protocol-following writers on one Linux
+//     host. The lock is a flock on the world file's directory, so a lock file replaced by an outside process (in any
+//     window, including after the check) does not let a second protocol writer in. Tested with a separate process in the
+//     window (the "race 1, window" test). The boundary: a process that writes the world file without the directory lock is
+//     outside the guarantee, as for race 2. Before this change this race was an OPEN todo.
 //
 // Part A is deterministic: an unreadable lock refuses only that save, and a clean SIGTERM releases the lock.
 import assert from "node:assert/strict";
@@ -167,8 +168,6 @@ test("a clean SIGTERM saves, exits 0, and removes the lock; a new start can take
 
 // ─── Part B: race 1 (a lock replaced between the check and the rename) ────────
 
-const RACE_1_RESIDUAL = "OPEN (Stage 35, race 1, residual): a lock file replaced by a process outside the protocol after the check and before the rename is not detected; the save renames. Not closed; see the Stage 35 doc section 6.";
-
 test("race 1, protocol: while the owner holds the lock, another starter cannot take it, and the lock file is not replaced", async () => {
   const file = fileInDirectory();
   await saveMinute(file, 100);
@@ -231,27 +230,62 @@ test("race 1, out-of-protocol replacement by different content before the check:
   assert.equal(store.isFenced(), true);
 });
 
-test(RACE_1_RESIDUAL, { todo: RACE_1_RESIDUAL }, async () => {
+test("race 1, window: a lock file replaced by an outside process after the check and before the rename does not admit a second writer", async () => {
   const file = fileInDirectory();
   await saveMinute(file, 100);
   const lock = lockPathOf(file);
+  let starterLine = null;
+  let starterOutput = "";
   const store = new WorldStore(file, Date.now(), {
-    // "after-lock-check" runs after the lock was checked and before the rename. A replacement in that gap is the residual.
+    // "after-lock-check" runs after the lock was checked and before the rename: the window the Stage 34 race used.
     fileWriteFaultHook: async (point) => {
       if (point !== "after-lock-check") return;
-      const token = readLock(file).token;
+      // The outside replacement: a new, empty lock file (new inode, no record), so it looks unowned to a starter.
       rmSync(lock);
-      writeFileSync(lock, recordText(process.pid, token));
+      writeFileSync(lock, "");
+      // A protocol-following starter, in a separate process, tries now. It contends for the directory lock, which the
+      // owner still holds, so it must be refused.
+      const starter = startStarter(file);
+      try {
+        await starter.ready;
+        starter.go();
+        starterLine = await starter.settle();
+        starterOutput = starter.output();
+      } finally {
+        starter.child.kill("SIGKILL");
+      }
     },
   });
   store.acquireWriterLock();
   store.state.worldClock.minute_of_day = 200;
+  await store.saveState(store.state);
+  assert.match(starterLine, /^@@ REFUSED world_file_locked /, starterOutput);
+  assert.equal(minuteIn(file), 200, "the owner, as the only protocol writer, saves");
+
+  // The replaced lock file is not the one the owner wrote, so the owner's next save is fenced: it fails closed.
+  store.state.worldClock.minute_of_day = 300;
   const error = await store.saveState(store.state).then(() => null, (failure) => failure);
-  assert.ok(error, "the save must be refused: the lock file was replaced after the check");
-  assert.equal(minuteIn(file), 100, "the file must be unchanged");
+  assert.ok(error, "after the replacement is seen, the next save is refused");
+  assert.equal(store.isFenced(), true);
+  assert.equal(minuteIn(file), 200, "the refused save changed nothing");
+  store.releaseWriterLock();
 });
 
-// ─── Part B: race 2 (two starters take one stale lock) ────────────────────────
+test("one directory, one file-backend writer: a second world file in the same directory is refused while the first is open", () => {
+  const first = fileInDirectory();
+  const second = join(dirname(first), "second-world-state.json");
+  const held = WorldFileWriterLock.acquire(first);
+  try {
+    assert.throws(() => WorldFileWriterLock.acquire(second), (error) => error instanceof WorldFileLockedError);
+  } finally {
+    held.release();
+  }
+  const next = WorldFileWriterLock.acquire(second);
+  assert.ok(next.isHeld(), "after the first is released, the second world file can be taken");
+  next.release();
+});
+
+// ─── Part C: race 2 (two starters take one stale lock) ────────────────────────
 
 test("race 2: two separate starter processes that both find the same stale lock: exactly one takes it, the other is refused, and the winner's lock is not removed (five rounds)", async () => {
   for (let round = 0; round < 5; round += 1) {

@@ -1,41 +1,50 @@
 import { randomUUID } from "node:crypto";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { mkdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { closeSync, fstatSync, mkdirSync, openSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 
 /**
  * Single-writer lock for the file backend (Stage 35; replaces the Stage 33 PID-and-token lock file).
  *
- * The lock is an operating-system advisory lock: `flock(2)` on the sidecar file `<world file>.lock`, taken and held by a
- * small holder process (`sh` running `flock -n`, then `cat`, which waits on a pipe from this server). Node has no
- * flock binding, so the holder is the mechanism. The kernel releases the lock when the holder exits for any reason,
- * including SIGKILL of the server (the pipe closes and `cat` exits). A lock is therefore "held" only while a live holder
- * holds it. Process IDs are not used to decide who holds the lock.
+ * The lock is an operating-system advisory lock: `flock(2)` on the DIRECTORY that holds the world file. It is taken and
+ * held by a small holder process (`sh` with the directory open on descriptor 9, running `flock -n 9`, then `cat`, which
+ * waits on a pipe from this server). Node has no flock binding, so the holder is the mechanism. The kernel releases the
+ * lock when the holder exits for any reason, including SIGKILL of the server (the pipe closes and `cat` exits). A lock
+ * is therefore "held" only while a live holder holds it. Process IDs are not used to decide who holds the lock.
+ *
+ * Why the directory and not the lock file: the lock file is a path, and any process can replace it (unlink and create).
+ * Before this change, a replacement in the window between the owner's check and its rename let a starter lock the new
+ * file and start a second writer. A directory is not replaced by renaming a file inside it, so a flock held on it
+ * cannot be bypassed that way. The lock file is still written: it holds the record (pid, token), and the owner's save
+ * checks it (fencing). Exclusion no longer depends on it.
+ *
+ * Consequence: one file-backend writer per directory. Two world files in one directory cannot be served at once. The
+ * second start is refused (WorldFileLockedError). Use one directory per world file.
  *
  * Protocol (every participant must follow it):
- *  1. A starter spawns a holder for the lock path. The holder opens the path, takes `flock -n` on it, and checks that the
- *     open descriptor still refers to the file currently at the path. If not, the holder reports RETRY, because the
- *     lock file was removed or replaced while it was being opened.
+ *  1. A starter spawns a holder for the world file's directory. The holder opens the directory, takes `flock -n` on it,
+ *     and checks that the open descriptor still refers to the directory at that path. If not, it reports RETRY.
  *  2. Only a holder that reports LOCKED owns the lock. A busy lock is REFUSED. Two starters cannot both get LOCKED for
- *     the same inode, so at most one of them proceeds.
- *  3. The owner rewrites the lock record (pid, token) and then saves. The lock file is removed only by the owner, and only
+ *     the same directory, so at most one of them proceeds.
+ *  3. The owner writes the lock record (pid, token) and then saves. The lock file is removed only by the owner, and only
  *     while it still holds the lock, before it releases the holder.
- *  4. Saves check, through ownsLockFile(), that the holder is alive, the record carries this writer's token, and the path
- *     still refers to the inode that was locked. The check runs immediately before the rename in WorldStore.
+ *  4. Saves check, through ownsLockFile(), that the holder is alive, the record carries this writer's token, and the lock
+ *     file still refers to the inode that was written. The check runs immediately before the rename in WorldStore. A
+ *     failed check fences the store.
  *
  * What this protects against, demonstrated by separate-process tests (test/file-writer-lock-races.test.mjs):
  *  - two server processes starting at the same time on one host: one is refused;
  *  - a live holder: a second start is refused, however old its lock record looks;
  *  - a dead holder (SIGKILL): the lock is free at once, so a restart needs no manual step;
  *  - a stale record left by a dead process: it is overwritten by the next owner;
- *  - a protocol-following starter that tries to take a lock while the owner's save is in progress: it is refused,
- *    so it cannot replace the lock file under the owner's save.
+ *  - a protocol-following starter that tries while the owner's save is in progress: it is refused;
+ *  - a lock file replaced by an outside process, including in the window between the owner's check and its rename: a
+ *    protocol-following starter is still refused, because the directory lock is what it contends for.
  *
  * What it does NOT protect against (see docs/STAGE_35_PROPERTY_MUTATION_SAFETY_AND_FILE_PERSISTENCE.md, section 6):
- *  - a process that does not follow the protocol (a manual `rm` or `mv` of the lock file, or an old build that writes
- *    the lock file without flock). A manual replacement is detected at the check before the rename, but a window of a
- *    few instructions remains between that check and the rename, and it is not closed.
- *  - two hosts sharing the world file over a network filesystem. flock semantics over NFS are not relied on here.
+ *  - a process that writes the world file without taking the directory lock. The lock is advisory: it binds the
+ *    participants that follow the protocol, not any process that writes a file.
+ *  - two hosts sharing the directory over a network filesystem. flock semantics over NFS are not relied on here.
  *  - platforms other than Linux, which refuse the file backend at startup (no flock(1), no /proc).
  *
  * The file backend is for development and tests. Production refuses it (src/persistence/open.ts). Multi-process or
@@ -93,12 +102,13 @@ const HOLDER_EXIT_TIMEOUT_MS = 2_000;
 const ACQUIRE_ATTEMPTS = 4;
 
 /**
- * The holder. `$1` is the lock path, `$2` the status file it reports to. The descriptor opened on fd 9 is inherited by
- * `cat`, so the lock is held until `cat` exits. `cat` exits when its stdin (a pipe from the server) closes.
+ * The holder. `$1` is the directory that holds the world file, `$2` the status file it reports to. The directory opened
+ * on fd 9 is inherited by `cat`, so the lock is held until `cat` exits. `cat` exits when its stdin (a pipe from the
+ * server) closes. A directory is opened read-only: `flock` works on it, and nothing is written through it.
  */
 const HOLDER_SCRIPT = [
   "umask 077",
-  'exec 9>>"$1" || { echo FAILED > "$2"; exit 1; }',
+  'exec 9<"$1" || { echo FAILED > "$2"; exit 1; }',
   'if ! flock -n 9; then echo REFUSED > "$2"; exit 1; fi',
   'if [ "$(stat -L -c %d:%i /proc/$$/fd/9 2>/dev/null)" != "$(stat -c %d:%i "$1" 2>/dev/null)" ]; then echo RETRY > "$2"; exit 1; fi',
   'echo LOCKED > "$2"',
@@ -186,10 +196,10 @@ interface StartedHolder {
   readonly outcome: HolderOutcome;
 }
 
-/** Starts a holder and waits (synchronously) for its report. A holder that reports nothing is killed and refused. */
-function startHolder(lockPath: string): StartedHolder {
-  const statusPath = `${lockPath}.${randomUUID()}.status`;
-  const child = spawn("/bin/sh", ["-c", HOLDER_SCRIPT, "naija-writer-lock", lockPath, statusPath], {
+/** Starts a holder for a directory and waits (synchronously) for its report. A holder that reports nothing is killed and refused. */
+function startHolder(lockDir: string): StartedHolder {
+  const statusPath = join(lockDir, `.naija-writer-lock-${randomUUID()}.status`);
+  const child = spawn("/bin/sh", ["-c", HOLDER_SCRIPT, "naija-writer-lock", lockDir, statusPath], {
     stdio: ["pipe", "ignore", "ignore"],
   });
   // The holder must not keep the event loop alive by itself. Its stdin pipe is the only thing that ends it.
@@ -238,6 +248,12 @@ function waitForHolderExit(pid: number): void {
 export class WorldFileWriterLock {
   private released = false;
   private inode = -1;
+  /**
+   * A descriptor on the lock file, kept open for the lock's whole life. While it is open, the inode it names cannot be
+   * freed, so no other file can get the same inode number. Comparing the path's inode with this one is therefore a real
+   * identity check. Comparing inode numbers alone is not: after an unlink, a new file can reuse the old number at once.
+   */
+  private lockFd = -1;
 
   private constructor(
     readonly lockPath: string,
@@ -253,11 +269,12 @@ export class WorldFileWriterLock {
     const problem = lockSupportProblem();
     if (problem !== null) throw new WorldFileLockUnsupportedError(problem);
     const lockPath = `${worldFilePath}.lock`;
+    const lockDir = dirname(worldFilePath);
     // A fresh deployment has no data directory yet. The lock is taken before the first save, so create it here.
-    mkdirSync(dirname(worldFilePath), { recursive: true });
+    mkdirSync(lockDir, { recursive: true });
     for (let attempt = 0; attempt < ACQUIRE_ATTEMPTS; attempt += 1) {
-      const started = startHolder(lockPath);
-      if (started.outcome === "RETRY") continue; // The lock file was replaced while the holder was opening it.
+      const started = startHolder(lockDir);
+      if (started.outcome === "RETRY") continue; // The directory was replaced while the holder was opening it.
       if (started.outcome === "REFUSED") {
         // The holder exited. Another live holder has the lock. Report its pid when the record names one.
         const existing = readLockFile(lockPath);
@@ -281,7 +298,8 @@ export class WorldFileWriterLock {
           flag: "w",
           mode: 0o600,
         });
-        lock.inode = statSync(lockPath).ino;
+        lock.lockFd = openSync(lockPath, "r");
+        lock.inode = fstatSync(lock.lockFd).ino;
         return lock;
       } catch (error) {
         lock.abandon();
@@ -293,8 +311,9 @@ export class WorldFileWriterLock {
 
   /**
    * True while this writer still owns the lock: the holder is running, the record carries this writer's token, and the
-   * path still refers to the locked inode. A missing or foreign lock is not held. A read error is thrown, so the save is
-   * refused for that save only (not fenced).
+   * lock file is still the inode that was written. A missing or foreign record is not held. A read error is thrown, so
+   * the save is refused for that save only (not fenced). Exclusion comes from the directory lock held by the holder;
+   * this check is the record's fence.
    */
   isHeld(): boolean {
     if (this.released) return false;
@@ -306,6 +325,7 @@ export class WorldFileWriterLock {
     const current = readLockFile(this.lockPath);
     if (current === null || !("record" in current) || current.record.token !== this.token) return false;
     try {
+      // The descriptor pins the locked inode, so an equal inode number means the same file (see lockFd).
       return statSync(this.lockPath).ino === this.inode;
     } catch (error) {
       if (isErrorWithCode(error, "ENOENT")) return false;
@@ -337,6 +357,14 @@ export class WorldFileWriterLock {
     const pid = this.holder.pid;
     endHolder(this.holder);
     if (pid !== undefined) waitForHolderExit(pid);
+    if (this.lockFd !== -1) {
+      try {
+        closeSync(this.lockFd);
+      } catch {
+        // Already closed.
+      }
+      this.lockFd = -1;
+    }
   }
 }
 

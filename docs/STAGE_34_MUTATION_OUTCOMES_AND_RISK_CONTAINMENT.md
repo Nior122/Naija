@@ -185,6 +185,8 @@ pass unchanged.
 
 ### 5.1 Race 1: lock replaced between the token check and the rename
 
+> Status update (Stage 35): race 1 is resolved for protocol-following writers on one Linux host, by a directory lock. See `docs/STAGE_35_PROPERTY_MUTATION_SAFETY_AND_FILE_PERSISTENCE.md`, section 7. The text below is the Stage 34 record.
+
 - **Status: reproduced, OPEN.** `test/file-writer-lock-races.test.mjs`, race 1, marked `todo`. Result: the save renames
   after the lock has been replaced by a token this writer does not hold. The expected refusal does not happen.
 - **Why it is open**: the token check and the rename are two system calls. Node's `fs` API has no atomic

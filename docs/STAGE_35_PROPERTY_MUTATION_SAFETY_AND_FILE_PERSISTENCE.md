@@ -12,8 +12,16 @@ Production runs on PostgreSQL. The file backend is for development and tests (se
     Its CI run `38194580584` succeeded.
   - `ed06f27`: the follow-up commit (closes stale property listings; the socket tests for the property actions, `pay_rent`,
     and the treasury allocation). Its CI run `38196077165` succeeded.
-  - The commit that adds this section is documentation only. A file cannot record its own hash, so it is in
-    `git log arena/00cdea0e-naija` and in the final report.
+  - `825e0e8`: documentation only (commit hashes in section 1). Its CI run `38196196114` FAILED in the live PostgreSQL
+    job. The job log could not be downloaded, and the run could not be re-run.
+  - `c71964b`: makes the news-report test deterministic (`Math.random` fixed for the test) and records the final results.
+    Its CI run `38196966222` FAILED in the same job, so the failure is not explained by that test.
+  - `cbcd72e`: raises the explicit WebSocket wait budgets from 5 s to 20 s in 31 test files and in the harness default.
+    No expected value changed. Its CI run `38198636400` SUCCEEDED in both jobs. That is one passing run, not proof of the
+    cause.
+  - The commit that makes the lock a directory lock (race 1) and records the result in sections 6, 7, 9 and 10 comes
+    after `cbcd72e`. Its hash is in `git log arena/00cdea0e-naija` and in the final report, since a file cannot record its
+    own hash.
 
 ## 2. Property actions: audit table
 
@@ -154,42 +162,56 @@ Concurrency.
 
 ## 6. File-backend decision and rationale
 
-Decision: Option A, an OS advisory lock, adopted for the file backend's single-writer lock. Option B's restriction is also
-enforced: production refuses the file backend, unsupported platforms refuse startup, and the operating contract limits use
-to one process per world file. Multi-host and multi-process use are not supported and are not claimed (see
-`docs/PERSISTENCE_FILE_BACKEND.md`).
+Decision: Option A, an OS advisory lock. It is now taken on the world file's **directory**, not on the lock file. Option B's
+restriction is also enforced: production refuses the file backend, unsupported platforms refuse startup, and the
+operating contract limits use to one process per world file, and one world file per directory. Multi-host and
+multi-process use are not supported and are not claimed (see `docs/PERSISTENCE_FILE_BACKEND.md`).
 
-Why Option A, and why only partly.
+How the lock works.
 
-- Node has no `flock` binding. The lock is taken by a small holder (`/bin/sh` running `flock -n`, then `cat` as a pipe
-  guard). The kernel releases the lock when the holder exits, including on SIGKILL of the server. A dead holder frees the
-  lock without any PID check, so PID reuse cannot keep a lock alive or let a second writer in.
-- The Stage 33 design used a PID and token in a file. Stage 34 and the Stage 35 root-cause analysis showed two gaps: a
-  lock file replaced between the check and the rename, and two starters taking one stale lock. A file's contents cannot
-  close either gap by themselves, because the file can be replaced.
-- A kernel sanity check in `/tmp/flk` (scratch, not in the repo) confirmed that a second holder is refused while the first
-  holds the lock, and that SIGKILL releases it. This is evidence about the kernel, not about the code. The code is
-  evidenced by the tests in section 7.
-- The lock does not close race 1 completely. The residual is documented as OPEN and is not counted as passed.
+- Node has no `flock` binding. A small holder (`/bin/sh`, with the world file's directory open on descriptor 9) runs
+  `flock -n 9`, then `cat`, which waits on a pipe from the server. The kernel releases the lock when the holder exits for
+  any reason, including a SIGKILL of the server. A dead holder frees the lock without any PID check.
+- The lock file `<world>.lock` is the record (pid, token) and the fence. The owner checks it before each save and again
+  immediately before the rename. It is not what excludes a second starter.
+- The owner keeps a descriptor open on the lock file for as long as it holds the lock. While that descriptor is open, the
+  inode cannot be freed or reused, so "the path still names the inode that was written" is a real identity check.
 
-What was rejected. Relying on a PID or token file alone (it cannot close either race). A process-local flag (it cannot
-see another process). Calling the file backend "safe" for concurrent use (it is not).
+Why the directory, and not the lock file (race 1).
+
+- A `flock` on the lock file's inode does not stop a second starter once the file has been replaced. A starter that locks
+  the new file is admitted. This was checked in a scratch experiment (`/tmp/dl`, not in the repository), with a control
+  showing that a new file locks normally. This was the window between the owner's check and its rename.
+- A directory is not replaced by renaming a file inside it, so a `flock` on the directory cannot be bypassed that way. The
+  cost is one file-backend writer per directory: a second world file in the same directory is refused.
+- A scratch check (`/tmp/s36-ino2.mjs`, not committed) showed that Linux reused the inode number of an unlinked file at
+  once. Comparing inode numbers without keeping the old file open is therefore not an identity check. The descriptor fixes
+  this: after a same-token replacement, the owner's `isHeld()` returns false.
+- The file's contents cannot close race 1 or race 2 by themselves, because the file can be replaced.
+
+What was rejected. A PID or token file alone (it cannot close either race). A process-local flag (it cannot see another
+process). Calling the file backend safe for concurrent use in general (it is not; see the boundary in section 7).
 
 ## 7. Results for both races
 
-Race (a): a lock replaced between token verification and rename.
+Race (a): a lock replaced between the owner's check and the rename.
 
-- Status: **constrained, not resolved**. Race 1 is not closed.
-- Demonstrated (separate or in-process tests, `file-writer-lock-races.test.mjs`):
-  - while the owner holds the lock, a protocol-following starter cannot take it, and the lock file is not replaced (the
-    "race 1, protocol" test);
-  - a lock file replaced by a process outside the protocol before the check (same token, new inode) is detected: the save
-    is refused and the store is fenced; the file is unchanged (the "new inode" test);
-  - a lock file replaced by different content before the check is detected in the same way (the "different content" test).
-- Open: a lock file replaced by a process outside the protocol after the check and before the rename is **not detected**,
-  and the save renames. This is the OPEN TODO ("OPEN (Stage 35, race 1, residual)"). It is not counted as passed.
-- Constraint in force: the file backend is for one process only; operators are told not to edit lock files (documented,
-  not enforced by the code).
+- Status: **resolved for protocol-following writers on one Linux host**. It was OPEN before the directory lock. This is
+  a bounded claim, not a general one. The boundary is below and in `docs/PERSISTENCE_FILE_BACKEND.md`.
+- Demonstrated (`file-writer-lock-races.test.mjs`, separate OS processes unless noted):
+  - the "race 1, window" test: after the owner's check and before the rename, an outside process replaces the lock file
+    with an empty file (no record). A protocol-following starter in a separate process is refused (`world_file_locked`).
+    The owner's save completes, and the owner's next save is fenced with the file unchanged. On the code before this
+    change (`cbcd72e`, extracted to a scratch directory), the same starter prints `@@ ACQUIRED`, and this test fails;
+  - the "race 1, protocol" test: while the owner holds the lock, another starter cannot take it;
+  - the two "out-of-protocol replacement before the check" tests (same token with a new inode, and different content):
+    refused, fenced, and the file is unchanged;
+  - the "one directory, one file-backend writer" test: a second world file in the same directory is refused with
+    `WorldFileLockedError` while the first is open, and can be taken after the first is released. On the code before this
+    change, this test fails, because the second world is admitted.
+- Boundary (not claimed): a process that writes the world file, or removes or replaces the lock file, without following the
+  protocol is outside the guarantee. Network filesystems and other platforms are not tested. Operators must not edit lock
+  files (documented, not enforced by the code).
 
 Race (b): two starters racing to take one stale lock.
 
@@ -223,82 +245,74 @@ Limits.
 
 ## 9. Commands and actual results
 
-All runs are on the final working tree for this stage (after the last code change). Logs are in `/tmp` on the
-development host and are not committed.
+Results are reported per backend and never added across them. Logs are in `/tmp` on the development host and are not
+committed. The runs below are on the working tree of the directory-lock commit, after its last code change. Per-file
+results for the files this commit does not touch are the final runs of the earlier commits, and their code has not changed.
 
 | Command | Result | Log |
 |---|---|---|
-| `npm run build` (`tsc`, the typecheck) | exit 0 | `/tmp/s35k-build.log` |
-| `npm run lint` (eslint on `services/world-api/src`) | exit 0 | `/tmp/s35k-lint.log` |
-| `npm test` in `services/world-api`, PostgreSQL 18 on a new empty database (the CI command for the live job) | **1533 tests: 1528 pass, 0 fail, 4 skip, 1 todo**; exit 0 | `/tmp/s35k-pg.log` |
-| `node --test test/property-actions-stage35.test.mjs`, file backend (no `DATABASE_URL`) | 56 tests, 56 pass, 0 fail, 0 skip | terminal |
-| same, PostgreSQL env sourced (both backends in one run) | 112 tests, 112 pass, 0 fail, 0 skip (56 file, 56 PostgreSQL) | terminal |
-| `node --test test/treasury-funding-stage35.test.mjs`, file backend | 5 tests, 5 pass, 0 fail | terminal |
-| same, PostgreSQL env sourced (both backends in one run) | 10 tests, 10 pass, 0 fail (5 file, 5 PostgreSQL) | terminal |
-| Full suite, file backend (`env -u DATABASE_URL NAIJA_ENV=test node --test test/*.test.mjs`) | **1303 tests: 1261 pass, 0 fail, 41 skip, 1 todo**; exit 0 | `/tmp/s35k-file.log` |
-| `node --test test/entertainment.test.mjs` (after the fix described below) | 30 tests, 30 pass | `/tmp/s35e-ent.log` |
+| `npm run build` (`tsc`, the typecheck), `services/world-api` | exit 0 | `/tmp/s36-build.log` |
+| `npm run lint` (eslint on `services/world-api/src`) | exit 0 | `/tmp/s36-lint.log` |
+| Full suite, PostgreSQL (`NAIJA_ENV=test node --test test/*.test.mjs`, `DATABASE_URL` set) | **1534 tests: 1530 pass, 0 fail, 4 skip, 0 todo**; exit 0 | `/tmp/s36-pg.log` |
+| Full suite, file backend (`env -u DATABASE_URL NAIJA_ENV=test node --test test/*.test.mjs`) | **1304 tests: 1263 pass, 0 fail, 41 skip, 0 todo**; exit 0 | `/tmp/s36-file.log` |
+| `file-writer-lock-races.test.mjs` and `file-writer-lock.test.mjs`, file backend | 24 tests, 24 pass, 0 fail, 0 todo | `/tmp/s36-locks.log` |
+| The race-1 window and two-world tests on the previous code (`cbcd72e`, scratch extract) | 2 of 6 fail, as expected: the second starter is admitted (`@@ ACQUIRED`), and the second world is admitted | `/tmp/s36-prev-races.log` |
+| `node --test test/property-actions-stage35.test.mjs`, file backend | 56 tests, 56 pass (unchanged code) | `/tmp/s35k-*` / terminal |
+| same, PostgreSQL env sourced (both backends in one run) | 112 tests, 112 pass (56 file, 56 PostgreSQL) | terminal |
+| `node --test test/treasury-funding-stage35.test.mjs`, file backend and PostgreSQL | 5 + 5 pass (file); 10 pass (both backends in one run) | terminal |
+| `node --test test/entertainment.test.mjs` (after the fix in `c71964b`) | 30 tests, 30 pass | `/tmp/s35e-ent.log` |
 
-Totals are reported per backend and never added across them. The full-suite totals include every file. The per-file
-rows above are the final runs of the two new files. The property-mutation and invariant files, and the other files, were
-checked by the full-suite runs only.
+Earlier full-suite runs at `c71964b` (before the directory lock), for comparison: PostgreSQL 1533 tests, 1528 pass, 0 fail,
+4 skip, 1 todo (the race-1 residual, which is now a passing test); file backend 1303 tests, 1261 pass, 0 fail, 41 skip,
+1 todo. The difference is +2 tests (the two new race tests) and −1 todo.
 
-CI history and load-sensitive tests. Two CI runs of the live-PostgreSQL job failed after this stage's first follow-up
-commit, and both have the same test code as `ed06f27`, which passed:
+The 41 file-run skips are PostgreSQL-only tests that need `DATABASE_URL` and `NAIJA_ALLOW_DB_TESTS=true`. The 4
+PostgreSQL-run skips are the TLS live tests that need `TLS_TEST_DATABASE_URL`. A skip is not a pass.
 
-- `825e0e8` (run `38196196114`), a documentation-only commit. The job log could not be downloaded (the log service
-  returned EOF), and GitHub refused to re-run the run. The failure was not identified from CI.
-- `c71964b` (run `38196966222`), which contains the entertainment fix described below. The same log problem applies.
+CI history and load-sensitive tests.
+
+- `825e0e8` (run `38196196114`) and `c71964b` (run `38196966222`) each FAILED in the live-PostgreSQL job. The job logs
+  could not be downloaded (the log service returned EOF or nothing), and the runs could not be re-run. The failing test
+  was not identified. The entertainment flake (item 1 below) was real, but at about 1 run in 100 it does not by itself
+  explain two failures in a row, and `825e0e8` is a documentation-only change over `ed06f27`, which passed CI.
+- `cbcd72e` (run `38198636400`) SUCCEEDED in both jobs. This is one passing run after the 20 s wait budgets. It is not
+  enough to say the cause was fixed, because the earlier failures were not reproduced on demand either.
 
 Local reproduction, in order:
 
 1. `entertainment.test.mjs`, "createNewsReport and publishNewsReport", asserted `published.views > 0`.
    `publishNewsReport` gives initial views as `Math.floor(Math.random() * 100)`, so a draw of 0 fails the test (about
    1 run in 100). It reproduced once in two full local runs. The test now fixes the random draw for its own duration and
-   restores it. The assertion and the game code are unchanged. This fix is in `c71964b`.
+   restores it. The assertion and the game code are unchanged. This is in `c71964b`.
 2. Under CI-like concurrency (`node --test --test-concurrency=3`, the sandbox has 2 CPUs, CI has 4) with two extra busy
    processes, two tests failed on a 5-second WebSocket wait: `property-actions-stage35` "an open listing whose owner is no
    longer the owner is closed on load" (5.27 s), and `world-capacity-notify` "R5 notify-once" (8.6 s). Both were timeouts,
    not assertion failures.
-3. The explicit `waitFor` budgets (5000 ms) were raised to 20000 ms in 31 test files, and the harness default too. Only
-   the timeout literal changed (checked against `HEAD` by comparing each file with the timeout normalised). A reply that
-   never arrives still fails, only later. Under the same load, the listed test passed. R5 still fails under that load.
-4. R5 was run on its own, under the same load, on the current code (2 runs: 2 failures) and on the pre-stage code
-   `f45b80f` (2 runs: 1 failure). So R5 is a load-sensitive test that predates this stage and is not fixed here. It passes
-   without extra load, and in the CI-like concurrency run without extra load. Its mechanism was not isolated.
+3. The explicit `waitFor` budgets were raised from 5000 ms to 20000 ms in `cbcd72e` (the test files that use them, and the
+   harness default). Only the timeout literal changed. A reply that never arrives still fails, only later.
+4. R5 (`world-capacity-notify.test.mjs`, "a new episode after a successful save notifies once") fails under CPU load with
+   a 17 MiB padded world (3 of 3 runs with four busy processes, on the uncommitted directory-lock tree). It passes without
+   extra load (1 run with two busy processes passed, and the full PostgreSQL and file suites passed without load). On the pre-stage code `f45b80f`, under the
+   same load, it failed in 1 of 2 runs, so it predates this stage.
+5. The R5 mechanism, as far as it was isolated. With temporary diagnostics (removed; the tree was restored and rebuilt):
+   the second over-limit episode did open. The refused save logged the episode line, and the online socket was open at
+   that moment. The notice was queued behind multi-megabyte snapshot frames. Partway through the episode the online socket
+   closed (logged as "Client disconnected"), so the notice was never delivered. The close reason was not captured. The
+   likely cause is the server's 15-second liveness check (`src/app.ts`), which terminates a socket that has not answered a
+   ping, with the frames delaying the pong under load. This is a diagnosis, not a proven cause. The test is not changed.
+   R5 is open. Its notice logic is not shown to be wrong.
 
-Open: CI on the final commit is not confirmed green by this document. The final report records the CI result. If the
-live-PostgreSQL job still fails on CI, its cause is not identified, and R5 is the leading candidate. Mitigations are in
-section 10.
-
-Skips. The 41 file-run skips are PostgreSQL-only tests that need `DATABASE_URL` and `NAIJA_ALLOW_DB_TESTS=true`. The
-4 PostgreSQL-run skips are the TLS live tests that need `TLS_TEST_DATABASE_URL`. A skip is not a pass. The 1 todo in each
-run is the race-1 residual (`test 283` file, `test 306` PostgreSQL), which is OPEN and not counted as passed. The Stage 34
-logs recorded 2 todo.
-
-Other file-level results from the earlier runs of this stage, before the stale-listing fix. They are superseded where the
-code they test changed, and the full-suite runs above are the final evidence: `property-invariants-stage35` 16 of 16 pass;
-`property-mutation-stage35` 12 of 12 pass (file) and 24 of 24 (both backends); `file-writer-lock-races` 7 pass, 0 fail, 1 todo.
-
-Counts against the old code (`f45b80f`, extracted with `git archive` into a scratch directory, with the new test files
-copied in). These show that the tests detect the old faults. They are not a claim that each test was isolated to one cause.
-
-- Invariant and socket property tests, before the stale-listing fix (earlier run): 28 tests, 11 pass, 17 fail. The six
-  invariant tests that fail are: purchase from a player seller with no cash account; rent with a player landlord and no
-  cash account; maintenance with insufficient funds; maintenance without a cash account; transfer to a recipient at the
-  ownership limit; transfer to a recipient below the minimum age. Eleven of the twelve purchase socket tests fail. The
-  two-buyer race passes on the old code, as it was already correct in one process.
-- `property-actions-stage35` (final file): 56 tests, 0 pass, 56 fail. Most fail on the request-ID contract. The three
-  stale-listing regressions fail for the stated reasons: a stale rent listing is still offered after a purchase (the
-  "expected false, actual true" failure); a listing stays open after a transfer ("1 !== 0"); and a stored stale listing
-  is still open after a load ("true !== false"). The `pay_rent` refusal test fails at its "stored matches live" check on
-  the old code. The cause was not isolated, so it is not claimed as evidence of the refusal.
+Open: the live-PostgreSQL job's cause on `825e0e8` and `c71964b` is unknown. R5 is a load-sensitive test that may be part
+of it, but this is not shown. The final report records the CI results. Mitigations are in section 10.
 
 ## 10. Limitations and TODOs
 
-0. CI: the live-PostgreSQL job failed on `825e0e8` and `c71964b` (section 9). The log was not retrievable, so the failing test
-   was not identified on CI. R5 (`world-capacity-notify.test.mjs`) is the known load-sensitive test (section 9). Not fixed.
-1. Race 1 residual: an out-of-protocol lock file replacement after the check and before the rename is not detected (the
-   OPEN TODO). Not closed.
+0. CI: the live-PostgreSQL job failed on `825e0e8` and `c71964b`, and succeeded on `cbcd72e` (one run). The failing test was
+   not identified on CI. R5 (`world-capacity-notify.test.mjs`) is a known load-sensitive test (section 9, items 4 and 5).
+   Not fixed.
+1. Race 1: resolved for protocol-following writers on one Linux host (section 7). Not resolved for a writer outside the
+   protocol, and not tested on other platforms or network filesystems.
+12. One file-backend writer per directory. Two world files in one directory cannot be served at once (section 6).
 2. Multi-host and network-filesystem use of the file backend: not supported and not tested.
 3. Power loss: the file backend's fsync and directory sync are written, but a power-loss test has not been run
    (`docs/STAGE_28_DIRECTORY_SYNC.md`, section 6).
@@ -339,7 +353,7 @@ copied in). These show that the tests detect the old faults. They are not a clai
 Stage 36 candidates, in priority order:
 
 1. A cross-process PostgreSQL property test (two servers, one world).
-2. Close or narrow race 1 (the out-of-protocol replacement window), or stop offering the file backend outside development.
+2. Decide whether the file backend stays a development-only backend. Race 1 is resolved only for protocol-following writers on one host.
 3. Decide whether the treasury allocation should be applied at world creation rather than on the first join. This changes
    when the funds appear, so it needs a design decision.
 4. Re-audit government, treasury, election, justice, police, and life/NPC routes with the same outcome contract.
