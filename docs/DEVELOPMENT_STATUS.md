@@ -2,7 +2,15 @@
 
 > **Future agents: read this file before changing the project.** It distinguishes implementation from verification; source code and test files are not proof of engine/runtime behavior.
 
-## Current stage and verification gate
+## Current state (handoff)
+
+**Latest completed work: Stage 40 (business accounts in the economy ledger), commit `8e564f7`.** CI run `38243775351` (push, branch `arena/00cdea0e-naija`) passed on that SHA: both the build/lint/test job and the live PostgreSQL job. Stage 39 (`b95dedb`) is complete; its foundation job failed once with no cause identified.
+
+**Next:** Stage 41, Housing and Business Gameplay Interfaces (Godot 4.7 client). Not started. See `docs/ARENA_HANDOFF.md` for the full handoff.
+
+Godot 4.7 is not installed in the sandbox, so no Godot runtime check has been run for Stages 34–40. The Stage 21 section below was last updated at Stage 21. Stages 22–40 are recorded in their own `docs/STAGE_NN_*.md` documents and the handoff.
+
+## Current stage and verification gate (historical, Stage 21)
 
 **Stage 21 — Dynamic Nigerian World: backend implementation and Node tests pass; world event system integrates with Stage 5 (life), Stage 6 (careers), Stage 7 (economy), Stage 8 (businesses), Stage 10 (government), Stage 11 (elections), Stage 18 (social), Stage 19 (transportation), and Stage 20 (NPC); Godot client/runtime verification is blocked.** Stages 0–20 remain preserved on the same `nigeria-main` world. The server still owns one shared online timeline. The earlier Stage 5 Godot limitation is still open; Stages 6–21 do not resolve it.
 
