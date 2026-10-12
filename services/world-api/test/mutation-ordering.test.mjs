@@ -13,10 +13,10 @@ import { createIdentity, resumeSession } from "./support/harness.mjs";
 /**
  * Mutation response ordering (Stage 28, docs/STAGE_28_MUTATION_ORDERING_AUDIT.md).
  *
- * These tests PIN the current behaviour of a gameplay handler, shop.purchase (money and inventory). They do not endorse it.
- * A success reply is sent after the in-memory change and before the save is attempted. A failed save does not reach the
- * handler; the player sees only the connection-wide persistence_failed notice. Any change to this ordering must update these
- * tests deliberately, after the audit's review.
+ * These tests cover shop.purchase (money and inventory). Stage 34 changed the contract: a purchase is confirmed (the
+ * character snapshot carrying its request ID) only after its save succeeds. A failed save is answered with shop_not_saved
+ * for that request, and the connection-wide persistence_failed notice still follows. The earlier Stage 28 tests recorded
+ * the success reply sent before the save; those expectations were replaced deliberately (docs/STAGE_34_MUTATION_OUTCOMES_AND_RISK_CONTAINMENT.md section 3.5).
  *
  * Runs on the file backend always, and on PostgreSQL when a disposable database is configured. No real world file is used.
  */
@@ -66,7 +66,7 @@ function moneyOf(record) {
 
 for (const name of backendNames) {
   describe(`mutation ordering, shop.purchase (${name} backend)`, () => {
-    test("the success reply is sent before the save is attempted; a failed save leaves the saved file behind the reply", async () => {
+    test("the purchase reply waits for the save: a failed save sends shop_not_saved, never a success; the live world keeps the purchase, the saved file does not", async () => {
       const backend = await openBackend(name);
       const started = await startOver(backend, {});
       let peer;
@@ -78,23 +78,22 @@ for (const name of backendNames) {
         const startMoney = baseline.players[playerId].character.money;
         const startInventory = baseline.players[playerId].character.inventory.length;
 
-        // Record the arrival order of every message on this socket, independent of the test helper's buffering.
+        // Record every message on this socket, in arrival order, with its request ID.
         const arrivals = [];
-        peer.socket.on("message", (data) => arrivals.push(labelOf(JSON.parse(data.toString()))));
+        peer.socket.on("message", (data) => {
+          const message = JSON.parse(data.toString());
+          arrivals.push({ label: labelOf(message), requestId: message.requestId });
+        });
 
         backend.store.failNextWrite();
         peer.send({ type: "shop.purchase", requestId: "req-1", itemId: "meat_pie" });
+        const failure = await peer.waitFor((message) => message.type === "error" && message.code === "shop_not_saved" && message.requestId === "req-1", 5000);
+        assert.equal(failure.code, "shop_not_saved");
+        await peer.waitFor((message) => message.type === "error" && message.code === "persistence_failed", 5000);
+        assert.ok(!arrivals.some((arrival) => arrival.label === "character.snapshot" && arrival.requestId === "req-1"),
+          `no confirmation for req-1 arrives before its save (arrivals: ${arrivals.map((a) => a.label).join(", ")})`);
 
-        // The reply that claims success arrives first. The failed save is reported separately, afterwards.
-        const first = await nextOf(peer, ["character.snapshot"]);
-        assert.equal(first.character.money, startMoney - MEAT_PIE_PRICE, "the purchase is applied in the live world");
-        const failure = await peer.waitFor((message) => message.type === "error" && message.code === "persistence_failed", 5000);
-        assert.equal(failure.code, "persistence_failed");
-        const replyAt = arrivals.indexOf("character.snapshot");
-        const failureAt = arrivals.indexOf("persistence_failed");
-        assert.ok(replyAt >= 0 && failureAt > replyAt, `the success reply arrives before the save failure (arrivals: ${arrivals.join(", ")})`);
-
-        // The gap, stated exactly: the live world has the purchase, the saved file does not.
+        // The live world holds the purchase (it is not rolled back), but nothing has confirmed it. The file does not hold it.
         assert.equal(backend.store.state.players[playerId].character.money, startMoney - MEAT_PIE_PRICE);
         const durable = await backend.durableState();
         assert.equal(durable.players[playerId].character.money, startMoney, "the saved file still has the old balance");
@@ -106,7 +105,7 @@ for (const name of backendNames) {
       }
     });
 
-    test("a repeated request in the same process is a duplicate: the purchase is not applied twice, even though it is unsaved", async () => {
+    test("a repeated request while its save is failing is answered once the save succeeds, and the purchase is charged once", async () => {
       const backend = await openBackend(name);
       const started = await startOver(backend, {});
       let peer;
@@ -118,13 +117,15 @@ for (const name of backendNames) {
 
         backend.store.failNextWrite();
         peer.send({ type: "shop.purchase", requestId: "req-dup", itemId: "meat_pie" });
-        await nextOf(peer, ["character.snapshot"]);
-        await peer.waitFor((message) => message.type === "error" && message.code === "persistence_failed", 5000);
+        await peer.waitFor((message) => message.type === "error" && message.code === "shop_not_saved" && message.requestId === "req-dup", 5000);
 
+        // The same request ID again: it is recorded but not confirmed, so the reply waits for a successful save.
         peer.send({ type: "shop.purchase", requestId: "req-dup", itemId: "meat_pie" });
-        const duplicate = await peer.waitFor((message) => message.type === "command.duplicate", 5000);
-        assert.equal(duplicate.requestId, "req-dup");
+        const confirmed = await peer.waitFor((message) => message.requestId === "req-dup" && (message.type === "character.snapshot" || message.type === "error" || message.type === "command.duplicate"), 5000);
+        assert.equal(confirmed.type, "character.snapshot", JSON.stringify(confirmed));
         assert.equal(backend.store.state.players[playerId].character.money, startMoney - MEAT_PIE_PRICE, "charged once");
+        const durable = await waitForDurable(backend, (state) => state.players[playerId].character.money === startMoney - MEAT_PIE_PRICE);
+        assert.equal(durable.players[playerId].character.money, startMoney - MEAT_PIE_PRICE);
       } finally {
         await peer?.close();
         await started.stop();
@@ -132,9 +133,11 @@ for (const name of backendNames) {
       }
     });
 
-    test("the next successful save persists the unsaved purchase, and the player gets one persistence.restored signal", async () => {
+    test("while saving fails, a new purchase is refused before it changes anything; the background retry saves the unsaved purchase, and the player gets one persistence.restored signal", async () => {
       const backend = await openBackend(name);
-      const started = await startOver(backend, {});
+      // Timed ticks run here (the default interval), so the background retry is the real production path: a tick saves
+      // the dirty world about once a second. A queue of failures holds the outage open until the test clears it.
+      const started = await startOver(backend, { tickIntervalMs: 50 });
       let peer;
       try {
         const setup = await setUpBuyer(backend, started);
@@ -142,25 +145,29 @@ for (const name of backendNames) {
         const { playerId } = setup.session;
         const startMoney = backend.store.state.players[playerId].character.money;
 
-        backend.store.failNextWrite();
+        for (let i = 0; i < 200; i += 1) backend.store.failNextWrite();
         peer.send({ type: "shop.purchase", requestId: "req-a", itemId: "meat_pie" });
-        await nextOf(peer, ["character.snapshot"]);
+        await peer.waitFor((message) => message.type === "error" && message.code === "shop_not_saved" && message.requestId === "req-a", 5000);
         await peer.waitFor((message) => message.type === "error" && message.code === "persistence_failed", 5000);
 
-        // A later purchase saves successfully. The save writes the whole live world, so both purchases are saved.
-        peer.send({ type: "shop.purchase", requestId: "req-b", itemId: "meat_pie" });
-        await nextOf(peer, ["character.snapshot"]);
-        const restored = await peer.waitFor((message) => message.type === "persistence.restored", 5000);
-        assert.equal(restored.type, "persistence.restored");
-        const durable = await backend.durableState();
-        assert.equal(durable.players[playerId].character.money, startMoney - 2 * MEAT_PIE_PRICE, "both purchases are saved");
+        // Saving is still failing: a new purchase is refused before any change, and nothing is charged.
+        peer.send({ type: "shop.purchase", requestId: "req-refused", itemId: "meat_pie" });
+        const refused = await peer.waitFor((message) => message.requestId === "req-refused" && message.type === "error", 5000);
+        assert.equal(refused.code, "shop_persistence_unavailable");
+        assert.equal(backend.store.state.players[playerId].character.money, startMoney - MEAT_PIE_PRICE, "the refused purchase charged nothing");
 
-        // An ordinary save after recovery does not repeat the signal.
-        peer.send({ type: "shop.purchase", requestId: "req-c", itemId: "meat_pie" });
-        await nextOf(peer, ["character.snapshot"]);
-        await new Promise((resolve) => setTimeout(resolve, 50));
-        const repeats = peer.messages.filter((message) => message.type === "persistence.restored");
-        assert.equal(repeats.length, 0, "no second persistence.restored for an ordinary save");
+        // Saving recovers: the background retry writes req-a's unsaved charge, and the signal is sent once.
+        backend.store.clearFailures();
+        await peer.waitFor((message) => message.type === "persistence.restored", 8000);
+        const durable = await waitForDurable(backend, (state) => state.players[playerId].character.money === startMoney - MEAT_PIE_PRICE);
+        assert.equal(durable.players[playerId].character.money, startMoney - MEAT_PIE_PRICE, "the unsaved charge is now in the saved file");
+
+        // A later purchase is confirmed, and an ordinary save after recovery does not repeat the signal.
+        peer.send({ type: "shop.purchase", requestId: "req-b", itemId: "meat_pie" });
+        const confirmed = await peer.waitFor((message) => message.requestId === "req-b" && message.type === "character.snapshot", 5000);
+        assert.equal(confirmed.character.money, startMoney - 2 * MEAT_PIE_PRICE);
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        assert.equal(peer.messages.filter((message) => message.type === "persistence.restored").length, 0, "no second persistence.restored");
       } finally {
         await peer?.close();
         await started.stop();
@@ -182,7 +189,7 @@ for (const name of backendNames) {
         startMoney = backend.store.state.players[session.playerId].character.money;
         backend.store.failNextWrite();
         peer.send({ type: "shop.purchase", requestId: "req-lost", itemId: "meat_pie" });
-        await nextOf(peer, ["character.snapshot"]);
+        await peer.waitFor((message) => message.type === "error" && message.code === "shop_not_saved" && message.requestId === "req-lost", 5000);
         await peer.waitFor((message) => message.type === "error" && message.code === "persistence_failed", 5000);
         // The file as the failed save left it. Taken now, before shutdown, because shutdown writes the live world.
         saved = await backend.durableState();
@@ -205,8 +212,8 @@ for (const name of backendNames) {
         const reply = await nextOf(again, ["character.snapshot", "command.duplicate"]);
         assert.equal(reply.type, "character.snapshot", "the request is applied, not reported as a duplicate");
         assert.equal(reply.character.money, startMoney - MEAT_PIE_PRICE, "applied once");
-        // The save runs after the reply, so wait for it. The reply alone does not show the file has the purchase.
-        const durable = await waitForDurable(backend, (state) => state.players[session.playerId].character.money === startMoney - MEAT_PIE_PRICE);
+        // The save runs before the confirmation, so the saved file holds the purchase when the reply arrives.
+        const durable = await backend.durableState();
         assert.equal(durable.players[session.playerId].character.money, startMoney - MEAT_PIE_PRICE);
       } finally {
         await again?.close();

@@ -96,6 +96,12 @@ function readLockFile(lockPath: string): { record: LockRecord } | { unreadable: 
   return { unreadable: true, ageMs };
 }
 
+/** Test seams for WorldFileWriterLock.acquire (Stage 34). Production code passes none. */
+export interface WorldFileLockHooks {
+  /** Called after a stale lock record was read and before it is removed. */
+  readonly afterStaleRead?: () => void;
+}
+
 export class WorldFileWriterLock {
   private released = false;
 
@@ -109,7 +115,7 @@ export class WorldFileWriterLock {
    * half-acquired state. A second acquisition in the same process is also refused: two stores in one process would
    * write the same file with no coordination.
    */
-  static acquire(worldFilePath: string): WorldFileWriterLock {
+  static acquire(worldFilePath: string, hooks: WorldFileLockHooks = {}): WorldFileWriterLock {
     const lockPath = `${worldFilePath}.lock`;
     // A fresh deployment has no data directory yet. The lock is taken before the first save, so create it here.
     mkdirSync(dirname(worldFilePath), { recursive: true });
@@ -138,6 +144,8 @@ export class WorldFileWriterLock {
         throw new WorldFileLockedError(existing.record.pid);
       }
       // The holder has exited. Remove its lock and try to create ours.
+      // Test seam (Stage 34): runs between reading the stale record and removing it. Production never sets it.
+      hooks.afterStaleRead?.();
       unlinkSafely(lockPath);
     }
     throw new WorldFileLockedError(null);

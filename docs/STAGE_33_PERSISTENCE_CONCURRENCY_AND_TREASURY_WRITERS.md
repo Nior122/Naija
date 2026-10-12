@@ -115,14 +115,14 @@ Non-treasury actions still reply before their save, as in Stage 32 (section 5.5 
 - **Two starts racing for the same stale lock.** Each may remove the dead holder's lock and create its own. The one
   that created last holds the lock, and the other is fenced on its first save, after it has reported that it started.
   The same window as below applies: a save that checked the token just before the other start replaced the lock can
-  still rename. **Unverified:** not reproduced, and the window is between two system calls.
+  still rename. **Reproduced in Stage 34 and still open** (Stage 34 section 5.2).
 - **PID reuse fails closed.** If the dead holder's PID is reused by an unrelated live process, the lock is refused, and
   the world stays locked until someone removes the lock file by hand. No write happens in that case.
 - **A window between the token check and the rename.** The check and the rename are separate system calls. A replacement
   of the lock file in that window is not detected by this process. A stale takeover can only replace a lock whose
   holder is dead, and this process is alive while it saves, so the window opens only if someone removes or rewrites the
-  lock file by hand. **Unverified:** no test reproduces this race. The fence tests replace the lock file between saves,
-  not inside a save.
+  lock file by hand. **Reproduced in Stage 34 and still open** (Stage 34 section 5.1). The fence tests in Stage 33
+  replaced the lock file between saves, not inside a save.
 - **Power loss.** As in Stage 28, a SIGKILL leaves the page cache intact, so the process tests cannot show what a power
   cut does. A save reported as `unknown` may or may not survive a power cut.
 - **Temporary files** left by a killed save remain in the data directory, as before. The next save writes a new one.
@@ -231,7 +231,9 @@ in this run.
 
 ## 8. Known defects and residual risks
 
-- **Non-treasury changes are still answered before their save**, as in Stage 32 section 5.5. A crash in that window
+- **Non-treasury changes are still answered before their save**, as in Stage 32 section 5.5, except the money, business,
+  education, and career families, which Stage 34 changed (see `docs/STAGE_34_MUTATION_OUTCOMES_AND_RISK_CONTAINMENT.md`).
+  The rest of the non-treasury routes are unchanged. A crash in that window
   loses the change. This is unchanged, and the persistence notice still warns the player.
 - **Memory is ahead of storage until a save succeeds** (Stage 32 section 5.5). A crash in that window loses a treasury
   payment in full, both the debit and the credit, and the payer was never told it was confirmed.

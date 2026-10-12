@@ -107,6 +107,11 @@ export interface EconomyAccountRecord {
   updated_at: string;
   readonly opened_world_date: CalendarDate;
   last_interest_date: CalendarDate | null;
+  /**
+   * The world date the monthly account fee was last charged (Stage 34). Optional so that older saved worlds load: a
+   * missing value means the fee has not been recorded for this account. At most one fee is charged per calendar month.
+   */
+  last_fee_date?: CalendarDate | null;
   total_deposited_ngn: number;
   total_withdrawn_ngn: number;
   total_fees_paid_ngn: number;

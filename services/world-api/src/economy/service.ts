@@ -135,6 +135,7 @@ export function initializeEconomyWorldState(state: PersistentWorldState, now: nu
         updated_at: new Date(now).toISOString(),
         opened_world_date: cloneDate(state.worldClock.world_date),
         last_interest_date: null,
+        last_fee_date: null,
         total_deposited_ngn: cashBalance,
         total_withdrawn_ngn: 0,
         total_fees_paid_ngn: 0,
@@ -201,6 +202,7 @@ export function economyAccountPort(
           updated_at: postedAt,
           opened_world_date: cloneDate(state.worldClock.world_date),
           last_interest_date: null,
+          last_fee_date: null,
           total_deposited_ngn: 0,
           total_withdrawn_ngn: 0,
           total_fees_paid_ngn: 0,
@@ -335,6 +337,7 @@ export function openEconomyAccount(
     updated_at: timestamp,
     opened_world_date: cloneDate(date),
     last_interest_date: cloneDate(date),
+    last_fee_date: null,
     total_deposited_ngn: initialDepositNgn,
     total_withdrawn_ngn: 0,
     total_fees_paid_ngn: 0,
@@ -449,13 +452,14 @@ export function withdrawFromAccount(
   const fee = product?.withdrawal_fee_ngn ?? 0;
   const totalDebit = amountNgn + fee;
   if (account.balance_ngn < totalDebit) throw new Error("economy_insufficient_funds");
-  if (account.daily_withdrawal_date && (
-    account.daily_withdrawal_date.year !== date.year || account.daily_withdrawal_date.month !== date.month ||
-    account.daily_withdrawal_date.day !== date.day)) {
-    account.daily_withdrawal_total_ngn = 0;
-  }
+  // Stage 34: every check runs before any write. The daily total is only reset (for a new world day) in the write
+  // section below, so a withdrawal that is refused later leaves the account exactly as it was.
+  const lastWithdrawalDay = account.daily_withdrawal_date;
+  const newWorldDay = lastWithdrawalDay !== null && lastWithdrawalDay !== undefined && (
+    lastWithdrawalDay.year !== date.year || lastWithdrawalDay.month !== date.month || lastWithdrawalDay.day !== date.day);
+  const dailyTotalSoFar = newWorldDay ? 0 : account.daily_withdrawal_total_ngn;
   const dailyLimit = product?.max_withdrawal_daily_ngn ?? catalog.rules.maximum_transaction_amount_ngn;
-  if (account.daily_withdrawal_total_ngn + amountNgn > dailyLimit) throw new Error("economy_daily_withdrawal_limit");
+  if (dailyTotalSoFar + amountNgn > dailyLimit) throw new Error("economy_daily_withdrawal_limit");
   const cashAccounts = accountsForCharacter(state, characterId).filter((acc) => acc.kind === "cash");
   const cashAccount = cashAccounts[0];
   if (!cashAccount) throw new Error("economy_no_cash_account");
@@ -467,7 +471,7 @@ export function withdrawFromAccount(
   account.balance_ngn -= totalDebit;
   account.total_withdrawn_ngn += amountNgn;
   account.total_fees_paid_ngn += fee;
-  account.daily_withdrawal_total_ngn += amountNgn;
+  account.daily_withdrawal_total_ngn = dailyTotalSoFar + amountNgn;
   account.daily_withdrawal_date = cloneDate(date);
   account.updated_at = timestamp;
   const txId = `economy-tx-${randomUUID()}`;
@@ -930,10 +934,15 @@ export function processEconomyWorldDate(
     if (account.status !== "active" || !account.bank_product_id) continue;
     const product = findBankProduct(catalog, account.bank_product_id);
     if (!product || product.monthly_fee_ngn <= 0) continue;
+    // Stage 34: the fee is charged once per calendar month. This runs on every world-date change and every session
+    // resume, so without this guard a fee was charged again each time. A charge is recorded in last_fee_date.
+    const lastFee = account.last_fee_date;
+    if (lastFee !== null && lastFee !== undefined && lastFee.year === date.year && lastFee.month === date.month) continue;
     if (account.balance_ngn < product.monthly_fee_ngn) continue;
     const balanceBefore = account.balance_ngn;
     account.balance_ngn -= product.monthly_fee_ngn;
     account.total_fees_paid_ngn += product.monthly_fee_ngn;
+    account.last_fee_date = cloneDate(date);
     account.updated_at = new Date(now).toISOString();
     const txId = `economy-tx-${randomUUID()}`;
     state.economyTransactions[txId] = {
@@ -1171,6 +1180,9 @@ export function economyErrorMessage(code: string): string {
     economy_payment_over_transaction_limit: "A single payment to a person cannot exceed the economy's transaction limit.",
     economy_payee_balance_limit: "The payment would take the recipient's cash account over its balance limit.",
     economy_insufficient_funds: "You do not have enough funds for this transaction.",
+    economy_persistence_unavailable: "Saving is failing, so new money changes are paused. Nothing was changed; try again once saving recovers.",
+    economy_not_saved: "The change could not be saved, so it is not confirmed. Retry with the same request ID; it will not be applied twice.",
+    economy_outcome_unknown: "The save may or may not have completed, so the change is not confirmed. Retry with the same request ID; it will not be applied twice.",
     economy_balance_limit_exceeded: "This transaction would exceed the account balance limit.",
     economy_daily_withdrawal_limit: "You have reached the daily withdrawal limit for this account.",
     economy_minimum_balance_not_met: "The deposit does not meet the account minimum balance.",

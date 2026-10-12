@@ -344,6 +344,16 @@ const POLICE_SUSPENDED_ACTIONS: ReadonlyMap<string, string> = new Map([
   ["execute_arrest", "police_arrest_suspended"],
 ]);
 
+/**
+ * TEMPORARY CONTAINMENT (Stage 34). `pay_rent` is refused on player routes. Each call debits the tenant and credits the
+ * landlord, but the payment has no per-period check: a repeated request pays again, and the idempotency key is built
+ * from the request time, so a retry is not recognised. Reopen it only with a period model, a request-ID record, and
+ * tests for retries. The service function (payRent) is unchanged for trusted callers.
+ */
+const PROPERTY_SUSPENDED_ACTIONS: ReadonlyMap<string, string> = new Map([
+  ["pay_rent", "property_rent_payment_suspended"],
+]);
+
 const IDEMPOTENT_COMMANDS = new Set([
   "world.travel",
   "world.bus",
@@ -359,6 +369,77 @@ const IDEMPOTENT_COMMANDS = new Set([
   "relationship.progress",
   "family.childbirth",
 ]);
+
+/**
+ * Stage 34: money-moving economy actions. Their reply says "economy.result" only after the change is saved. Until then
+ * the reply is "economy.error" with economy_not_saved or economy_outcome_unknown, and the retry uses the same request ID.
+ */
+const ECONOMY_MONEY_ACTIONS: ReadonlySet<string> = new Set([
+  "open_account",
+  "deposit",
+  "withdraw",
+  "transfer",
+  "purchase",
+  "request_loan",
+  "repay_loan",
+]);
+/** Replay records kept in memory (not saved) for unconfirmed or recently confirmed money requests. */
+const MAX_PENDING_MONEY_REPLIES = 256;
+
+/**
+ * A money change whose reply waits for its save (Stage 34). `generation` is the changeGeneration that holds the change.
+ * Kept only in memory: a restart keeps a change only if its save succeeded, and then the request ID is saved with it.
+ * Used for every changing family (Stage 34). A change is answered only after a save covers it.
+ */
+type PendingMoneyReply =
+  | { kind: "economy" | "business" | "education" | "career"; generation: number; reply: Record<string, unknown>; delivered: boolean }
+  | { kind: "snapshot"; generation: number; family: MoneyFamily; delivered: boolean };
+
+/**
+ * Business actions that only read (Stage 34). Every other business action changes persistent state (money, stock,
+ * ownership, staff), so its business.result is sent only after the save covers the change. Until then the reply is
+ * business.error with business_not_saved or business_outcome_unknown, and the retry uses the same request ID.
+ */
+const BUSINESS_READ_ONLY_ACTIONS: ReadonlySet<string> = new Set(["discover", "view"]);
+
+/**
+ * Career actions that only read (Stage 34). Every other career action changes persistent state (applications, shifts,
+ * payroll, employment, life events), so its career.result is sent only after the save covers the change.
+ */
+const CAREER_READ_ONLY_ACTIONS: ReadonlySet<string> = new Set(["search_jobs"]);
+
+/**
+ * Wording for the save outcomes of education and career actions (Stage 34). The economy and business families use their
+ * own message functions.
+ */
+const SAVE_OUTCOME_MESSAGES: Readonly<Record<string, string>> = {
+  education_persistence_unavailable: "Saving is failing, so education changes are paused. Nothing was changed.",
+  education_not_saved: "The education change could not be saved, so it is not confirmed. Retry with the same request ID; it will not be applied twice.",
+  education_outcome_unknown: "The education change may or may not have been saved, so it is not confirmed. Retry with the same request ID; it will not be applied twice.",
+  career_persistence_unavailable: "Saving is failing, so career changes are paused. Nothing was changed.",
+  career_not_saved: "The career change could not be saved, so it is not confirmed. Retry with the same request ID; it will not be applied twice.",
+  career_outcome_unknown: "The career change may or may not have been saved, so it is not confirmed. Retry with the same request ID; it will not be applied twice.",
+};
+
+/**
+ * Player charges whose confirmation is the character snapshot carrying the request ID (Stage 34). The family names the
+ * error codes (`<family>_not_saved`, `<family>_outcome_unknown`, `<family>_persistence_unavailable`) and the wording.
+ */
+type MoneyFamily = "shop" | "bus" | "clinic";
+const MONEY_FAMILY_TEXT: Readonly<Record<MoneyFamily, string>> = {
+  shop: "The purchase",
+  bus: "The bus fare",
+  clinic: "The clinic charge",
+};
+
+/** Refuses a new money change while saving is failing, before anything changes (Stage 34). */
+function moneyPausedMessage(family: MoneyFamily): string {
+  return `${MONEY_FAMILY_TEXT[family]} is paused while saving is failing. Nothing was changed; try again once saving recovers.`;
+}
+
+function moneyReplyKey(player: PersistentPlayer, requestId: string): string {
+  return `${player.playerId}\u0000${requestId}`;
+}
 
 const SKIN_TONES: Record<string, string> = {
   "#9b654d": "Warm brown",
@@ -731,6 +812,8 @@ export class MultiplayerWorld {
    */
   private changeGeneration = 0;
   private savedGeneration = 0;
+  /** Money requests waiting for their save, and recently confirmed ones kept for replay (Stage 34). */
+  private readonly pendingMoneyReplies = new Map<string, PendingMoneyReply>();
   /** True from the first refused save (over the size limit) until the next successful save. */
   private capacityEpisodeOpen = false;
   /** True from the first non-capacity save failure until the next successful save. */
@@ -1114,6 +1197,13 @@ export class MultiplayerWorld {
         return;
       }
       if (player.recentRequestIds.includes(requestId)) {
+        // Stage 34: a request whose money change is not confirmed yet is answered only after its save succeeds.
+        const key = moneyReplyKey(player, requestId);
+        const pending = this.pendingMoneyReplies.get(key);
+        if (pending !== undefined) {
+          await this.confirmMoneyReply(context, key, requestId, pending, true);
+          return;
+        }
         this.send(context, { type: "command.duplicate", requestId });
         this.sendCharacterSnapshot(context, requestId);
         return;
@@ -1607,6 +1697,16 @@ export class MultiplayerWorld {
       this.sendError(context, "insufficient_funds", "The bus fare is ₦150.", requestId);
       return;
     }
+    if (requestId === undefined) {
+      // Unreachable through dispatch (world.bus is in IDEMPOTENT_COMMANDS). Kept to narrow the type, with the right code.
+      this.sendError(context, "request_id_required", "This action requires a unique request ID.");
+      return;
+    }
+    if (!this.financialWritesOpen()) {
+      // Stage 34: nothing is changed while saving is failing or this writer is fenced.
+      this.sendError(context, "bus_persistence_unavailable", moneyPausedMessage("bus"), requestId);
+      return;
+    }
     this.markRequestProcessed(player, requestId);
     player.character.money -= 150;
     player.character.current_location = "schoolyard";
@@ -1615,9 +1715,9 @@ export class MultiplayerWorld {
     context.inputDirection = vectorZero();
     context.running = false;
     this.touchPlayer(player);
-    this.sendCharacterSnapshot(context, requestId);
     this.broadcastPresence({ type: "presence.moved", player: this.toPresence(player, "connected") });
-    await this.flushDirty();
+    // Stage 34: the fare is confirmed (by the character snapshot carrying the request ID) only once it is saved.
+    await this.chargeAndConfirm(context, requestId, "bus", player);
   }
 
   private async enterGeographicRegion(
@@ -1681,12 +1781,26 @@ export class MultiplayerWorld {
       this.sendError(context, "insufficient_funds", `You need ₦${price}.`, requestId);
       return;
     }
+    if (requestId === undefined) {
+      // Unreachable through dispatch (shop.purchase is in IDEMPOTENT_COMMANDS). Kept to narrow the type, with the right code.
+      this.sendError(context, "request_id_required", "This action requires a unique request ID.");
+      return;
+    }
+    if (!this.financialWritesOpen()) {
+      // Stage 34: nothing is changed while saving is failing or this writer is fenced.
+      this.sendError(context, "shop_persistence_unavailable", moneyPausedMessage("shop"), requestId);
+      return;
+    }
     this.markRequestProcessed(player, requestId);
     player.character.money -= price;
     this.addInventoryItem(player.character.inventory, definitions[itemId]);
     this.touchPlayer(player);
-    this.sendCharacterSnapshot(context, requestId);
-    await this.flushDirty();
+    if (requestId === undefined) {
+      // Unreachable through dispatch (shop.purchase is in IDEMPOTENT_COMMANDS). Kept to narrow the type, with the right code.
+      this.sendError(context, "request_id_required", "This action requires a unique request ID.");
+      return;
+    }
+    await this.chargeAndConfirm(context, requestId, "shop", player);
   }
 
   private async consumeItem(context: ConnectionContext, player: PersistentPlayer, message: Record<string, unknown>, requestId?: string): Promise<void> {
@@ -1724,12 +1838,22 @@ export class MultiplayerWorld {
       this.sendError(context, "insufficient_funds", "Basic care costs ₦300.", requestId);
       return;
     }
+    if (requestId === undefined) {
+      // Unreachable through dispatch (clinic.care is in IDEMPOTENT_COMMANDS). Kept to narrow the type, with the right code.
+      this.sendError(context, "request_id_required", "This action requires a unique request ID.");
+      return;
+    }
+    if (!this.financialWritesOpen()) {
+      // Stage 34: nothing is changed while saving is failing or this writer is fenced.
+      this.sendError(context, "clinic_persistence_unavailable", moneyPausedMessage("clinic"), requestId);
+      return;
+    }
     this.markRequestProcessed(player, requestId);
     player.character.money -= 300;
     player.character.health = clamp(player.character.health + 35, 0, 100);
     this.touchPlayer(player);
-    this.sendCharacterSnapshot(context, requestId);
-    await this.flushDirty();
+    // Stage 34: the charge is confirmed (by the character snapshot carrying the request ID) only once it is saved.
+    await this.chargeAndConfirm(context, requestId, "clinic", player);
   }
 
   private async rest(context: ConnectionContext, player: PersistentPlayer, requestId?: string): Promise<void> {
@@ -1965,6 +2089,19 @@ export class MultiplayerWorld {
       void this.flushDirty();
       return;
     }
+    // Stage 34: every education action other than begin_final_exam (above) can change the record or money, so a changing
+    // action needs a request ID, and nothing is changed while saving is failing or this writer is fenced.
+    if (requestId === undefined) {
+      this.send(context, { type: "education.error", action: message.action, code: "request_id_required", message: "This action requires a unique request ID." });
+      return;
+    }
+    if (!this.financialWritesOpen()) {
+      this.send(context, appendOptionalRequestId({
+        type: "education.error", action: message.action, code: "education_persistence_unavailable",
+        message: SAVE_OUTCOME_MESSAGES.education_persistence_unavailable,
+      }, requestId));
+      return;
+    }
     const payload = isRecord(message.payload) ? message.payload : {};
     const options: EducationActionOptions = {
       programSeatsUsed: this.programSeatCount(typeof payload.program_id === "string" ? payload.program_id : ""),
@@ -1982,9 +2119,14 @@ export class MultiplayerWorld {
       this.markRequestProcessed(player, requestId);
       syncLegacyEducation(player.character, this.educationCatalog);
       this.touchPlayer(player);
-      this.send(context, appendOptionalRequestId({ type: "education.result", ...result }, requestId));
-      this.sendCharacterSnapshot(context);
-      await this.flushDirty();
+      // Stage 34: the change is in memory now. Its reply waits until a save has covered it.
+      this.changeGeneration += 1;
+      const key = moneyReplyKey(player, requestId);
+      const pending: PendingMoneyReply = {
+        kind: "education", generation: this.changeGeneration, reply: { type: "education.result", ...result }, delivered: false,
+      };
+      this.pendingMoneyReplies.set(key, pending);
+      await this.confirmMoneyReply(context, key, requestId, pending, false);
       return;
     }
     this.send(context, appendOptionalRequestId({
@@ -2007,6 +2149,20 @@ export class MultiplayerWorld {
       return;
     }
     const action = message.action;
+    if (!CAREER_READ_ONLY_ACTIONS.has(action)) {
+      // Stage 34: a changing career action needs a request ID, and nothing is changed while saving is failing or this writer is fenced.
+      if (requestId === undefined) {
+        this.send(context, { type: "career.error", action, code: "request_id_required", message: "This action requires a unique request ID." });
+        return;
+      }
+      if (!this.financialWritesOpen()) {
+        this.send(context, appendOptionalRequestId({
+          type: "career.error", action, code: "career_persistence_unavailable",
+          message: SAVE_OUTCOME_MESSAGES.career_persistence_unavailable,
+        }, requestId));
+        return;
+      }
+    }
     const payload = isRecord(message.payload) ? message.payload : {};
     const state = this.store.state;
     const characterId = player.character.character_id;
@@ -2129,9 +2285,17 @@ export class MultiplayerWorld {
     this.markRequestProcessed(player, requestId);
     if (action !== "search_jobs") this.touchPlayer(player);
     data.career_profile = buildCareerProfile(state, player.character, this.careerCatalog);
-    this.send(context, appendOptionalRequestId({
-      type: "career.result", action, ok: true, message: messageText, data,
-    }, requestId));
+    const reply: Record<string, unknown> = { type: "career.result", action, ok: true, message: messageText, data };
+    if (!CAREER_READ_ONLY_ACTIONS.has(action) && requestId !== undefined) {
+      // Stage 34: the change is in memory now. Its reply waits until a save has covered it.
+      this.changeGeneration += 1;
+      const key = moneyReplyKey(player, requestId);
+      const pending: PendingMoneyReply = { kind: "career", generation: this.changeGeneration, reply, delivered: false };
+      this.pendingMoneyReplies.set(key, pending);
+      await this.confirmMoneyReply(context, key, requestId, pending, false);
+      return;
+    }
+    this.send(context, appendOptionalRequestId(reply, requestId));
     this.sendCharacterSnapshot(context);
     await this.flushDirty();
   }
@@ -2150,6 +2314,14 @@ export class MultiplayerWorld {
       return;
     }
     const action = message.action;
+    if (ECONOMY_MONEY_ACTIONS.has(action) && !this.financialWritesOpen()) {
+      // Stage 34: nothing is changed while saving is failing or this writer is fenced. A retry is still answered.
+      this.send(context, appendOptionalRequestId({
+        type: "economy.error", action, code: "economy_persistence_unavailable",
+        message: economyErrorMessage("economy_persistence_unavailable"),
+      }, requestId));
+      return;
+    }
     const payload = isRecord(message.payload) ? message.payload : {};
     const state = this.store.state;
     const characterId = player.character.character_id;
@@ -2282,11 +2454,19 @@ export class MultiplayerWorld {
     this.markRequestProcessed(player, requestId);
     if (action !== "profile" && action !== "list_goods" && action !== "estimate_tax") this.touchPlayer(player);
     if (action === "profile") data.economy_profile = buildEconomyProfile(state, characterId, this.economyCatalog);
-    this.send(context, appendOptionalRequestId({
-      type: "economy.result", action, ok: true, message: messageText, data,
-    }, requestId));
-    this.sendCharacterSnapshot(context);
-    await this.flushDirty();
+    const reply: Record<string, unknown> = { type: "economy.result", action, ok: true, message: messageText, data };
+    if (!ECONOMY_MONEY_ACTIONS.has(action) || requestId === undefined) {
+      this.send(context, appendOptionalRequestId(reply, requestId));
+      this.sendCharacterSnapshot(context);
+      await this.flushDirty();
+      return;
+    }
+    // Stage 34: the money change is in memory now. Its reply waits until a save has covered it.
+    this.changeGeneration += 1;
+    const key = moneyReplyKey(player, requestId);
+    const pending: PendingMoneyReply = { kind: "economy", generation: this.changeGeneration, reply, delivered: false };
+    this.pendingMoneyReplies.set(key, pending);
+    await this.confirmMoneyReply(context, key, requestId, pending, false);
   }
 
   private async businessAction(
@@ -2303,6 +2483,20 @@ export class MultiplayerWorld {
       return;
     }
     const action = message.action;
+    if (!BUSINESS_READ_ONLY_ACTIONS.has(action)) {
+      // Stage 34: a changing action needs a request ID, and nothing is changed while saving is failing or this writer is fenced.
+      if (requestId === undefined) {
+        this.send(context, { type: "business.error", action, code: "request_id_required", message: "This action requires a unique request ID." });
+        return;
+      }
+      if (!this.financialWritesOpen()) {
+        this.send(context, appendOptionalRequestId({
+          type: "business.error", action, code: "business_persistence_unavailable",
+          message: businessErrorMessage("business_persistence_unavailable"),
+        }, requestId));
+        return;
+      }
+    }
     const payload = isRecord(message.payload) ? message.payload : {};
     const state = this.store.state;
     const characterId = player.character.character_id;
@@ -2493,9 +2687,17 @@ export class MultiplayerWorld {
 
     this.markRequestProcessed(player, requestId);
     if (!["discover", "view"].includes(action)) this.touchPlayer(player);
-    this.send(context, appendOptionalRequestId({
-      type: "business.result", action, ok: true, message: messageText, data,
-    }, requestId));
+    const reply: Record<string, unknown> = { type: "business.result", action, ok: true, message: messageText, data };
+    if (!BUSINESS_READ_ONLY_ACTIONS.has(action) && requestId !== undefined) {
+      // Stage 34: the change is in memory now. Its reply waits until a save has covered it.
+      this.changeGeneration += 1;
+      const key = moneyReplyKey(player, requestId);
+      const pending: PendingMoneyReply = { kind: "business", generation: this.changeGeneration, reply, delivered: false };
+      this.pendingMoneyReplies.set(key, pending);
+      await this.confirmMoneyReply(context, key, requestId, pending, false);
+      return;
+    }
+    this.send(context, appendOptionalRequestId(reply, requestId));
     this.sendCharacterSnapshot(context);
     await this.flushDirty();
   }
@@ -2510,6 +2712,14 @@ export class MultiplayerWorld {
       this.send(context, appendOptionalRequestId({
         type: "property.error", action: "", code: "property_action_invalid",
         message: "Choose a supported property action.",
+      }, requestId));
+      return;
+    }
+    const suspendedCode = PROPERTY_SUSPENDED_ACTIONS.get(message.action);
+    if (suspendedCode !== undefined) {
+      this.send(context, appendOptionalRequestId({
+        type: "property.error", action: message.action, code: suspendedCode,
+        message: "Paying rent is paused while the payment rules are being made safe. Nothing was changed.",
       }, requestId));
       return;
     }
@@ -5297,6 +5507,7 @@ export class MultiplayerWorld {
       this.savedGeneration = Math.max(this.savedGeneration, captured);
       this.lastPersistAt = this.now();
       this.noteSaveSucceeded();
+      this.pruneMoneyReplies();
       return true;
     } catch (error) {
       this.dirty = true;
@@ -5334,8 +5545,9 @@ export class MultiplayerWorld {
    * three times. When the change is still not covered, the result says whether the save is known to have failed
    * (not_saved) or may have happened (unknown). The reply is then an error, and the retry uses the same request ID.
    */
-  private async ensureDurable(): Promise<{ durable: true } | { durable: false; outcome: SaveOutcome }> {
-    const target = this.changeGeneration;
+  private async ensureDurable(
+    target: number = this.changeGeneration,
+  ): Promise<{ durable: true } | { durable: false; outcome: SaveOutcome }> {
     for (let attempt = 0; attempt < 3; attempt += 1) {
       if (this.savedGeneration >= target) return { durable: true };
       if (!(await this.persistOnce())) return { durable: false, outcome: this.lastFailedSaveOutcome };
@@ -5343,6 +5555,90 @@ export class MultiplayerWorld {
     // Not reached in practice: a save captures a generation no lower than this request's, so one successful save covers
     // it. If it were reached, a save may have happened, so the outcome is reported as unknown (retry-safe).
     return this.savedGeneration >= target ? { durable: true } : { durable: false, outcome: "unknown" };
+  }
+
+  /**
+   * Answers a changing request once its change is saved (Stage 34), for every family: economy, business, education,
+   * career (a result reply), and shop, bus, clinic (a character snapshot). ensureDurable waits for a save that covers the
+   * change. On success the reply is sent (a replay carries replayed: true). On failure the reply is an error that names the
+   * outcome: `<family>_not_saved` when the save is known to have failed before any write, and `<family>_outcome_unknown`
+   * when it may have committed. The replay record is kept, so a retry is answered without applying the change again.
+   */
+  private async confirmMoneyReply(
+    context: ConnectionContext,
+    key: string,
+    requestId: string,
+    pending: PendingMoneyReply,
+    replay: boolean,
+  ): Promise<void> {
+    const durability = await this.ensureDurable(pending.generation);
+    if (!durability.durable) {
+      // The record stays, so a retry with the same request ID is answered once the change is saved.
+      const unknown = durability.outcome === "unknown";
+      if (pending.kind !== "snapshot") {
+        const code = `${pending.kind}_${unknown ? "outcome_unknown" : "not_saved"}`;
+        const message = pending.kind === "economy" ? economyErrorMessage(code)
+          : pending.kind === "business" ? businessErrorMessage(code)
+            : (SAVE_OUTCOME_MESSAGES[code] ?? "The change could not be saved, so it is not confirmed.");
+        this.send(context, appendOptionalRequestId({
+          type: `${pending.kind}.error`, action: pending.reply.action, code, message,
+        }, requestId));
+      } else {
+        const code = `${pending.family}_${unknown ? "outcome_unknown" : "not_saved"}`;
+        const what = MONEY_FAMILY_TEXT[pending.family];
+        this.sendError(context, code, unknown
+          ? `${what} may or may not have been saved, so it is not confirmed. Retry with the same request ID; it will not be charged twice.`
+          : `${what} could not be saved, so it is not confirmed. Retry with the same request ID; it will not be charged twice.`,
+        requestId);
+      }
+      return;
+    }
+    if (pending.delivered) {
+      // A success was already sent for this request, so a resend is a duplicate, as for any idempotent command.
+      this.pendingMoneyReplies.delete(key);
+      this.send(context, { type: "command.duplicate", requestId });
+      this.sendCharacterSnapshot(context, requestId);
+      return;
+    }
+    // The first success for this request. Once sent, the record is no longer needed: a later resend is a duplicate.
+    pending.delivered = true;
+    this.pendingMoneyReplies.delete(key);
+    if (pending.kind !== "snapshot") {
+      const reply = replay
+        ? { ...pending.reply, data: { ...(pending.reply.data as Record<string, unknown>), replayed: true } }
+        : pending.reply;
+      this.send(context, appendOptionalRequestId(reply, requestId));
+      this.sendCharacterSnapshot(context);
+    } else {
+      this.sendCharacterSnapshot(context, requestId);
+    }
+    await this.flushDirty();
+  }
+
+  /**
+   * Charges a player's cash (shop, bus, clinic) and confirms it with the character snapshot carrying the request ID,
+   * only once the change is saved (Stage 34). Callers have validated the request and checked the write gate.
+   */
+  private async chargeAndConfirm(
+    context: ConnectionContext,
+    requestId: string,
+    family: MoneyFamily,
+    player: PersistentPlayer,
+  ): Promise<void> {
+    this.changeGeneration += 1;
+    const key = moneyReplyKey(player, requestId);
+    const pending: PendingMoneyReply = { kind: "snapshot", generation: this.changeGeneration, family, delivered: false };
+    this.pendingMoneyReplies.set(key, pending);
+    await this.confirmMoneyReply(context, key, requestId, pending, false);
+  }
+
+  /** Drops the oldest replay records that are already saved, once there are more than the cap (Stage 34). */
+  private pruneMoneyReplies(): void {
+    if (this.pendingMoneyReplies.size <= MAX_PENDING_MONEY_REPLIES) return;
+    for (const [key, pending] of this.pendingMoneyReplies) {
+      if (this.pendingMoneyReplies.size <= MAX_PENDING_MONEY_REPLIES) break;
+      if (pending.generation <= this.savedGeneration) this.pendingMoneyReplies.delete(key);
+    }
   }
 
   /**

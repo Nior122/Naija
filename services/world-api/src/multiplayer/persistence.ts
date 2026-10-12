@@ -443,6 +443,7 @@ function isEconomyAccount(value: unknown, key: string): boolean {
     isValidDate(value.created_world_date) && typeof value.created_at === "string" && typeof value.updated_at === "string" &&
     isValidDate(value.opened_world_date) &&
     (value.last_interest_date === null || isValidDate(value.last_interest_date)) &&
+    (value.last_fee_date === undefined || value.last_fee_date === null || isValidDate(value.last_fee_date)) &&
     isFiniteNumber(value.total_deposited_ngn) && isFiniteNumber(value.total_withdrawn_ngn) &&
     isFiniteNumber(value.total_fees_paid_ngn) && isFiniteNumber(value.total_interest_earned_ngn) &&
     isFiniteNumber(value.daily_withdrawal_total_ngn) &&
