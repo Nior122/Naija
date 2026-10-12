@@ -137,3 +137,10 @@ ingress configuration has been tested from outside. Token mode is tested locally
 - Historical real-player data loss remains **UNKNOWN**.
 - Account and character tables are not wired to the engine. The engine persists one JSON/JSONB world document.
 - Load testing and deployment-platform testing are incomplete. Production readiness is **not** claimed.
+
+## 8. File backend operating contract (Stage 35)
+
+`PERSISTENCE_BACKEND=file` is for development and tests only. Its single-writer lock (an `flock(2)` lock on
+`<DATA_FILE>.lock`, Linux only), its fencing, its error codes, and its limits (multi-host use, out-of-protocol lock edits,
+restoring old snapshots, power loss) are documented in `docs/PERSISTENCE_FILE_BACKEND.md`. Read that before using the file
+backend. Production refuses it.

@@ -137,6 +137,10 @@ function isPersistentPlayerBase(value: unknown, playerId: string): value is Reco
     typeof value.creationKeyHash === "string" && /^[a-f0-9]{64}$/.test(value.creationKeyHash) &&
     Array.isArray(value.recentRequestIds) && value.recentRequestIds.length <= 256 &&
     value.recentRequestIds.every((requestId) => typeof requestId === "string" && requestId.length <= 80) &&
+    (value.recentPropertyRequests === undefined || (Array.isArray(value.recentPropertyRequests) &&
+      value.recentPropertyRequests.length <= 256 &&
+      value.recentPropertyRequests.every((entry) => isRecord(entry) && typeof entry.request_id === "string" &&
+        entry.request_id.length <= 80 && typeof entry.fingerprint === "string" && /^[a-f0-9]{64}$/.test(entry.fingerprint)))) &&
     typeof value.createdAt === "string" && typeof value.lastSeen === "string" &&
     isCharacterBase(value.character) && value.character.player_id === playerId &&
     (value.session === undefined || isSessionMetadata(value.session));
@@ -1030,9 +1034,11 @@ export type WorldFileFormat = "pretty" | "compact";
  * Points inside a file save, for fault-injection tests only (see test/file-save-durability.test.mjs).
  * - before-temp: nothing has been written yet.
  * - after-temp-sync: the complete temporary file is on disk, and the saved file is still the previous one.
+ * - after-lock-check: the writer lock was checked for this save, immediately before the rename (Stage 35). The
+ *   window between this point and the rename is the residual race that is not closed (see the Stage 35 doc).
  * - after-rename: the saved file has been replaced; directory sync has not run yet.
  */
-export type FileWritePhase = "before-temp" | "after-temp-sync" | "after-rename";
+export type FileWritePhase = "before-temp" | "after-temp-sync" | "after-lock-check" | "after-rename";
 
 export interface WorldStoreOptions {
   /**
@@ -1186,6 +1192,17 @@ export class WorldStore implements WorldStoreLike {
         await this.fileWriteFaultHook?.("before-temp");
         await writeFileDurably(temporaryPath, snapshot);
         await this.fileWriteFaultHook?.("after-temp-sync");
+        // Stage 35: the lock is checked again immediately before the rename, after the temp file is synced. The first
+        // check above is only the early refusal. This one is the check that a replaced lock file must not pass.
+        if (this.writerLock !== null) {
+          try {
+            this.writerLock.assertHeld();
+          } catch (error) {
+            if (error instanceof WorldFileLockLostError) this.fenced = true;
+            throw markSaveOutcome(error, "not_saved");
+          }
+        }
+        await this.fileWriteFaultHook?.("after-lock-check");
         await rename(temporaryPath, this.filePath);
         renamed = true;
         await this.fileWriteFaultHook?.("after-rename");

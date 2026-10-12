@@ -77,7 +77,7 @@ export async function openWorldPersistence(options: OpenPersistenceOptions): Pro
     if (process.env.DATABASE_URL) {
       log("[Persistence] PERSISTENCE_BACKEND=file overrides DATABASE_URL; world state is NOT stored in PostgreSQL.");
     }
-    log("[Persistence] File backend (development mode). Single-instance only: one server process per world file, enforced by a lock file; not shared across instances.");
+    log("[Persistence] File backend (development mode). Single-instance only: one server process per world file, enforced by an flock(2) lock held through a holder process (Linux only). Not safe across hosts or for concurrent writers; use PostgreSQL. See docs/PERSISTENCE_FILE_BACKEND.md.");
     const store = new WorldStore(options.stateFile, now, { format: options.fileFormat ?? "pretty" });
     // Only one live server process may use a world file (Stage 33). A second start is refused here, before it listens.
     store.acquireWriterLock();

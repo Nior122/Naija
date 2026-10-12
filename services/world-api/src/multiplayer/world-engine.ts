@@ -350,6 +350,31 @@ const POLICE_SUSPENDED_ACTIONS: ReadonlyMap<string, string> = new Map([
  * from the request time, so a retry is not recognised. Reopen it only with a period model, a request-ID record, and
  * tests for retries. The service function (payRent) is unchanged for trusted callers.
  */
+/**
+ * Stage 35: property actions that change persistent state (money, ownership, listings, rentals, furnishing, condition).
+ * Each needs a request ID. Its success reply (property.result) is sent only after a save covers the change, as for the
+ * other money families. The read-only actions (market, view, my_properties, my_rentals) need no request ID.
+ */
+const PROPERTY_CHANGING_ACTIONS: ReadonlySet<string> = new Set([
+  "list_for_sale", "list_for_rent", "purchase", "rent", "pay_rent", "terminate_rental", "maintain", "furnish",
+  "remove_furnishing", "transfer",
+]);
+
+/** JSON with object keys sorted at every level, so that equal payloads have equal text. */
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value !== null && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "null";
+}
+
+/** The fingerprint of a property request: its action and payload. A reused request ID must match it (Stage 35). */
+function propertyRequestFingerprint(action: string, payload: Record<string, unknown>): string {
+  return createHash("sha256").update(canonicalJson({ action, payload })).digest("hex");
+}
+
 const PROPERTY_SUSPENDED_ACTIONS: ReadonlyMap<string, string> = new Map([
   ["pay_rent", "property_rent_payment_suspended"],
 ]);
@@ -392,7 +417,7 @@ const MAX_PENDING_MONEY_REPLIES = 256;
  * Used for every changing family (Stage 34). A change is answered only after a save covers it.
  */
 type PendingMoneyReply =
-  | { kind: "economy" | "business" | "education" | "career"; generation: number; reply: Record<string, unknown>; delivered: boolean }
+  | { kind: "economy" | "business" | "education" | "career" | "property"; generation: number; reply: Record<string, unknown>; delivered: boolean; fingerprint?: string }
   | { kind: "snapshot"; generation: number; family: MoneyFamily; delivered: boolean };
 
 /**
@@ -413,6 +438,9 @@ const CAREER_READ_ONLY_ACTIONS: ReadonlySet<string> = new Set(["search_jobs"]);
  * own message functions.
  */
 const SAVE_OUTCOME_MESSAGES: Readonly<Record<string, string>> = {
+  property_not_saved: "The property change could not be saved, so it is not confirmed. Retry with the same request ID; it will not be applied twice.",
+  property_outcome_unknown: "The property change may or may not have been saved, so it is not confirmed. Retry with the same request ID; it will not be applied twice.",
+  property_persistence_unavailable: "Saving is failing, so property changes are paused. Nothing was changed.",
   education_persistence_unavailable: "Saving is failing, so education changes are paused. Nothing was changed.",
   education_not_saved: "The education change could not be saved, so it is not confirmed. Retry with the same request ID; it will not be applied twice.",
   education_outcome_unknown: "The education change may or may not have been saved, so it is not confirmed. Retry with the same request ID; it will not be applied twice.",
@@ -2725,6 +2753,49 @@ export class MultiplayerWorld {
     }
     const action = message.action;
     const payload = isRecord(message.payload) ? message.payload : {};
+    const changing = PROPERTY_CHANGING_ACTIONS.has(action);
+    let fingerprint = "";
+    if (changing) {
+      // Stage 35: a changing property request needs a request ID. A repeat of a recorded request is answered without a
+      // second change. A repeat with a different action or payload is refused. Only then is the write gate checked.
+      if (requestId === undefined) {
+        this.send(context, { type: "property.error", action, code: "request_id_required", message: "This action requires a unique request ID." });
+        return;
+      }
+      fingerprint = propertyRequestFingerprint(action, payload);
+      const key = moneyReplyKey(player, requestId);
+      const pending = this.pendingMoneyReplies.get(key);
+      const recorded = (player.recentPropertyRequests ?? []).find((entry) => entry.request_id === requestId);
+      if (pending !== undefined) {
+        if (pending.kind !== "property" || pending.fingerprint !== fingerprint) {
+          this.sendPropertyRequestReused(context, action, requestId);
+          return;
+        }
+        // The first change is in memory and not yet confirmed: answer it once its save succeeds.
+        await this.confirmMoneyReply(context, key, requestId, pending, true);
+        return;
+      }
+      if (recorded !== undefined) {
+        if (recorded.fingerprint !== fingerprint) {
+          this.sendPropertyRequestReused(context, action, requestId);
+          return;
+        }
+        this.send(context, { type: "command.duplicate", requestId });
+        this.sendCharacterSnapshot(context, requestId);
+        return;
+      }
+      if (player.recentRequestIds.includes(requestId)) {
+        this.sendPropertyRequestReused(context, action, requestId);
+        return;
+      }
+      if (!this.financialWritesOpen()) {
+        this.send(context, appendOptionalRequestId({
+          type: "property.error", action, code: "property_persistence_unavailable",
+          message: SAVE_OUTCOME_MESSAGES.property_persistence_unavailable,
+        }, requestId));
+        return;
+      }
+    }
     const state = this.store.state;
     const characterId = player.character.character_id;
     const date = { ...state.worldClock.world_date };
@@ -2863,7 +2934,7 @@ export class MultiplayerWorld {
         }
         case "transfer": {
           const result = transferProperty(state, requiredString("property_id"), characterId,
-            requiredString("to_character_id"), date, minuteOfDay, now);
+            requiredString("to_character_id"), date, minuteOfDay, now, this.propertyCatalog);
           data.ownership = result.ownership;
           data.previous = result.previous;
           messageText = `Property transferred to ${result.ownership.owner_id}.`;
@@ -2883,13 +2954,43 @@ export class MultiplayerWorld {
       return;
     }
 
+    if (!changing) {
+      this.send(context, appendOptionalRequestId({
+        type: "property.result", action, ok: true, message: messageText, data,
+      }, requestId));
+      this.sendCharacterSnapshot(context);
+      await this.flushDirty();
+      return;
+    }
+    // Stage 35: the change, its request record, and the touched player are in memory now, and they are saved together.
+    // The reply waits until a save has covered this change; until then a retry with the same request ID is answered
+    // from the pending record, and a failed save is reported as property_not_saved or property_outcome_unknown.
     this.markRequestProcessed(player, requestId);
-    if (!["market", "view", "my_properties", "my_rentals"].includes(action)) this.touchPlayer(player);
+    this.recordPropertyRequest(player, requestId!, fingerprint);
+    this.touchPlayer(player);
+    this.changeGeneration += 1;
+    const key = moneyReplyKey(player, requestId!);
+    const pending: PendingMoneyReply = {
+      kind: "property", generation: this.changeGeneration, delivered: false, fingerprint,
+      reply: { type: "property.result", action, ok: true, message: messageText, data },
+    };
+    this.pendingMoneyReplies.set(key, pending);
+    await this.confirmMoneyReply(context, key, requestId!, pending, false);
+  }
+
+  /** Records a changing property request with its fingerprint, in the same save as the change (Stage 35). */
+  private recordPropertyRequest(player: PersistentPlayer, requestId: string, fingerprint: string): void {
+    const records = player.recentPropertyRequests ?? (player.recentPropertyRequests = []);
+    records.push({ request_id: requestId, fingerprint });
+    while (records.length > MAX_RECENT_REQUESTS) records.shift();
+    this.dirty = true;
+  }
+
+  private sendPropertyRequestReused(context: ConnectionContext, action: string, requestId: string): void {
     this.send(context, appendOptionalRequestId({
-      type: "property.result", action, ok: true, message: messageText, data,
+      type: "property.error", action, code: "property_request_id_reused",
+      message: "This request ID was already used for a different request. Nothing was changed; use a new request ID for a new request.",
     }, requestId));
-    this.sendCharacterSnapshot(context);
-    await this.flushDirty();
   }
 
   private async governmentAction(

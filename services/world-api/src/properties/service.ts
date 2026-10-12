@@ -124,6 +124,15 @@ function creditToCashAccount(state: PersistentWorldState, characterId: string, a
   account.updated_at = timestamp;
 }
 
+/**
+ * Stage 35: a money path checks the receiving account before it debits the payer. creditToCashAccount throws when the
+ * account is missing, and a throw after the debit would leave the payer charged with no ownership or rent change.
+ */
+function assertCashAccountExists(state: PersistentWorldState, characterId: string): void {
+  const exists = Object.values(state.economyAccounts).some((a) => a.kind === "cash" && a.character_id === characterId);
+  if (!exists) throw new Error("property_no_cash_account");
+}
+
 export function initializePropertyWorldState(state: PersistentWorldState): void {
   if (!state.properties) state.properties = {};
   if (!state.propertyOwnership) state.propertyOwnership = {};
@@ -319,12 +328,9 @@ export function purchaseProperty(
     throw new Error("property_not_purchasable");
   }
 
-  // Idempotency check
+  // The listing is single-use: a sale marks it unavailable, so a second purchase of the same listing is refused above.
+  // Retries of the same request are answered by the engine's request-ID record, not here (Stage 35).
   const idemKey = createHash("sha256").update(`prop-purchase:${listingId}:${characterId}`).digest("hex");
-  const existingSale = Object.values(state.propertySales).find((s) => s.idempotency_key === idemKey);
-  if (existingSale) {
-    return { property, sale: existingSale, ownership: ownershipForCharacterAndProperty(state, property.property_id, characterId)! };
-  }
 
   // Check existing ownership limit
   const ownedCount = propertiesForCharacter(state, characterId).length;
@@ -346,14 +352,14 @@ export function purchaseProperty(
   const currentOwner = ownerForProperty(state, property.property_id);
   if (!currentOwner) throw new Error("property_no_owner");
   if (currentOwner.owner_id === characterId) throw new Error("property_already_owner");
+  // A player seller must have a cash account to be credited. Checked before the debit (Stage 35).
+  const sellerPlayer = characterForId(state, currentOwner.owner_id);
+  if (sellerPlayer) assertCashAccountExists(state, currentOwner.owner_id);
 
   const timestamp = new Date(now).toISOString();
 
-  // Deduct from buyer
+  // Every check has passed. From here on nothing below can throw: the debit and the credit are the same sale.
   deductFromCashAccount(state, characterId, price, timestamp);
-
-  // Credit seller if they are a player
-  const sellerPlayer = characterForId(state, currentOwner.owner_id);
   if (sellerPlayer) {
     creditToCashAccount(state, currentOwner.owner_id, price, timestamp);
   }
@@ -580,11 +586,12 @@ export function createRentalAgreement(
   const balance = cashBalanceForCharacter(state, characterId);
   if (balance < totalDue) throw new Error("property_insufficient_funds");
 
-  // Deduct from tenant
-  deductFromCashAccount(state, characterId, totalDue, timestamp);
-
-  // Credit landlord if they are a player
+  // A player landlord must have a cash account. Checked before the tenant is debited (Stage 35).
   const landlordPlayer = characterForId(state, listing.owner_id);
+  if (landlordPlayer) assertCashAccountExists(state, listing.owner_id);
+
+  // Every check has passed: the debit and the credit below are one rental start.
+  deductFromCashAccount(state, characterId, totalDue, timestamp);
   if (landlordPlayer) {
     creditToCashAccount(state, listing.owner_id, totalDue, timestamp);
   }
@@ -665,11 +672,11 @@ export function payRent(
   const existing = Object.values(state.rentalPayments).find((p) => p.idempotency_key === idemKey);
   if (existing) return existing;
 
-  // Deduct from tenant
-  deductFromCashAccount(state, characterId, rent, timestamp);
-
-  // Credit landlord if they are a player
+  // A player landlord must have a cash account. Checked before the tenant is debited (Stage 35).
   const landlordPlayer = characterForId(state, agreement.landlord_id);
+  if (landlordPlayer) assertCashAccountExists(state, agreement.landlord_id);
+
+  deductFromCashAccount(state, characterId, rent, timestamp);
   if (landlordPlayer) {
     creditToCashAccount(state, agreement.landlord_id, rent, timestamp);
   }
@@ -767,8 +774,18 @@ export function recordMaintenance(
   const desc = description.normalize("NFC").trim();
   if (desc.length < 1 || desc.length > 500) throw new Error("property_maintenance_description_invalid");
 
+  // Funds are checked before anything changes (Stage 35). Before this, the condition and the record were written first, so
+  // an insufficient-funds refusal left a changed property with no payment.
+  if (costNgn > 0) {
+    assertCashAccountExists(state, characterId);
+    if (cashBalanceForCharacter(state, characterId) < costNgn) throw new Error("property_insufficient_funds");
+  }
+
   const conditionBefore = property.condition;
   const timestamp = new Date(now).toISOString();
+  if (costNgn > 0) {
+    deductFromCashAccount(state, characterId, costNgn, timestamp);
+  }
 
   const maintenance: PropertyMaintenanceRecord = {
     maintenance_id: `prop-maint-${randomUUID()}`,
@@ -788,11 +805,6 @@ export function recordMaintenance(
   // Update property condition
   property.condition = newCondition;
   property.updated_at = timestamp;
-
-  // Deduct maintenance cost from owner
-  if (costNgn > 0) {
-    deductFromCashAccount(state, characterId, costNgn, timestamp);
-  }
 
   appendPropertyEvent(state, propertyId, "maintenance_completed",
     `Maintenance: ${desc}. Condition: ${conditionBefore} → ${newCondition}. Cost: ₦${costNgn.toLocaleString("en-NG")}.`, date, now,
@@ -896,6 +908,7 @@ export function transferProperty(
   date: CalendarDate,
   minuteOfDay: number,
   now: number,
+  catalog: PropertyCatalog = loadPropertyCatalog(),
 ): { ownership: PropertyOwnershipRecord; previous: PropertyOwnershipRecord } {
   const property = state.properties[propertyId];
   if (!property) throw new Error("property_not_found");
@@ -905,6 +918,16 @@ export function transferProperty(
   const toPlayer = characterForId(state, toCharacterId);
   if (!toPlayer) throw new Error("property_character_not_found");
   if (toPlayer.character.life_status === "deceased") throw new Error("property_character_deceased");
+  // The recipient becomes an owner, so the same eligibility and ownership limits as a purchase apply (Stage 35). Before
+  // this, a transfer could exceed the per-character limits that purchase enforces.
+  if (toPlayer.character.age < catalog.rules.minimum_purchase_age_years) throw new Error("property_age_ineligible");
+  if (propertiesForCharacter(state, toCharacterId).length >= catalog.rules.maximum_properties_per_character) {
+    throw new Error("property_limit_reached");
+  }
+  if (property.is_land) {
+    const landCount = propertiesForCharacter(state, toCharacterId).filter((p) => p.is_land).length;
+    if (landCount >= catalog.rules.maximum_land_per_character) throw new Error("property_land_limit_reached");
+  }
 
   const timestamp = new Date(now).toISOString();
 

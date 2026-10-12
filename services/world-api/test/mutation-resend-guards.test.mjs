@@ -1,7 +1,8 @@
 // Stage 28 mutation-ordering guards. These tests re-send a mutating request with the same requestId.
-// The server does not deduplicate these commands (see IDEMPOTENT_COMMANDS in world-engine.ts), so each test
-// records what the current code actually does. Tests marked "gap" assert the current, unfixed behaviour so the
-// gap stays visible; they are not evidence that the behaviour is correct.
+// Commands listed in IDEMPOTENT_COMMANDS (world-engine.ts) are deduplicated by the engine. Changing property actions
+// are deduplicated by the propertyAction gate instead (Stage 35): a re-sent purchase is answered with command.duplicate
+// and is not charged again (the purchase test below asserts that). Tests marked "gap" assert the current, unfixed behaviour so the gap stays visible; they are not
+// evidence that the behaviour is correct.
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { after, afterEach, before, test } from "node:test";
@@ -76,10 +77,13 @@ for (const backendName of backendNames) {
     const afterFirst = cashBalance(backend, characterId);
     assert.equal(before - afterFirst, sale.asking_price_ngn);
 
+    // Stage 35: a repeat of a recorded request is answered as a duplicate (as for the other idempotent commands), with
+    // the current character snapshot. Before Stage 35 it was refused by the listing check. The buyer is not charged
+    // either way.
     const resent = await ask(peer, {
       type: "property.action", action: "purchase", requestId: "guard-buy-1", payload: { listing_id: sale.listing_id },
-    }, ["property.result", "property.error"]);
-    assert.equal(resent.type, "property.error");
+    }, ["command.duplicate", "property.result", "property.error"]);
+    assert.equal(resent.type, "command.duplicate");
     assert.equal(cashBalance(backend, characterId), afterFirst, "the re-sent purchase must not charge again");
   });
 

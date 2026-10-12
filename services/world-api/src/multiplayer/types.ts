@@ -115,6 +115,12 @@ export interface PersistentPlayer {
   tokenHash: string;
   creationKeyHash: string;
   recentRequestIds: string[];
+  /**
+   * Stage 35: the request IDs of recent property changes, with a fingerprint of each request's action and payload. A
+   * repeated ID with the same fingerprint is a duplicate; with a different fingerprint it is refused. Absent on records
+   * created before Stage 35, and then treated as empty. Bounded like recentRequestIds.
+   */
+  recentPropertyRequests?: { request_id: string; fingerprint: string }[];
   createdAt: string;
   lastSeen: string;
   character: CharacterRecord;
