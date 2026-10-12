@@ -5,7 +5,12 @@ export type BusinessModel = "retail" | "food_service" | "service" | "production"
 export type BusinessStatus = "draft" | "active" | "suspended" | "closed" | "insolvent";
 export type BusinessOwnershipRole = "owner" | "co_owner" | "manager" | "accountant" | "inventory_manager" | "employee";
 export type BusinessPremisesType = "home_based" | "market_stall" | "shop" | "office" | "workshop" | "restaurant" | "farm" | "warehouse" | "factory" | "service_area" | "studio";
-export type BusinessTransactionKind = "sale_product" | "sale_service" | "expense_operating" | "expense_rent" | "expense_salary" | "capital_contribution" | "owner_withdrawal" | "production_cost" | "setup_cost" | "refund" | "purchase_stock";
+/**
+ * Stage 40: the business journal. Each entry is a view of one economy ledger row on the business account (see
+ * `economy_transaction_id`). `legacy_import` and `seed_capital` are credits without a counterparty; `salary_paid`,
+ * `transfer_in` and `transfer_out` are the payroll and inter-business moves.
+ */
+export type BusinessTransactionKind = "sale_product" | "sale_service" | "expense_operating" | "expense_rent" | "expense_salary" | "capital_contribution" | "owner_withdrawal" | "production_cost" | "setup_cost" | "refund" | "purchase_stock" | "salary_paid" | "transfer_in" | "transfer_out" | "legacy_import" | "seed_capital";
 export type BusinessInventoryMovementKind = "initial_stock" | "restock" | "sale" | "production_output" | "production_input" | "adjustment" | "damage" | "transfer";
 
 export interface BusinessCategoryDefinition {
@@ -189,6 +194,11 @@ export interface BusinessTransactionRecord {
   readonly reference_id: string | null;
   readonly counterparty_character_id: string | null;
   readonly idempotency_key: string;
+  /**
+   * Stage 40: the economy ledger row on the business account that this entry records. Absent on entries written before
+   * Stage 40, which have no ledger row.
+   */
+  readonly economy_transaction_id?: string | null;
 }
 
 export interface BusinessExpenseRecord {

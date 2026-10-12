@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { loadEconomyCatalog } from "../economy/catalog.js";
-import { economyErrorMessage } from "../economy/service.js";
+import { accountKey, economyErrorMessage, syncCharacterCashFromEconomy } from "../economy/service.js";
+import type { EconomyAccountRecord, EconomyCatalog, EconomyTransactionKind, EconomyTransactionRecord } from "../economy/types.js";
 import type { CalendarDate } from "../life/types.js";
 import type { PersistentPlayer, PersistentWorldState } from "../multiplayer/types.js";
 import { loadBusinessCatalog } from "./catalog.js";
@@ -72,31 +73,198 @@ function appendBusinessEvent(
   return event;
 }
 
+/** Stage 40: the suffix that names a business's own account (see docs/STAGE_40_BUSINESS_ACCOUNTS.md, section 2.1). */
+const BUSINESS_ACCOUNT_SUFFIX = "business";
+
+/** Stage 40: the key of the economy account that holds a business's money. */
+export function businessAccountKey(businessId: string): string {
+  return accountKey(businessId, "current", BUSINESS_ACCOUNT_SUFFIX);
+}
+
+/** Stage 40: the business's account. Refuses when the account is missing, so no money moves without one. */
+export function businessAccountFor(state: PersistentWorldState, businessId: string): EconomyAccountRecord {
+  const account = state.economyAccounts[businessAccountKey(businessId)];
+  if (!account || account.kind !== "current" || account.character_id !== businessId) throw new Error("business_account_missing");
+  return account;
+}
+
+function cashAccountFor(state: PersistentWorldState, characterId: string): EconomyAccountRecord | undefined {
+  return Object.values(state.economyAccounts).find((a) => a.kind === "cash" && a.character_id === characterId);
+}
+
+/**
+ * Stage 40: opens the business's account if it does not exist. The account is an economy account with no bank product,
+ * so the economy's interest and fee processing skip it.
+ */
+export function openBusinessAccount(state: PersistentWorldState, businessId: string, date: CalendarDate, now: number): EconomyAccountRecord {
+  const key = businessAccountKey(businessId);
+  const existing = state.economyAccounts[key];
+  if (existing) return existing;
+  const timestamp = new Date(now).toISOString();
+  const account: EconomyAccountRecord = {
+    account_id: key,
+    character_id: businessId,
+    kind: "current",
+    bank_product_id: null,
+    balance_ngn: 0,
+    status: "active",
+    created_at: timestamp,
+    created_world_date: cloneDate(date),
+    updated_at: timestamp,
+    opened_world_date: cloneDate(date),
+    last_interest_date: null,
+    last_fee_date: null,
+    total_deposited_ngn: 0,
+    total_withdrawn_ngn: 0,
+    total_fees_paid_ngn: 0,
+    total_interest_earned_ngn: 0,
+    daily_withdrawal_total_ngn: 0,
+    daily_withdrawal_date: null,
+  };
+  state.economyAccounts[key] = account;
+  return account;
+}
+
+/** Stage 40: one side of a money move: the account, and the economy transaction kind written on that side. */
+export interface BusinessMoneyLeg {
+  readonly account: EconomyAccountRecord;
+  readonly kind: EconomyTransactionKind;
+}
+
+/**
+ * Stage 40: one money movement. A debit leaves `debit.account`, and a credit arrives in `credit.account`. Either side may
+ * be null: a sink (a cost with no receiver) has no credit, and an issuance or import has no debit. Both sides are one
+ * movement, so both ledger rows are written together, or neither is.
+ */
+export interface BusinessMoneyMove {
+  readonly debit: BusinessMoneyLeg | null;
+  readonly credit: BusinessMoneyLeg | null;
+  readonly amountNgn: number;
+  readonly description: string;
+  readonly referenceId: string | null;
+  readonly date: CalendarDate;
+  readonly minuteOfDay: number;
+  readonly now: number;
+  readonly economyCatalog: EconomyCatalog;
+}
+
+/** Stage 40: the economy ledger rows written for one movement. */
+export interface PostedBusinessMoney {
+  readonly debit: EconomyTransactionRecord | null;
+  readonly credit: EconomyTransactionRecord | null;
+}
+
+/**
+ * Stage 40: the single path by which business code moves money. It checks everything first (both accounts active, funds,
+ * the balance limit), and only then changes any balance. It writes one economy ledger row for each side, sets each
+ * account's totals, refreshes a business's `balance_ngn` from its account, and refreshes a player's `money` from their
+ * cash account. A refused movement changes nothing.
+ */
+export function postBusinessMoney(state: PersistentWorldState, move: BusinessMoneyMove): PostedBusinessMoney {
+  const { debit, credit, amountNgn } = move;
+  if (!debit && !credit) throw new Error("business_money_move_invalid");
+  if (debit && credit && debit.account.account_id === credit.account.account_id) throw new Error("business_money_move_invalid");
+  if (!Number.isSafeInteger(amountNgn) || amountNgn < 1) throw new Error("business_amount_invalid");
+  for (const leg of [debit, credit]) {
+    if (leg && leg.account.status !== "active") throw new Error("economy_account_not_active");
+  }
+  if (debit && debit.account.balance_ngn < amountNgn) throw new Error("business_insufficient_funds");
+  if (credit && credit.account.balance_ngn + amountNgn > move.economyCatalog.rules.maximum_account_balance_ngn) {
+    throw new Error("business_balance_limit");
+  }
+
+  const timestamp = new Date(move.now).toISOString();
+  let debitRow: EconomyTransactionRecord | null = null;
+  let creditRow: EconomyTransactionRecord | null = null;
+  if (debit) {
+    const before = debit.account.balance_ngn;
+    debit.account.balance_ngn -= amountNgn;
+    debit.account.total_withdrawn_ngn += amountNgn;
+    debit.account.updated_at = timestamp;
+    debitRow = recordLedgerRow(state, debit.account, debit.kind, "debit", amountNgn, before, move, credit?.account.account_id ?? null, timestamp);
+  }
+  if (credit) {
+    const before = credit.account.balance_ngn;
+    credit.account.balance_ngn += amountNgn;
+    credit.account.total_deposited_ngn += amountNgn;
+    credit.account.updated_at = timestamp;
+    creditRow = recordLedgerRow(state, credit.account, credit.kind, "credit", amountNgn, before, move, debit?.account.account_id ?? null, timestamp);
+  }
+  for (const leg of [debit, credit]) {
+    if (leg) refreshBalanceProjections(state, leg.account);
+  }
+  return { debit: debitRow, credit: creditRow };
+}
+
+function recordLedgerRow(
+  state: PersistentWorldState,
+  account: EconomyAccountRecord,
+  kind: EconomyTransactionKind,
+  direction: "debit" | "credit",
+  amountNgn: number,
+  balanceBefore: number,
+  move: BusinessMoneyMove,
+  counterpartyAccountId: string | null,
+  timestamp: string,
+): EconomyTransactionRecord {
+  const transactionId = `economy-tx-${randomUUID()}`;
+  const row: EconomyTransactionRecord = {
+    transaction_id: transactionId,
+    account_id: account.account_id,
+    character_id: account.character_id,
+    kind,
+    amount_ngn: amountNgn,
+    balance_before_ngn: balanceBefore,
+    balance_after_ngn: account.balance_ngn,
+    fee_ngn: 0,
+    description: move.description,
+    world_date: cloneDate(move.date),
+    minute_of_day: move.minuteOfDay,
+    posted_at: timestamp,
+    reference_id: move.referenceId,
+    counterparty_account_id: counterpartyAccountId,
+    // Unique for each row. A repeated request is stopped by the request gate, not by this key (STAGE_40 section 2.7).
+    idempotency_key: createHash("sha256").update(`business-money:${kind}:${direction}:${account.account_id}:${transactionId}`).digest("hex"),
+  };
+  state.economyTransactions[transactionId] = row;
+  return row;
+}
+
+/** Stage 40: a business's `balance_ngn` is a copy of its account; a player's `money` is a copy of their cash account. */
+function refreshBalanceProjections(state: PersistentWorldState, account: EconomyAccountRecord): void {
+  const business = state.businesses[account.character_id];
+  if (account.kind === "current" && business && account.account_id === businessAccountKey(business.business_id)) {
+    business.balance_ngn = account.balance_ngn;
+  }
+  if (account.kind === "cash") syncCharacterCashFromEconomy(state, account.character_id);
+}
+
+/**
+ * Stage 40: the business journal. Each entry is a view of the ledger row on the business account that it names, and its
+ * before and after balances are copied from that row. Totals are updated here, from the kind, so they are set in one
+ * place.
+ */
 function postBusinessTransaction(
   state: PersistentWorldState,
   businessId: string,
   kind: BusinessTransactionKind,
-  amountNgn: number,
   description: string,
   date: CalendarDate,
   minuteOfDay: number,
   now: number,
   idempotencyKey: string,
-  referenceId: string | null = null,
-  counterpartyCharacterId: string | null = null,
+  referenceId: string | null,
+  counterpartyCharacterId: string | null,
+  ledgerRow: EconomyTransactionRecord,
 ): BusinessTransactionRecord {
   const business = state.businesses[businessId]!;
-  const balanceBefore = business.balance_ngn;
-  const balanceAfter = kind === "capital_contribution" || kind === "sale_product" || kind === "sale_service" || kind === "refund"
-    ? balanceBefore + amountNgn
-    : balanceBefore - amountNgn;
   const tx: BusinessTransactionRecord = {
     transaction_id: `biz-tx-${randomUUID()}`,
     business_id: businessId,
     kind,
-    amount_ngn: amountNgn,
-    balance_before_ngn: balanceBefore,
-    balance_after_ngn: balanceAfter,
+    amount_ngn: ledgerRow.amount_ngn,
+    balance_before_ngn: ledgerRow.balance_before_ngn,
+    balance_after_ngn: ledgerRow.balance_after_ngn,
     description,
     world_date: cloneDate(date),
     minute_of_day: minuteOfDay,
@@ -104,14 +272,17 @@ function postBusinessTransaction(
     reference_id: referenceId,
     counterparty_character_id: counterpartyCharacterId,
     idempotency_key: idempotencyKey,
+    economy_transaction_id: ledgerRow.transaction_id,
   };
   state.businessTransactions[tx.transaction_id] = tx;
-  business.balance_ngn = balanceAfter;
+  const amountNgn = tx.amount_ngn;
   if (kind === "sale_product" || kind === "sale_service") business.total_revenue_ngn += amountNgn;
-  if (kind === "expense_operating" || kind === "expense_rent" || kind === "expense_salary" || kind === "production_cost") business.total_expenses_ngn += amountNgn;
-  if (kind === "capital_contribution") business.total_capital_ngn += amountNgn;
+  if (kind === "expense_operating" || kind === "expense_rent" || kind === "expense_salary" || kind === "production_cost" || kind === "salary_paid") {
+    business.total_expenses_ngn += amountNgn;
+  }
+  if (kind === "capital_contribution" || kind === "seed_capital") business.total_capital_ngn += amountNgn;
   if (kind === "owner_withdrawal") business.total_withdrawals_ngn += amountNgn;
-  business.updated_at = new Date(now).toISOString();
+  business.updated_at = tx.posted_at;
   return tx;
 }
 
@@ -179,29 +350,14 @@ export function createBusiness(
   const validatedDescription = validateBusinessDescription(description, catalog);
 
   const setupCost = template.setup_cost_ngn;
-  const cashAccounts = Object.values(state.economyAccounts).filter((a) => a.kind === "cash" && a.character_id === characterId);
-  const cashAccount = cashAccounts[0];
+  const cashAccount = cashAccountFor(state, characterId);
   if (!cashAccount) throw new Error("business_no_cash_account");
-  const totalAvailable = cashAccount.balance_ngn;
-  if (totalAvailable < setupCost + initialCapitalNgn) throw new Error("business_insufficient_funds");
+  if (cashAccount.status !== "active") throw new Error("economy_account_not_active");
+  if (cashAccount.balance_ngn < setupCost + initialCapitalNgn) throw new Error("business_insufficient_funds");
 
+  const economyCatalog = loadEconomyCatalog();
   const timestamp = new Date(now).toISOString();
   const businessId = `biz-${randomUUID()}`;
-
-  if (setupCost > 0) {
-    const deductAmount = setupCost;
-    if (cashAccount.balance_ngn >= deductAmount) {
-      cashAccount.balance_ngn -= deductAmount;
-      cashAccount.total_withdrawn_ngn += deductAmount;
-    } else {
-      const fromCash = cashAccount.balance_ngn;
-      const fromMoney = deductAmount - fromCash;
-      cashAccount.balance_ngn = 0;
-      cashAccount.total_withdrawn_ngn += fromCash;
-      player.character.money -= fromMoney;
-    }
-    cashAccount.updated_at = timestamp;
-  }
 
   const business: BusinessRecord = {
     business_id: businessId,
@@ -244,22 +400,28 @@ export function createBusiness(
   };
   state.businessOwnership[ownership.ownership_id] = ownership;
 
-  if (initialCapitalNgn > 0) {
-    cashAccount.balance_ngn -= initialCapitalNgn;
-    cashAccount.total_withdrawn_ngn += initialCapitalNgn;
-    cashAccount.updated_at = timestamp;
-    const idemKey = createHash("sha256").update(`biz-capital:${businessId}:${timestamp}`).digest("hex");
-    postBusinessTransaction(state, businessId, "capital_contribution", initialCapitalNgn,
-      "Initial capital contribution from owner.", date, minuteOfDay, now, idemKey, null, characterId);
-  }
+  const businessAccount = openBusinessAccount(state, businessId, date, now);
 
-  // Setup cost is already deducted from the owner's personal cash account above.
-  // We record it as a business event but do not debit the business balance.
-
+  // The setup fee is a sink: the owner pays the registration cost, and no account receives it.
   if (setupCost > 0) {
+    postBusinessMoney(state, {
+      debit: { account: cashAccount, kind: "business_setup_fee" }, credit: null, amountNgn: setupCost,
+      description: "Registration and setup cost.", referenceId: businessId, date, minuteOfDay, now, economyCatalog,
+    });
     appendBusinessEvent(state, businessId, "setup_cost_paid",
       `Registration and setup cost of ₦${setupCost.toLocaleString("en-NG")} paid by the owner.`, date, minuteOfDay, now,
       { setup_cost_ngn: setupCost });
+  }
+
+  if (initialCapitalNgn > 0) {
+    const posted = postBusinessMoney(state, {
+      debit: { account: cashAccount, kind: "business_capital" }, credit: { account: businessAccount, kind: "business_capital" },
+      amountNgn: initialCapitalNgn, description: "Initial capital contribution from owner.", referenceId: businessId,
+      date, minuteOfDay, now, economyCatalog,
+    });
+    const idemKey = createHash("sha256").update(`biz-capital:${businessId}:${timestamp}`).digest("hex");
+    postBusinessTransaction(state, businessId, "capital_contribution", "Initial capital contribution from owner.",
+      date, minuteOfDay, now, idemKey, null, characterId, posted.credit!);
   }
 
   appendBusinessEvent(state, businessId, "business_created",
@@ -348,12 +510,20 @@ export function restockInventory(
   if (!Number.isSafeInteger(unitCostNgn) || unitCostNgn < 0) throw new Error("business_stock_cost_invalid");
 
   const existing = Object.values(state.businessInventory).find((inv) => inv.business_id === businessId && inv.product_definition_id === productDefinitionId && inv.location_id === business.primary_location_id);
+  if (existing && existing.quantity + quantity > catalog.rules.maximum_stock_per_product) throw new Error("business_stock_limit_exceeded");
+
+  // Stage 40: every check comes before any change. A cost the business cannot pay refuses the restock, and inventory is
+  // left as it was. Before this stage, stock was changed first.
+  const totalCost = unitCostNgn * quantity;
+  const businessAccount = businessAccountFor(state, businessId);
+  if (totalCost > 0 && businessAccount.balance_ngn < totalCost) throw new Error("business_insufficient_funds");
+  if (totalCost > 0 && businessAccount.status !== "active") throw new Error("economy_account_not_active");
+
   const timestamp = new Date(now).toISOString();
   let inventory: BusinessInventoryRecord;
 
   if (existing) {
     const newQuantity = existing.quantity + quantity;
-    if (newQuantity > catalog.rules.maximum_stock_per_product) throw new Error("business_stock_limit_exceeded");
     existing.unit_cost_ngn = quantity > 0 ? Math.floor((existing.unit_cost_ngn * existing.quantity + unitCostNgn * quantity) / newQuantity) : existing.unit_cost_ngn;
     existing.quantity = newQuantity;
     existing.updated_at = timestamp;
@@ -389,28 +559,39 @@ export function restockInventory(
   state.businessInventoryMovements[movement.movement_id] = movement;
 
   let costTransaction: BusinessTransactionRecord | null = null;
-  const totalCost = unitCostNgn * quantity;
   if (totalCost > 0) {
-    if (business.balance_ngn < totalCost) throw new Error("business_insufficient_funds");
+    // The supplier cost is a sink: no supplier account exists (STAGE_40 section 5).
+    const posted = postBusinessMoney(state, {
+      debit: { account: businessAccount, kind: "business_expense" }, credit: null, amountNgn: totalCost,
+      description: `Purchased ${quantity} × ${product.label} at ₦${unitCostNgn} each.`, referenceId: inventory.inventory_id,
+      date, minuteOfDay, now, economyCatalog: loadEconomyCatalog(),
+    });
     const idemKey = createHash("sha256").update(`biz-restock:${inventory.inventory_id}:${timestamp}`).digest("hex");
-    costTransaction = postBusinessTransaction(state, businessId, "purchase_stock", totalCost,
-      `Purchased ${quantity} × ${product.label} at ₦${unitCostNgn} each.`, date, minuteOfDay, now, idemKey);
+    costTransaction = postBusinessTransaction(state, businessId, "purchase_stock",
+      `Purchased ${quantity} × ${product.label} at ₦${unitCostNgn} each.`, date, minuteOfDay, now, idemKey,
+      inventory.inventory_id, null, posted.debit!);
   }
 
   business.updated_at = timestamp;
   return { inventory, movement, cost_transaction: costTransaction };
 }
 
-export function sellProduct(
+/**
+ * Stage 40: the only way a business earns revenue. A buyer pays from their own cash account, and the business account is
+ * credited in the same movement. The buyer is the character the caller authenticated as. Nothing in the payload can
+ * name someone else as the payer.
+ */
+function purchaseFromBusiness(
   state: PersistentWorldState,
   businessId: string,
   productRecordId: string,
-  buyerCharacterId: string | null,
+  buyerCharacterId: string,
   quantity: number,
+  isService: boolean,
   date: CalendarDate,
   minuteOfDay: number,
   now: number,
-  catalog: BusinessCatalog = loadBusinessCatalog(),
+  catalog: BusinessCatalog,
 ): { sale: BusinessSaleRecord; revenue_transaction: BusinessTransactionRecord } {
   const business = state.businesses[businessId];
   if (!business) throw new Error("business_not_found");
@@ -421,37 +602,59 @@ export function sellProduct(
   if (!productRecord.available) throw new Error("business_product_unavailable");
 
   if (!Number.isSafeInteger(quantity) || quantity < 1) throw new Error("business_sale_quantity_invalid");
+  if (isService && quantity !== 1) throw new Error("business_sale_quantity_invalid");
 
-  const inventory = Object.values(state.businessInventory).find((inv) =>
+  const buyer = characterForId(state, buyerCharacterId);
+  if (!buyer) throw new Error("business_character_not_found");
+  if (buyer.character.life_status === "deceased") throw new Error("business_character_deceased");
+  const ownsBusiness = Object.values(state.businessOwnership).some((o) =>
+    o.business_id === businessId && o.active && o.character_id === buyerCharacterId && (o.role === "owner" || o.role === "co_owner"));
+  if (ownsBusiness) throw new Error("business_self_purchase");
+
+  const inventory = isService ? undefined : Object.values(state.businessInventory).find((inv) =>
     inv.business_id === businessId && inv.product_definition_id === productRecord.product_definition_id && inv.location_id === business.primary_location_id);
-  if (!inventory || inventory.quantity < quantity) throw new Error("business_insufficient_stock");
+  if (!isService && (!inventory || inventory.quantity < quantity)) throw new Error("business_insufficient_stock");
 
   const totalRevenue = productRecord.price_ngn * quantity;
+  const buyerCash = cashAccountFor(state, buyerCharacterId);
+  if (!buyerCash) throw new Error("business_no_cash_account");
+  if (buyerCash.balance_ngn < totalRevenue) throw new Error("business_insufficient_funds");
+  const businessAccount = businessAccountFor(state, businessId);
+
   const timestamp = new Date(now).toISOString();
+  const description = isService
+    ? `Service: ${productRecord.display_name} at ₦${productRecord.price_ngn}.`
+    : `Sale of ${quantity} × ${productRecord.display_name} at ₦${productRecord.price_ngn} each.`;
 
-  inventory.quantity -= quantity;
-  inventory.updated_at = timestamp;
+  // The money moves first, so that a refusal (funds, limits, a closed account) changes no stock.
+  const posted = postBusinessMoney(state, {
+    debit: { account: buyerCash, kind: "business_purchase" }, credit: { account: businessAccount, kind: "business_sale" },
+    amountNgn: totalRevenue, description, referenceId: productRecordId, date, minuteOfDay, now, economyCatalog: loadEconomyCatalog(),
+  });
 
-  const movement: BusinessInventoryMovementRecord = {
-    movement_id: `biz-mov-${randomUUID()}`,
-    business_id: businessId,
-    inventory_id: inventory.inventory_id,
-    product_definition_id: productRecord.product_definition_id,
-    kind: "sale",
-    quantity,
-    location_id: business.primary_location_id,
-    world_date: cloneDate(date),
-    minute_of_day: minuteOfDay,
-    posted_at: timestamp,
-    reference_id: productRecordId,
-    description: `Sold ${quantity} units.`,
-  };
-  state.businessInventoryMovements[movement.movement_id] = movement;
+  if (inventory) {
+    inventory.quantity -= quantity;
+    inventory.updated_at = timestamp;
+    const movement: BusinessInventoryMovementRecord = {
+      movement_id: `biz-mov-${randomUUID()}`,
+      business_id: businessId,
+      inventory_id: inventory.inventory_id,
+      product_definition_id: productRecord.product_definition_id,
+      kind: "sale",
+      quantity,
+      location_id: business.primary_location_id,
+      world_date: cloneDate(date),
+      minute_of_day: minuteOfDay,
+      posted_at: timestamp,
+      reference_id: productRecordId,
+      description: `Sold ${quantity} units.`,
+    };
+    state.businessInventoryMovements[movement.movement_id] = movement;
+  }
 
-  const idemKey = createHash("sha256").update(`biz-sale:${productRecordId}:${quantity}:${timestamp}`).digest("hex");
-  const revenueTx = postBusinessTransaction(state, businessId, "sale_product", totalRevenue,
-    `Sale of ${quantity} × ${productRecord.display_name} at ₦${productRecord.price_ngn} each.`,
-    date, minuteOfDay, now, idemKey, productRecordId, buyerCharacterId);
+  const idemKey = createHash("sha256").update(`biz-purchase:${productRecordId}:${buyerCharacterId}:${timestamp}`).digest("hex");
+  const revenueTx = postBusinessTransaction(state, businessId, isService ? "sale_service" : "sale_product", description,
+    date, minuteOfDay, now, idemKey, productRecordId, buyerCharacterId, posted.credit!);
 
   const sale: BusinessSaleRecord = {
     sale_id: `biz-sale-${randomUUID()}`,
@@ -459,13 +662,13 @@ export function sellProduct(
     product_record_id: productRecordId,
     product_definition_id: productRecord.product_definition_id,
     buyer_character_id: buyerCharacterId,
-    quantity,
+    quantity: isService ? 1 : quantity,
     unit_price_ngn: productRecord.price_ngn,
     total_ngn: totalRevenue,
     world_date: cloneDate(date),
     minute_of_day: minuteOfDay,
     posted_at: timestamp,
-    is_service: false,
+    is_service: isService,
   };
   state.businessSales[sale.sale_id] = sale;
 
@@ -476,51 +679,31 @@ export function sellProduct(
   return { sale, revenue_transaction: revenueTx };
 }
 
-export function sellService(
+export function purchaseProduct(
   state: PersistentWorldState,
   businessId: string,
   productRecordId: string,
-  buyerCharacterId: string | null,
+  buyerCharacterId: string,
+  quantity: number,
   date: CalendarDate,
   minuteOfDay: number,
   now: number,
   catalog: BusinessCatalog = loadBusinessCatalog(),
 ): { sale: BusinessSaleRecord; revenue_transaction: BusinessTransactionRecord } {
-  const business = state.businesses[businessId];
-  if (!business) throw new Error("business_not_found");
-  assertBusinessActive(business);
+  return purchaseFromBusiness(state, businessId, productRecordId, buyerCharacterId, quantity, false, date, minuteOfDay, now, catalog);
+}
 
-  const productRecord = state.businessProducts[productRecordId];
-  if (!productRecord || productRecord.business_id !== businessId) throw new Error("business_product_not_found");
-  if (!productRecord.available) throw new Error("business_product_unavailable");
-
-  const timestamp = new Date(now).toISOString();
-  const idemKey = createHash("sha256").update(`biz-service-sale:${productRecordId}:${timestamp}`).digest("hex");
-  const revenueTx = postBusinessTransaction(state, businessId, "sale_service", productRecord.price_ngn,
-    `Service: ${productRecord.display_name} at ₦${productRecord.price_ngn}.`,
-    date, minuteOfDay, now, idemKey, productRecordId, buyerCharacterId);
-
-  const sale: BusinessSaleRecord = {
-    sale_id: `biz-sale-${randomUUID()}`,
-    business_id: businessId,
-    product_record_id: productRecordId,
-    product_definition_id: productRecord.product_definition_id,
-    buyer_character_id: buyerCharacterId,
-    quantity: 1,
-    unit_price_ngn: productRecord.price_ngn,
-    total_ngn: productRecord.price_ngn,
-    world_date: cloneDate(date),
-    minute_of_day: minuteOfDay,
-    posted_at: timestamp,
-    is_service: true,
-  };
-  state.businessSales[sale.sale_id] = sale;
-
-  business.reputation_score = Math.min(catalog.rules.maximum_reputation_score, business.reputation_score + 1);
-  business.updated_at = timestamp;
-  business.last_operating_date = cloneDate(date);
-
-  return { sale, revenue_transaction: revenueTx };
+export function purchaseService(
+  state: PersistentWorldState,
+  businessId: string,
+  productRecordId: string,
+  buyerCharacterId: string,
+  date: CalendarDate,
+  minuteOfDay: number,
+  now: number,
+  catalog: BusinessCatalog = loadBusinessCatalog(),
+): { sale: BusinessSaleRecord; revenue_transaction: BusinessTransactionRecord } {
+  return purchaseFromBusiness(state, businessId, productRecordId, buyerCharacterId, 1, true, date, minuteOfDay, now, catalog);
 }
 
 export function contributeCapital(
@@ -542,19 +725,21 @@ export function contributeCapital(
     throw new Error("business_contribution_amount_invalid");
   }
 
-  const cashAccount = Object.values(state.economyAccounts).find((a) => a.kind === "cash" && a.character_id === characterId);
+  const cashAccount = cashAccountFor(state, characterId);
   if (!cashAccount) throw new Error("business_no_cash_account");
-  const available = cashAccount.balance_ngn;
-  if (available < amountNgn) throw new Error("business_insufficient_funds");
+  if (cashAccount.balance_ngn < amountNgn) throw new Error("business_insufficient_funds");
+  const businessAccount = businessAccountFor(state, businessId);
 
   const timestamp = new Date(now).toISOString();
-  cashAccount.balance_ngn -= amountNgn;
-  cashAccount.total_withdrawn_ngn += amountNgn;
-  cashAccount.updated_at = timestamp;
+  const posted = postBusinessMoney(state, {
+    debit: { account: cashAccount, kind: "business_capital" }, credit: { account: businessAccount, kind: "business_capital" },
+    amountNgn, description: "Capital contribution from owner.", referenceId: businessId, date, minuteOfDay, now,
+    economyCatalog: loadEconomyCatalog(),
+  });
 
   const idemKey = createHash("sha256").update(`biz-capital-contrib:${businessId}:${timestamp}`).digest("hex");
-  const tx = postBusinessTransaction(state, businessId, "capital_contribution", amountNgn,
-    "Capital contribution from owner.", date, minuteOfDay, now, idemKey, null, characterId);
+  const tx = postBusinessTransaction(state, businessId, "capital_contribution", "Capital contribution from owner.",
+    date, minuteOfDay, now, idemKey, null, characterId, posted.credit!);
 
   appendBusinessEvent(state, businessId, "capital_contribution",
     `Owner contributed ₦${amountNgn.toLocaleString("en-NG")}.`, date, minuteOfDay, now,
@@ -581,9 +766,10 @@ export function withdrawFromBusiness(
   if (!Number.isSafeInteger(amountNgn) || amountNgn < 1 || amountNgn > catalog.rules.maximum_owner_withdrawal_ngn) {
     throw new Error("business_withdrawal_amount_invalid");
   }
-  if (business.balance_ngn < amountNgn) throw new Error("business_insufficient_funds");
+  const businessAccount = businessAccountFor(state, businessId);
+  if (businessAccount.balance_ngn < amountNgn) throw new Error("business_insufficient_funds");
 
-  const cashAccount = Object.values(state.economyAccounts).find((a) => a.kind === "cash" && a.character_id === characterId);
+  const cashAccount = cashAccountFor(state, characterId);
   if (!cashAccount) throw new Error("business_no_cash_account");
 
   const economyCatalog = loadEconomyCatalog();
@@ -591,14 +777,16 @@ export function withdrawFromBusiness(
     throw new Error("business_withdrawal_balance_limit");
   }
 
+  // The caller receives the money in their own cash account. See STAGE_40 section 2.2.
   const timestamp = new Date(now).toISOString();
-  const idemKey = createHash("sha256").update(`biz-withdrawal:${businessId}:${timestamp}`).digest("hex");
-  const tx = postBusinessTransaction(state, businessId, "owner_withdrawal", amountNgn,
-    "Authorized owner withdrawal.", date, minuteOfDay, now, idemKey, null, characterId);
+  const posted = postBusinessMoney(state, {
+    debit: { account: businessAccount, kind: "business_withdrawal" }, credit: { account: cashAccount, kind: "business_withdrawal" },
+    amountNgn, description: "Authorized owner withdrawal.", referenceId: businessId, date, minuteOfDay, now, economyCatalog,
+  });
 
-  cashAccount.balance_ngn += amountNgn;
-  cashAccount.total_deposited_ngn += amountNgn;
-  cashAccount.updated_at = timestamp;
+  const idemKey = createHash("sha256").update(`biz-withdrawal:${businessId}:${timestamp}`).digest("hex");
+  const tx = postBusinessTransaction(state, businessId, "owner_withdrawal", "Authorized owner withdrawal.",
+    date, minuteOfDay, now, idemKey, null, characterId, posted.debit!);
 
   appendBusinessEvent(state, businessId, "owner_withdrawal",
     `Owner withdrew ₦${amountNgn.toLocaleString("en-NG")}.`, date, minuteOfDay, now,
@@ -623,21 +811,125 @@ export function recordBusinessExpense(
   assertBusinessActive(business);
   authorizeBusinessAction(state, businessId, characterId, ["owner", "co_owner", "manager", "accountant"]);
 
+  // Stage 40: a salary has a destination, so it is paid with pay_salary. An expense recorded here goes to nobody.
+  if (kind === "salary") throw new Error("business_salary_use_payroll");
   if (!Number.isSafeInteger(amountNgn) || amountNgn < 1) throw new Error("business_expense_amount_invalid");
-  if (business.balance_ngn < amountNgn) throw new Error("business_insufficient_funds");
+  const businessAccount = businessAccountFor(state, businessId);
+  if (businessAccount.balance_ngn < amountNgn) throw new Error("business_insufficient_funds");
   if (description.trim().length === 0 || description.length > 300) throw new Error("business_expense_description_invalid");
 
-  const txKind: BusinessTransactionKind = kind === "rent" ? "expense_rent" : kind === "salary" ? "expense_salary" : "expense_operating";
+  const txKind: BusinessTransactionKind = kind === "rent" ? "expense_rent" : "expense_operating";
   const timestamp = new Date(now).toISOString();
+  const posted = postBusinessMoney(state, {
+    debit: { account: businessAccount, kind: "business_expense" }, credit: null, amountNgn,
+    description: description.trim(), referenceId: null, date, minuteOfDay, now, economyCatalog: loadEconomyCatalog(),
+  });
   const idemKey = createHash("sha256").update(`biz-expense:${businessId}:${kind}:${timestamp}`).digest("hex");
-  const tx = postBusinessTransaction(state, businessId, txKind, amountNgn,
-    description.trim(), date, minuteOfDay, now, idemKey);
+  const tx = postBusinessTransaction(state, businessId, txKind, description.trim(), date, minuteOfDay, now, idemKey, null, null, posted.debit!);
 
   appendBusinessEvent(state, businessId, "expense_recorded",
     `Recorded ${kind} expense of ₦${amountNgn.toLocaleString("en-NG")}.`, date, minuteOfDay, now,
     { kind, amount_ngn: amountNgn });
 
   return tx;
+}
+
+/**
+ * Stage 40: pays a wage from the business account to an active employee's cash account. The caller must be an owner or
+ * co-owner of the business. The employee is a named counterparty, and is checked: they must hold an active employee role
+ * in this business, and they must not be deceased.
+ */
+export function paySalary(
+  state: PersistentWorldState,
+  businessId: string,
+  callerCharacterId: string,
+  employeeCharacterId: string,
+  amountNgn: number,
+  date: CalendarDate,
+  minuteOfDay: number,
+  now: number,
+  catalog: BusinessCatalog = loadBusinessCatalog(),
+): BusinessTransactionRecord {
+  const business = state.businesses[businessId];
+  if (!business) throw new Error("business_not_found");
+  assertBusinessActive(business);
+  authorizeBusinessAction(state, businessId, callerCharacterId, ["owner", "co_owner"]);
+
+  const employment = Object.values(state.businessOwnership).find((o) =>
+    o.business_id === businessId && o.character_id === employeeCharacterId && o.active && o.role === "employee");
+  const employee = characterForId(state, employeeCharacterId);
+  if (!employment || !employee || employee.character.life_status === "deceased") throw new Error("business_salary_employee_invalid");
+
+  if (!Number.isSafeInteger(amountNgn) || amountNgn < 1 || amountNgn > catalog.rules.maximum_owner_withdrawal_ngn) {
+    throw new Error("business_salary_amount_invalid");
+  }
+  const employeeCash = cashAccountFor(state, employeeCharacterId);
+  if (!employeeCash) throw new Error("business_no_cash_account");
+  const businessAccount = businessAccountFor(state, businessId);
+  if (businessAccount.balance_ngn < amountNgn) throw new Error("business_insufficient_funds");
+
+  const timestamp = new Date(now).toISOString();
+  const posted = postBusinessMoney(state, {
+    debit: { account: businessAccount, kind: "business_salary" }, credit: { account: employeeCash, kind: "business_salary" },
+    amountNgn, description: "Salary payment.", referenceId: employment.ownership_id, date, minuteOfDay, now,
+    economyCatalog: loadEconomyCatalog(),
+  });
+  const idemKey = createHash("sha256").update(`biz-salary:${businessId}:${employeeCharacterId}:${timestamp}`).digest("hex");
+  const tx = postBusinessTransaction(state, businessId, "salary_paid", `Salary paid to employee ${employeeCharacterId}.`,
+    date, minuteOfDay, now, idemKey, employment.ownership_id, employeeCharacterId, posted.debit!);
+
+  appendBusinessEvent(state, businessId, "salary_paid",
+    `Salary of ₦${amountNgn.toLocaleString("en-NG")} paid to an employee.`, date, minuteOfDay, now,
+    { amount_ngn: amountNgn, employee_id: employeeCharacterId });
+
+  return tx;
+}
+
+/**
+ * Stage 40: moves money between two businesses. The caller must be an owner or co-owner of both. The two movements are
+ * one ledger transfer, and both businesses get a journal entry.
+ */
+export function transferBetweenBusinesses(
+  state: PersistentWorldState,
+  fromBusinessId: string,
+  callerCharacterId: string,
+  toBusinessId: string,
+  amountNgn: number,
+  date: CalendarDate,
+  minuteOfDay: number,
+  now: number,
+  catalog: BusinessCatalog = loadBusinessCatalog(),
+): { outgoing: BusinessTransactionRecord; incoming: BusinessTransactionRecord } {
+  if (fromBusinessId === toBusinessId) throw new Error("business_transfer_invalid");
+  const fromBusiness = state.businesses[fromBusinessId];
+  const toBusiness = state.businesses[toBusinessId];
+  if (!fromBusiness || !toBusiness) throw new Error("business_not_found");
+  assertBusinessActive(fromBusiness);
+  assertBusinessActive(toBusiness);
+  authorizeBusinessAction(state, fromBusinessId, callerCharacterId, ["owner", "co_owner"]);
+  const destination = ownershipForCharacterAndBusiness(state, toBusinessId, callerCharacterId);
+  if (!destination || (destination.role !== "owner" && destination.role !== "co_owner")) throw new Error("business_transfer_not_permitted");
+
+  if (!Number.isSafeInteger(amountNgn) || amountNgn < 1 || amountNgn > catalog.rules.maximum_owner_withdrawal_ngn) {
+    throw new Error("business_transfer_amount_invalid");
+  }
+  const fromAccount = businessAccountFor(state, fromBusinessId);
+  const toAccount = businessAccountFor(state, toBusinessId);
+  if (fromAccount.balance_ngn < amountNgn) throw new Error("business_insufficient_funds");
+
+  const timestamp = new Date(now).toISOString();
+  const description = `Transfer from ${fromBusiness.name} to ${toBusiness.name}.`;
+  const posted = postBusinessMoney(state, {
+    debit: { account: fromAccount, kind: "business_transfer" }, credit: { account: toAccount, kind: "business_transfer" },
+    amountNgn, description, referenceId: toBusinessId, date, minuteOfDay, now, economyCatalog: loadEconomyCatalog(),
+  });
+  const outKey = createHash("sha256").update(`biz-transfer-out:${fromBusinessId}:${toBusinessId}:${timestamp}`).digest("hex");
+  const inKey = createHash("sha256").update(`biz-transfer-in:${toBusinessId}:${fromBusinessId}:${timestamp}`).digest("hex");
+  const outgoing = postBusinessTransaction(state, fromBusinessId, "transfer_out", description, date, minuteOfDay, now, outKey,
+    toBusinessId, null, posted.debit!);
+  const incoming = postBusinessTransaction(state, toBusinessId, "transfer_in", description, date, minuteOfDay, now, inKey,
+    fromBusinessId, null, posted.credit!);
+  return { outgoing, incoming };
 }
 
 export function runProduction(
@@ -668,8 +960,15 @@ export function runProduction(
     if (!inventory || inventory.quantity < input.quantity) throw new Error("business_insufficient_input_stock");
   }
 
-  if (recipe.operating_cost_ngn > 0 && business.balance_ngn < recipe.operating_cost_ngn) {
-    throw new Error("business_insufficient_funds");
+  // Stage 40: the operating cost is paid before any stock changes, so a refused cost leaves stock as it was.
+  let productionCostRow: EconomyTransactionRecord | null = null;
+  if (recipe.operating_cost_ngn > 0) {
+    const businessAccount = businessAccountFor(state, businessId);
+    if (businessAccount.balance_ngn < recipe.operating_cost_ngn) throw new Error("business_insufficient_funds");
+    productionCostRow = postBusinessMoney(state, {
+      debit: { account: businessAccount, kind: "business_expense" }, credit: null, amountNgn: recipe.operating_cost_ngn,
+      description: `Production cost: ${recipe.label}.`, referenceId: recipeId, date, minuteOfDay, now, economyCatalog: loadEconomyCatalog(),
+    }).debit;
   }
 
   const timestamp = new Date(now).toISOString();
@@ -754,10 +1053,10 @@ export function runProduction(
     outputMovementId = movement.movement_id;
   }
 
-  if (recipe.operating_cost_ngn > 0) {
+  if (productionCostRow) {
     const idemKey = createHash("sha256").update(`biz-production:${businessId}:${recipeId}:${timestamp}`).digest("hex");
-    postBusinessTransaction(state, businessId, "production_cost", recipe.operating_cost_ngn,
-      `Production cost: ${recipe.label}.`, date, minuteOfDay, now, idemKey);
+    postBusinessTransaction(state, businessId, "production_cost", `Production cost: ${recipe.label}.`, date, minuteOfDay, now,
+      idemKey, recipeId, null, productionCostRow);
   }
 
   const run: BusinessProductionRunRecord = {
@@ -798,6 +1097,8 @@ export function closeBusiness(
   if (!business) throw new Error("business_not_found");
   authorizeBusinessAction(state, businessId, characterId, ["owner", "co_owner"]);
   if (business.status === "closed") throw new Error("business_already_closed");
+  // Stage 40: money left in a closed business could never be withdrawn, so the owner withdraws it first.
+  if ((state.economyAccounts[businessAccountKey(businessId)]?.balance_ngn ?? business.balance_ngn) > 0) throw new Error("business_balance_not_empty");
 
   const timestamp = new Date(now).toISOString();
   business.status = "closed";
@@ -1054,9 +1355,9 @@ export function seedNpcBusinesses(
       reputation_score: catalog.rules.starting_reputation_score,
       total_revenue_ngn: 0,
       total_expenses_ngn: 0,
-      total_capital_ngn: template.setup_cost_ngn * 3,
+      total_capital_ngn: 0,
       total_withdrawals_ngn: 0,
-      balance_ngn: template.setup_cost_ngn * 3,
+      balance_ngn: 0,
       created_at: timestamp,
       created_world_date: cloneDate(date),
       updated_at: timestamp,
@@ -1081,6 +1382,20 @@ export function seedNpcBusinesses(
       active: true,
     };
     state.businessOwnership[ownership.ownership_id] = ownership;
+
+    // Stage 40: the NPC business's starting capital is an explicit issuance row on its own account (section 2.6).
+    const seedAmount = template.setup_cost_ngn * 3;
+    openBusinessAccount(state, businessId, date, now);
+    if (seedAmount > 0) {
+      const seedAccount = businessAccountFor(state, businessId);
+      const posted = postBusinessMoney(state, {
+        debit: null, credit: { account: seedAccount, kind: "business_seed_capital" }, amountNgn: seedAmount,
+        description: "Initial capital for an NPC business (issuance).", referenceId: businessId, date, minuteOfDay: 0, now,
+        economyCatalog: loadEconomyCatalog(),
+      });
+      postBusinessTransaction(state, businessId, "seed_capital", "Initial capital for an NPC business (issuance).", date, 0, now,
+        createHash("sha256").update(`biz-seed:${businessId}`).digest("hex"), businessId, null, posted.credit!);
+    }
 
     // Seed with initial products from the business product catalogue
     const allProducts = [...catalog.business_products];
@@ -1140,26 +1455,88 @@ export function processBusinessWorldDate(
     if (!template) continue;
     const dailyCost = Math.floor((template.monthly_operating_cost_ngn + template.rent_cost_ngn) / 30);
     if (dailyCost <= 0) continue;
-    if (business.balance_ngn < dailyCost) {
+    const businessAccount = businessAccountFor(state, business.business_id);
+    if (businessAccount.balance_ngn < dailyCost) {
       business.status = "insolvent";
       business.updated_at = new Date(now).toISOString();
       appendBusinessEvent(state, business.business_id, "business_insolvent",
         `Business '${business.name}' has become insolvent due to insufficient funds for operating costs.`, date, 0, now,
-        { daily_cost_ngn: dailyCost, balance_ngn: business.balance_ngn });
+        { daily_cost_ngn: dailyCost, balance_ngn: businessAccount.balance_ngn });
       continue;
     }
-    business.balance_ngn -= dailyCost;
-    business.total_expenses_ngn += dailyCost;
-    business.updated_at = new Date(now).toISOString();
     const idemKey = createHash("sha256").update(`biz-daily-cost:${business.business_id}:${date.year}:${date.month}:${date.day}`).digest("hex");
     const existing = Object.values(state.businessTransactions).find((tx) => tx.idempotency_key === idemKey);
     if (!existing) {
-      postBusinessTransaction(state, business.business_id, "expense_operating", dailyCost,
-        "Daily operating and premises cost.", date, 0, now, idemKey);
+      // The daily cost is a sink (STAGE_40 section 2.4). It is charged once per world date, by the same-day guard above.
+      const posted = postBusinessMoney(state, {
+        debit: { account: businessAccount, kind: "business_expense" }, credit: null, amountNgn: dailyCost,
+        description: "Daily operating and premises cost.", referenceId: null, date, minuteOfDay: 0, now,
+        economyCatalog: loadEconomyCatalog(),
+      });
+      postBusinessTransaction(state, business.business_id, "expense_operating", "Daily operating and premises cost.",
+        date, 0, now, idemKey, null, null, posted.debit!);
     }
+    business.updated_at = new Date(now).toISOString();
     operatingCount += 1;
   }
   return operatingCount;
+}
+
+/**
+ * Stage 40: gives every business that has no account one, and carries the balance it recorded before this stage into it.
+ * The carried amount is an explicit ledger row (`business_legacy_import`) and a business event. It is not new money: the
+ * amount was already on the business record. A business that already has an account is not changed, so the function
+ * can run on every load. A balance above the account limit is refused, and nothing changes for that business.
+ */
+export function migrateLegacyBusinessAccounts(state: PersistentWorldState, date: CalendarDate, now: number): number {
+  const economyCatalog = loadEconomyCatalog();
+  let migrated = 0;
+  for (const business of Object.values(state.businesses)) {
+    if (state.economyAccounts[businessAccountKey(business.business_id)]) continue;
+    if (business.balance_ngn > economyCatalog.rules.maximum_account_balance_ngn) throw new Error("business_legacy_balance_over_limit");
+    const account = openBusinessAccount(state, business.business_id, date, now);
+    const amount = business.balance_ngn;
+    if (amount > 0) {
+      const description = "Balance carried over from the business record (Stage 40 migration).";
+      const posted = postBusinessMoney(state, {
+        debit: null, credit: { account, kind: "business_legacy_import" }, amountNgn: amount, description,
+        referenceId: business.business_id, date, minuteOfDay: 0, now, economyCatalog,
+      });
+      postBusinessTransaction(state, business.business_id, "legacy_import", description, date, 0, now,
+        createHash("sha256").update(`biz-legacy-import:${business.business_id}`).digest("hex"), business.business_id, null, posted.credit!);
+      appendBusinessEvent(state, business.business_id, "legacy_balance_imported",
+        `Balance of ₦${amount.toLocaleString("en-NG")} carried into the business account.`, date, 0, now,
+        { imported_ngn: amount, legacy_recorded_revenue_ngn: business.total_revenue_ngn });
+    }
+    migrated += 1;
+  }
+  return migrated;
+}
+
+/**
+ * Stage 40: the reconciliation the loader checks. For each business account: the business's `balance_ngn` equals the
+ * account balance, the account is the business's own current account, and the balance equals the sum of its ledger rows
+ * (each row's balance change, after minus before). Returns one message per problem. A world with a problem is refused.
+ */
+export function businessAccountMismatches(state: PersistentWorldState): string[] {
+  const problems: string[] = [];
+  const movement = new Map<string, number>();
+  for (const row of Object.values(state.economyTransactions)) {
+    movement.set(row.account_id, (movement.get(row.account_id) ?? 0) + (row.balance_after_ngn - row.balance_before_ngn));
+  }
+  for (const business of Object.values(state.businesses)) {
+    const account = state.economyAccounts[businessAccountKey(business.business_id)];
+    if (!account) continue;
+    if (account.kind !== "current" || account.character_id !== business.business_id) {
+      problems.push(`${business.business_id}: its account is not the business's own current account`);
+      continue;
+    }
+    if (business.balance_ngn !== account.balance_ngn) problems.push(`${business.business_id}: balance does not match its account`);
+    if ((movement.get(account.account_id) ?? 0) !== account.balance_ngn) {
+      problems.push(`${business.business_id}: account balance does not match its ledger rows`);
+    }
+  }
+  return problems;
 }
 
 export function buildBusinessProfile(
@@ -1255,6 +1632,21 @@ export function businessErrorMessage(code: string): string {
     business_name_invalid: "The business name is invalid or outside the allowed length.",
     business_description_invalid: "The business description is invalid or outside the allowed length.",
     business_insufficient_funds: "The business or your personal account does not have enough funds.",
+    business_sale_must_be_purchase: "A sale is recorded when a buyer pays. Ask a customer to buy from the business.",
+    business_self_purchase: "An owner cannot buy from their own business.",
+    business_salary_use_payroll: "A salary is paid to an employee with the payroll action, not recorded as an expense.",
+    business_salary_employee_invalid: "That character is not an active employee of this business.",
+    business_salary_amount_invalid: "Enter a salary amount within the allowed limit.",
+    business_transfer_invalid: "Choose two different businesses to transfer between.",
+    business_transfer_not_permitted: "You must own the destination business to transfer money to it.",
+    business_transfer_amount_invalid: "Enter a transfer amount within the allowed limit.",
+    business_balance_not_empty: "Withdraw the business balance before closing it.",
+    business_account_missing: "This business has no account. It has not been migrated; contact the operators.",
+    business_balance_limit: "The receiving account would go over its balance limit.",
+    business_money_move_invalid: "That money movement is not allowed.",
+    business_amount_invalid: "Enter a valid amount.",
+    business_legacy_balance_over_limit: "This business's recorded balance is above the account limit and cannot be migrated.",
+    economy_account_not_active: "One of the accounts involved is frozen or closed.",
     business_no_cash_account: "No cash account is available for this character.",
     business_not_found: "That business does not exist.",
     business_not_active: "That business is not currently active.",

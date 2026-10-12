@@ -1,6 +1,7 @@
 # Phase 1 feature inventory
 
-Status of each planned system at the start of Phase 1 (Stage 39), with evidence from the repository. This is an
+Status of each planned system at the start of Phase 1 (Stage 39), with evidence from the repository. Rows 11 and 12 and the
+priority and dependency lists were updated in Stage 40. This is an
 audit, not a claim of completion. The game is not finished, and this inventory does not make it production-ready.
 
 Statuses:
@@ -35,8 +36,8 @@ Statuses:
 | 8 | Housing: rent payment (`pay_rent`) | COMPLETE for the rules, PARTIAL overall | Stage 39: per-period due date, `property_rent_not_due`, per-period idempotency, counterparty checks, ledger rows; `test/housing-rent-stage39.test.mjs` | Rent is not collected automatically. No arrears, eviction, or late fees. No client UI. |
 | 9 | Housing counterparties: NPC landlords and sellers | COMPLETE (Stage 39) | NPC cash account in `economyAccounts` with no bank product; refusal before debit for any other owner kind | Business and organisation owners are refused (row 11). |
 | 10 | Ledger rows for property money | COMPLETE (Stage 39) | `property_purchase`, `property_sale_proceeds`, `rent_payment`, `rent_receipt`, `property_furnishing`, `property_maintenance` | Before Stage 39, property money moves wrote no ledger row. |
-| 11 | Businesses: actions (create, produce, sell, restock, withdraw, view, close, and others) | PARTIAL | `src/businesses/service.ts`; 12 action cases in the engine | No client UI for businesses. |
-| 12 | Business payments: revenue, wages, capital, and any transfer to or from a business | BLOCKED | Stage 34: no payment until a shared business-account model is designed and implemented | Prerequisite: shared business-account model (its design is not started). |
+| 11 | Businesses: creation, products, stock, sales, capital, withdrawals, expenses, payroll, transfers, production, closure, branches, ownership, staff | PARTIAL (Stage 40) | `src/businesses/service.ts` with `postBusinessMoney`; 16 action cases in the engine, including `buy_product`, `buy_service`, `pay_salary`, `transfer_funds`; `test/business-accounts-stage40.test.mjs`, `businesses.test.mjs`, `business-money-stage34.test.mjs`; both backends | No client UI. Shares are not enforced (co-owners share the account). Operating costs and supplier stock are sinks. NPC seed capital is unexplained issuance (`business_seed_capital`). Legacy revenue cannot be verified. Single writer only. See `docs/STAGE_40_BUSINESS_ACCOUNTS.md` section 7.4. |
+| 12 | Business payments: revenue, wages, capital, and any transfer to or from a business | COMPLETE on the server (Stage 40), PARTIAL overall | Shared business account (economy account, `kind: current`, holder = business id) in the same ledger; buyer-paid sales; owner capital and withdrawal; salaries to active employees; transfers between businesses the caller owns; every movement is an economy ledger row; the saved world is refused at load if a business does not reconcile (`businessAccountMismatches`); seller-initiated sales are refused | No client UI. Owner decision on the shared account is recorded in STAGE_40 section 2.2 (every owner or co-owner is equally authorised; withdrawals go to the caller). Revenue, tax, fines, borrowing, and minting remain closed. |
 | 13 | Government | SUSPENDED (writes) | `government_writes_suspended`; reads are open. 56 engine references | Not re-audited. |
 | 14 | Elections | SUSPENDED (writes) | `election_writes_suspended` | No elections are enabled. Not re-audited. |
 | 15 | Police: wanted requests and arrests | SUSPENDED | `request_wanted`, `execute_arrest` refused (`police_*_suspended`) | Prerequisite: station ownership and jurisdiction model (Stage 38, decision 10, open). |
@@ -56,7 +57,8 @@ Statuses:
 
 ## Missing and partial systems that matter most
 
-1. **Shared business-account model (row 12, BLOCKED).** Every business money path stays closed until it exists.
+1. **Business client UI (rows 11–12, server COMPLETE in Stage 40).** Business money now works on the server, but the Godot
+   client has no business screen, so a player cannot use it yet.
 2. **Station and jurisdiction model (rows 15–17, BLOCKED).** Police and crime mutations stay suspended until an
    assignment model exists that the server can check.
 3. **Authority for military and justice mutations (rows 18–19, SUSPENDED).** Needs judge assignment and the
@@ -66,14 +68,27 @@ Statuses:
 6. **Rent collection, arrears, and eviction (row 8).** Not implemented. Rent is paid only when a tenant sends
    `pay_rent`.
 
+## Next Phase 1 feature group
+
+Recommended next group: **client surfaces for housing and businesses (rows 6–8 and 11–12)**. Both server features are
+complete enough to use, and neither is playable without a client. It needs no new server decision, and it is not blocked.
+Godot is not installed in this sandbox, so the work needs a Godot run before it can be called done.
+
+The station and jurisdiction model (rows 15–17) is the other candidate, but it is blocked on open owner decision 10 in
+row 28, and it should follow once that decision is recorded.
+
+Stage 40 remaining business work, for the record: a client business screen; a share-based split of withdrawals (its own
+design decision); a source policy for NPC seed capital; and reconciliation of legacy revenue recorded before Stage 40.
+
 ## Dependency order for Phase 1
 
 1. Housing rent contract and counterparties (done in Stage 39: rows 8–10).
-2. Shared business-account model: design, then implementation, then business payments (row 12).
-3. Station and jurisdiction model, then police and crime enablement (rows 15–17), with negative tests.
-4. Judge assignment and the authority model, then justice and military mutations (rows 18–19).
-5. Client UI for housing and businesses (rows 6–8, 11).
-6. Simulation of NPC, social, world events, and transportation (rows 23–26).
+   Business account model and business payments (done on the server in Stage 40: rows 11–12).
+2. Station and jurisdiction model, then police and crime enablement (rows 15–17), with negative tests.
+3. Judge assignment and the authority model, then justice and military mutations (rows 18–19).
+4. Client UI for housing and businesses (rows 6–8, 11–12). The recommended next group, above.
+5. Simulation of NPC, social, world events, and transportation (rows 23–26).
+6. Remaining authority and suspended mechanisms, as the owner decides.
 
 Revenue, taxation, fines, borrowing, minting, and organisation payments are outside this order, by the user's
 constraints.

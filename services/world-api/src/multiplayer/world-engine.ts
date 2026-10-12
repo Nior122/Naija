@@ -66,8 +66,10 @@ import {
   recordBusinessExpense,
   restockInventory,
   runProduction,
-  sellProduct,
-  sellService,
+  purchaseProduct,
+  purchaseService,
+  paySalary,
+  transferBetweenBusinesses,
   transferOwnership,
   withdrawFromBusiness,
 } from "../businesses/service.js";
@@ -2789,22 +2791,42 @@ export class MultiplayerWorld {
           messageText = `Restocked ${result.inventory.quantity} units.`;
           break;
         }
-        case "sell_product": {
-          const buyerId = typeof payload.buyer_character_id === "string" ? payload.buyer_character_id : null;
-          const result = sellProduct(state, requiredString("business_id"), requiredString("product_record_id"),
-            buyerId, requiredInteger("quantity", 1), date, minuteOfDay, now, this.businessCatalog);
+        // Stage 40: a sale is a purchase. The buyer is the character this session belongs to, and the buyer pays from
+        // their own cash account. A seller cannot record a sale, and a payload cannot name another payer.
+        case "buy_product": {
+          const result = purchaseProduct(state, requiredString("business_id"), requiredString("product_record_id"),
+            characterId, requiredInteger("quantity", 1), date, minuteOfDay, now, this.businessCatalog);
           data.sale = result.sale;
           data.revenue_transaction = result.revenue_transaction;
-          messageText = `Sale of ${result.sale.quantity} × ₦${result.sale.unit_price_ngn.toLocaleString("en-NG")} = ₦${result.sale.total_ngn.toLocaleString("en-NG")}.`;
+          syncCharacterCashFromEconomy(state, characterId);
+          messageText = `Purchase of ${result.sale.quantity} for ₦${result.sale.total_ngn.toLocaleString("en-NG")} completed.`;
           break;
         }
-        case "sell_service": {
-          const buyerId = typeof payload.buyer_character_id === "string" ? payload.buyer_character_id : null;
-          const result = sellService(state, requiredString("business_id"), requiredString("product_record_id"),
-            buyerId, date, minuteOfDay, now, this.businessCatalog);
+        case "buy_service": {
+          const result = purchaseService(state, requiredString("business_id"), requiredString("product_record_id"),
+            characterId, date, minuteOfDay, now, this.businessCatalog);
           data.sale = result.sale;
           data.revenue_transaction = result.revenue_transaction;
-          messageText = `Service sold for ₦${result.sale.total_ngn.toLocaleString("en-NG")}.`;
+          syncCharacterCashFromEconomy(state, characterId);
+          messageText = `Service bought for ₦${result.sale.total_ngn.toLocaleString("en-NG")}.`;
+          break;
+        }
+        case "sell_product":
+        case "sell_service":
+          throw new Error("business_sale_must_be_purchase");
+        case "pay_salary": {
+          const tx = paySalary(state, requiredString("business_id"), characterId, requiredString("employee_character_id"),
+            requiredInteger("amount_ngn", 1), date, minuteOfDay, now, this.businessCatalog);
+          data.transaction = tx;
+          messageText = `Salary of ₦${tx.amount_ngn.toLocaleString("en-NG")} paid.`;
+          break;
+        }
+        case "transfer_funds": {
+          const result = transferBetweenBusinesses(state, requiredString("business_id"), characterId,
+            requiredString("to_business_id"), requiredInteger("amount_ngn", 1), date, minuteOfDay, now, this.businessCatalog);
+          data.outgoing = result.outgoing;
+          data.incoming = result.incoming;
+          messageText = `Transferred ₦${result.outgoing.amount_ngn.toLocaleString("en-NG")} between businesses.`;
           break;
         }
         case "contribute_capital": {

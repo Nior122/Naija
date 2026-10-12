@@ -9,6 +9,7 @@ import WebSocket from "ws";
 import { createApiServer } from "../dist/app.js";
 import { loadBusinessCatalog, validateBusinessCatalogForTest } from "../dist/businesses/catalog.js";
 import {
+  businessAccountKey,
   addBranch,
   addBusinessProduct,
   buildBusinessProfile,
@@ -24,8 +25,8 @@ import {
   restockInventory,
   runProduction,
   seedNpcBusinesses,
-  sellProduct,
-  sellService,
+  purchaseProduct,
+  purchaseService,
   transferOwnership,
   withdrawFromBusiness,
 } from "../dist/businesses/service.js";
@@ -103,6 +104,16 @@ function makeWorld(date = { year: 2025, month: 1, day: 4 }) {
   initializeEconomyWorldState(state, now);
   initializeBusinessWorldState(state);
   return { state, now, date };
+}
+
+/** Stage 40: the cash balance of a test character's cash account, read from the economy ledger. */
+function cashBalance(world, characterId) {
+  return Object.values(world.state.economyAccounts).find((a) => a.kind === "cash" && a.character_id === characterId).balance_ngn;
+}
+
+/** Stage 40: the balance of a business's own account. */
+function accountBalance(world, businessId) {
+  return world.state.economyAccounts[businessAccountKey(businessId)].balance_ngn;
 }
 
 function addPlayer(world, name, overrides = {}) {
@@ -322,21 +333,27 @@ test("business creation rejects invalid location for template", () => {
     /business_location_invalid/);
 });
 
-test("adding products, restocking, and selling products through the business ledger", () => {
+test("adding products, restocking, and buyer-paid sales through the business ledger", () => {
   const world = makeWorld();
   const { characterId } = addPlayer(world, "Shopkeeper", { age: 25, money: 500000 });
+  const { characterId: buyerId } = addPlayer(world, "Customer", { age: 25, money: 100000 });
   const catalog = loadBusinessCatalog();
   const business = createBusiness(world.state, characterId, "template:provision-store", "Test Shop", "Products.", "market", 200000, world.date, 480, world.now, catalog);
   const product = addBusinessProduct(world.state, business.business_id, characterId, "biz-goods:rice-5kg", null, world.date, 481, world.now, catalog);
   assert.equal(product.price_ngn, 8500);
   const { inventory } = restockInventory(world.state, business.business_id, characterId, "biz-goods:rice-5kg", 20, 7000, world.date, 482, world.now, catalog);
   assert.equal(inventory.quantity, 20);
-  const { sale } = sellProduct(world.state, business.business_id, product.product_record_id, null, 5, world.date, 483, world.now, catalog);
+  const buyerCashBefore = cashBalance(world, buyerId);
+  const { sale } = purchaseProduct(world.state, business.business_id, product.product_record_id, buyerId, 5, world.date, 483, world.now, catalog);
   assert.equal(sale.quantity, 5);
   assert.equal(sale.total_ngn, 42500);
   const updatedInventory = world.state.businessInventory[inventory.inventory_id];
   assert.equal(updatedInventory.quantity, 15);
   assert.equal(business.total_revenue_ngn, 42500);
+  // Stage 40: the buyer pays, and the business account receives the same amount in the same movement.
+  assert.equal(cashBalance(world, buyerId), buyerCashBefore - 42500);
+  assert.equal(business.balance_ngn, accountBalance(world, business.business_id));
+  assert.equal(business.balance_ngn, 200000 - 140000 + 42500);
 });
 
 test("selling insufficient stock is rejected", () => {
@@ -346,7 +363,8 @@ test("selling insufficient stock is rejected", () => {
   const business = createBusiness(world.state, characterId, "template:provision-store", "Low Stock", "Limited.", "market", 200000, world.date, 480, world.now, catalog);
   const product = addBusinessProduct(world.state, business.business_id, characterId, "biz-goods:bread", null, world.date, 481, world.now, catalog);
   restockInventory(world.state, business.business_id, characterId, "biz-goods:bread", 2, 1200, world.date, 482, world.now, catalog);
-  assert.throws(() => sellProduct(world.state, business.business_id, product.product_record_id, null, 5, world.date, 483, world.now, catalog),
+  const { characterId: buyerId } = addPlayer(world, "Buyer", { age: 25, money: 500000 });
+  assert.throws(() => purchaseProduct(world.state, business.business_id, product.product_record_id, buyerId, 5, world.date, 483, world.now, catalog),
     /business_insufficient_stock/);
 });
 
@@ -356,7 +374,8 @@ test("service-based businesses can sell services without inventory", () => {
   const catalog = loadBusinessCatalog();
   const business = createBusiness(world.state, characterId, "template:consulting-firm", "Advisory Co", "Consulting.", "town", 100000, world.date, 480, world.now, catalog);
   const product = addBusinessProduct(world.state, business.business_id, characterId, "biz-service:consulting-hour", null, world.date, 481, world.now, catalog);
-  const { sale } = sellService(world.state, business.business_id, product.product_record_id, null, world.date, 482, world.now, catalog);
+  const { characterId: buyerId } = addPlayer(world, "Client", { age: 30, money: 500000 });
+  const { sale } = purchaseService(world.state, business.business_id, product.product_record_id, buyerId, world.date, 482, world.now, catalog);
   assert.equal(sale.is_service, true);
   assert.equal(sale.total_ngn, 15000);
   assert.equal(business.total_revenue_ngn, 15000);
@@ -410,10 +429,19 @@ test("business closure preserves history and prevents further sales", () => {
   const business = createBusiness(world.state, characterId, "template:provision-store", "Closing Shop", "Closing.", "market", 200000, world.date, 480, world.now, catalog);
   const product = addBusinessProduct(world.state, business.business_id, characterId, "biz-goods:bread", null, world.date, 481, world.now, catalog);
   restockInventory(world.state, business.business_id, characterId, "biz-goods:bread", 10, 1200, world.date, 482, world.now, catalog);
+  // Stage 40: a business with money in it cannot be closed, because the money would be stranded.
+  assert.throws(() => closeBusiness(world.state, business.business_id, characterId, "Test closure.", world.date, 483, world.now),
+    /business_balance_not_empty/);
+  assert.equal(business.status, "active");
+  while (business.balance_ngn > 0) {
+    const amount = Math.min(business.balance_ngn, catalog.rules.maximum_owner_withdrawal_ngn);
+    withdrawFromBusiness(world.state, business.business_id, characterId, amount, world.date, 483, world.now, catalog);
+  }
   closeBusiness(world.state, business.business_id, characterId, "Test closure.", world.date, 483, world.now);
   assert.equal(business.status, "closed");
   assert.ok(business.closed_at);
-  assert.throws(() => sellProduct(world.state, business.business_id, product.product_record_id, null, 1, world.date, 484, world.now, catalog),
+  const { characterId: buyerId } = addPlayer(world, "Late Customer", { age: 30, money: 500000 });
+  assert.throws(() => purchaseProduct(world.state, business.business_id, product.product_record_id, buyerId, 1, world.date, 484, world.now, catalog),
     /business_not_active/);
 });
 

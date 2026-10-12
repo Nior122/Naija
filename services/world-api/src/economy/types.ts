@@ -23,7 +23,18 @@ export type EconomyTransactionKind =
   | "property_purchase"
   | "property_sale_proceeds"
   | "property_furnishing"
-  | "property_maintenance";
+  | "property_maintenance"
+  // Stage 40: business account money moves. Every business movement is one row per affected account.
+  | "business_capital"
+  | "business_withdrawal"
+  | "business_purchase"
+  | "business_sale"
+  | "business_salary"
+  | "business_transfer"
+  | "business_expense"
+  | "business_setup_fee"
+  | "business_seed_capital"
+  | "business_legacy_import";
 
 export type EconomyAccountKind = "cash" | "savings" | "current" | "fixed_deposit";
 export type EconomyLoanStatus = "active" | "paid_off" | "defaulted" | "cancelled";

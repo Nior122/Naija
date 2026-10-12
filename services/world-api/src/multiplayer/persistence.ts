@@ -14,7 +14,7 @@ import { normalizeLifeWorldState } from "../life/service.js";
 import { initializeCareerWorldState } from "../careers/service.js";
 import { assertRecordsValid, validateElectionRecords, validateGovernmentRecords, validateJusticeRecords, validatePropertyRecords } from "./record-validation.js";
 import { initializeEconomyWorldState } from "../economy/service.js";
-import { initializeBusinessWorldState } from "../businesses/service.js";
+import { businessAccountMismatches, initializeBusinessWorldState, migrateLegacyBusinessAccounts } from "../businesses/service.js";
 import { initializePropertyWorldState } from "../properties/service.js";
 import { initializeGovernmentWorldState } from "../government/service.js";
 import { initializeElectionWorldState } from "../elections/service.js";
@@ -443,6 +443,8 @@ const ECONOMY_TRANSACTION_KINDS = new Set([
   "loan_late_fee", "initial_credit", "clinic_payment", "bus_fare", "government_payment",
   "rent_payment", "rent_receipt", "property_purchase", "property_sale_proceeds", "property_furnishing",
   "property_maintenance",
+  "business_capital", "business_withdrawal", "business_purchase", "business_sale", "business_salary",
+  "business_transfer", "business_expense", "business_setup_fee", "business_seed_capital", "business_legacy_import",
 ]);
 
 function isEconomyAccount(value: unknown, key: string): boolean {
@@ -515,6 +517,7 @@ const BUSINESS_OWNERSHIP_ROLES = new Set(["owner", "co_owner", "manager", "accou
 const BUSINESS_TX_KINDS = new Set([
   "sale_product", "sale_service", "expense_operating", "expense_rent", "expense_salary",
   "capital_contribution", "owner_withdrawal", "production_cost", "setup_cost", "refund", "purchase_stock",
+  "salary_paid", "transfer_in", "transfer_out", "legacy_import", "seed_capital",
 ]);
 const BUSINESS_PREMISES_TYPES = new Set([
   "home_based", "market_stall", "shop", "office", "workshop", "restaurant", "farm", "warehouse", "factory", "service_area", "studio",
@@ -557,6 +560,7 @@ function isBusinessTransaction(value: unknown, key: string): boolean {
     typeof value.posted_at === "string" &&
     (value.reference_id === null || typeof value.reference_id === "string") &&
     (value.counterparty_character_id === null || typeof value.counterparty_character_id === "string") &&
+    (value.economy_transaction_id === undefined || value.economy_transaction_id === null || typeof value.economy_transaction_id === "string") &&
     typeof value.idempotency_key === "string";
 }
 
@@ -935,6 +939,14 @@ export function validateState(value: unknown, now: number): PersistentWorldState
   initializeCareerWorldState(state, now);
   initializeEconomyWorldState(state, now);
   initializeBusinessWorldState(state);
+  // Stage 40: every saved world gets its business accounts (a balance recorded before this stage is carried over once,
+  // with an explicit ledger row), and is then reconciled. A world whose business balances do not match their accounts
+  // or ledger rows is refused, rather than trusted.
+  migrateLegacyBusinessAccounts(state, state.worldClock.world_date, now);
+  const businessProblems = businessAccountMismatches(state);
+  if (businessProblems.length > 0) {
+    throw new Error(`World data has business accounts that do not reconcile (${businessProblems.length}). First: ${businessProblems[0]}`);
+  }
   initializePropertyWorldState(state);
   initializeGovernmentWorldState(state);
   initializeElectionWorldState(state);
