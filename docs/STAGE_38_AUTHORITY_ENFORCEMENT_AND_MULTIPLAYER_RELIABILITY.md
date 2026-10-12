@@ -6,7 +6,7 @@ Scope: server-side authority for the police, crime, and military actions that we
 
 - Starting HEAD: `9f2d5b38baa0ac4d2644f6027c4b2ec333388cf4` (`9f2d5b3`, branch `arena/00cdea0e-naija`). The remote branch was verified at `9f2d5b3` before the work began.
 - During the session the local clone was found re-created from `main` at `44483b4` with the Stage 1 to 37 history not present locally, and the working tree held the Stage 38 edits. The working tree was backed up (`/tmp/s38-wt-backup/worktree.tar`), the remote commit was fetched, the local branch was fast-forwarded to `9f2d5b3` (`git merge --ff-only`), and the nine Stage 38 files were restored from a stash entry (`s38-pre-realign-worktree`, kept). A file-by-file comparison showed that these nine files were the only differences from `9f2d5b3`. No history was rewritten.
-- Code and report commit: the commit that adds this report, on top of `9f2d5b3`. Its hash is verified after the push (section 11). The push is a fast-forward; nothing is force-pushed.
+- Code and report commit: `97793e1394bc78d78d3ba60648ab2500ca42f57d` (`97793e1`), a fast-forward of `9f2d5b3` (`9f2d5b3..97793e1`). Final HEAD: the follow-up commit that records the CI result in section 11; its hash is verified after the push. Nothing is force-pushed.
 
 ## 2. Summary
 
@@ -212,7 +212,8 @@ Not separable: a per-family total for the whole suite, because the suites are no
 - Type-check: `npx tsc --noEmit -p .` exit 0.
 - Lint: `npm run lint` exit 0.
 - Tests: section 10.
-- CI for the starting commit `9f2d5b3` (run `38210208410`): success. For this report's commit: the push triggers a run; its result is verified after the push, and is reported here only as observed.
+- CI for the starting commit `9f2d5b3` (run `38210208410`): success.
+- CI for the code and report commit `97793e1` (run `38231065407`, started by the push): **success**, both jobs ("World API build, lint, and tests" and "World API live PostgreSQL tests (disposable service)"). This is one passing run. It does not show that the `237de19` failure was fixed or that its cause was found. The new failure-output steps did not run, because nothing failed, so their behaviour on a failure is still unverified.
 - CI for `237de19` (run `38209331236`): failure, cause unknown (section 8). Not fixed by this stage.
 - Push: fast-forward only, never forced. The remote commit is verified after the push.
 
