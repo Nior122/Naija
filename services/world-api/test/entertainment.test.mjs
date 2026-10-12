@@ -393,16 +393,24 @@ test("acceptContract rejects non-party", () => {
 // ─── News Reports ─────────────────────────────────────────────────
 
 test("createNewsReport and publishNewsReport", () => {
-  const world = makeWorld();
-  const service = new EntertainmentService(world.state, new EntertainmentCatalogService());
-  const report = service.createNewsReport({
-    author_character_id: "char-journalist", headline: "Election Results Announced",
-    topic: "elections",
-  }, world.date);
-  assert.equal(report.status, "draft");
-  const published = service.publishNewsReport(report.report_id, "Approved by editor.", world.date);
-  assert.equal(published.status, "published");
-  assert.ok(published.views > 0);
+  // publishNewsReport gives initial views as Math.floor(Math.random() * 100), so a draw of 0 gives no views (about 1 run
+  // in 100). The draw is fixed for this test so the run is deterministic. The assertion is unchanged.
+  const realRandom = Math.random;
+  Math.random = () => 0.5;
+  try {
+    const world = makeWorld();
+    const service = new EntertainmentService(world.state, new EntertainmentCatalogService());
+    const report = service.createNewsReport({
+      author_character_id: "char-journalist", headline: "Election Results Announced",
+      topic: "elections",
+    }, world.date);
+    assert.equal(report.status, "draft");
+    const published = service.publishNewsReport(report.report_id, "Approved by editor.", world.date);
+    assert.equal(published.status, "published");
+    assert.ok(published.views > 0);
+  } finally {
+    Math.random = realRandom;
+  }
 });
 
 test("correctNewsReport works", () => {

@@ -228,18 +228,29 @@ development host and are not committed.
 
 | Command | Result | Log |
 |---|---|---|
-| `npm run build` (`tsc`, the typecheck) | exit 0 | `/tmp/s35b-build.log` |
-| `npm run lint` (eslint on `services/world-api/src`) | exit 0 | `/tmp/s35b-lint.log` |
+| `npm run build` (`tsc`, the typecheck) | exit 0 | `/tmp/s35f-build.log` |
+| `npm run lint` (eslint on `services/world-api/src`) | exit 0 | `/tmp/s35f-lint.log` |
+| `npm test` in `services/world-api`, PostgreSQL env sourced (the CI command for the live job) | **1533 tests: 1528 pass, 0 fail, 4 skip, 1 todo**; exit 0 | `/tmp/s35f-pg.log` |
 | `node --test test/property-actions-stage35.test.mjs`, file backend (no `DATABASE_URL`) | 56 tests, 56 pass, 0 fail, 0 skip | terminal |
 | same, PostgreSQL env sourced (both backends in one run) | 112 tests, 112 pass, 0 fail, 0 skip (56 file, 56 PostgreSQL) | terminal |
 | `node --test test/treasury-funding-stage35.test.mjs`, file backend | 5 tests, 5 pass, 0 fail | terminal |
 | same, PostgreSQL env sourced (both backends in one run) | 10 tests, 10 pass, 0 fail (5 file, 5 PostgreSQL) | terminal |
-| Full suite, file backend (`env -u DATABASE_URL NAIJA_ENV=test node --test test/*.test.mjs`) | **1303 tests: 1261 pass, 0 fail, 41 skip, 1 todo**; exit 0 | `/tmp/s35c-file.log` |
-| Full suite, PostgreSQL (`. /tmp/pgenv34.sh`, then `node --test test/*.test.mjs`) | **1533 tests: 1528 pass, 0 fail, 4 skip, 1 todo**; exit 0 | `/tmp/s35c-pg.log` |
+| Full suite, file backend (`env -u DATABASE_URL NAIJA_ENV=test node --test test/*.test.mjs`) | **1303 tests: 1261 pass, 0 fail, 41 skip, 1 todo**; exit 0 | `/tmp/s35f-file.log` |
+| `node --test test/entertainment.test.mjs` (after the fix described below) | 30 tests, 30 pass | `/tmp/s35e-ent.log` |
 
 Totals are reported per backend and never added across them. The full-suite totals include every file. The per-file
 rows above are the final runs of the two new files. The property-mutation and invariant files, and the other files, were
 checked by the full-suite runs only.
+
+A flaky test found and fixed in this stage. The CI live-PostgreSQL job failed on commit `825e0e8` (run `38196196114`,
+a documentation-only commit on top of `ed06f27`, which had passed). The failure reproduced locally on one of two full runs:
+`entertainment.test.mjs`, "createNewsReport and publishNewsReport", asserted `published.views > 0`. `publishNewsReport`
+gives initial views as `Math.floor(Math.random() * 100)`, so a draw of 0 fails the test (about 1 run in 100). The test
+now fixes the random draw for its own duration (and restores it), and the assertion is unchanged. The game code was not
+changed. The CI job log could not be downloaded (the log service returned EOF), and the run could not be re-run, so the
+failing test name is established by the local reproduction, not by the CI log. Other test files that call `Math.random`
+use it for unique IDs or ports, not for assertions. The economy test's random port is a possible rare clash that was not
+investigated.
 
 Skips. The 41 file-run skips are PostgreSQL-only tests that need `DATABASE_URL` and `NAIJA_ALLOW_DB_TESTS=true`. The
 4 PostgreSQL-run skips are the TLS live tests that need `TLS_TEST_DATABASE_URL`. A skip is not a pass. The 1 todo in each
