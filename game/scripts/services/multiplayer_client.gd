@@ -89,12 +89,16 @@ func request_logout() -> bool:
 	return send_command("session.logout")
 
 
-func send_command(message_type: String, values: Dictionary = {}) -> bool:
+## Sends one command. A retrying caller passes the same request_id, so the server applies it once.
+## Otherwise a new request ID is generated.
+func send_command(
+		message_type: String, values: Dictionary = {}, request_id: String = ""
+) -> bool:
 	if not is_world_connected():
 		return false
 	var payload := values.duplicate(true)
 	payload["type"] = message_type
-	payload["requestId"] = _new_request_id()
+	payload["requestId"] = request_id if not request_id.is_empty() else _new_request_id()
 	return _send_message(payload)
 
 
