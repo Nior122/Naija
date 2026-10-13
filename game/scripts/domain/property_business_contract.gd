@@ -37,37 +37,57 @@ const PROPERTY_CHANGING_ACTIONS: Array[String] = [
 	"remove_furnishing", "transfer",
 ]
 
-## Business operations the Stage 41 screen sends, and the payload keys each one reads (server:
-## businessAction in world-engine.ts). Operations the server supports but this screen does not send
-## (create, add_product, hire_employee, fire_employee, add_branch, transfer_ownership, produce,
-## record_expense) are client gaps recorded in docs/PHASE_1_FEATURE_INVENTORY.md, and are absent
-## here.
+## Business operations the Stage 43 screen sends, and the payload keys each one reads (server:
+## businessAction in world-engine.ts). Stage 43 added create, add_product, add_service,
+## set_listing (deactivate and reactivate), update_price, hire_employee, fire_employee, add_branch,
+## and transfer_ownership. Not sent by this screen, and recorded as gaps in
+## docs/STAGE_43_BUSINESS_LIFECYCLE.md: produce and record_expense (not in the Stage 43 scope),
+## and co-owner add or remove (not implemented on the server). A client that does not name an
+## action here cannot send it.
 const BUSINESS_ACTIONS: Dictionary = {
 	"discover": [],
 	"view": ["business_id"],
+	"create": ["template_id", "name", "description", "location_id", "initial_capital_ngn"],
+	"add_product": ["business_id", "product_definition_id", "custom_price_ngn"],
+	"add_service": ["business_id", "product_definition_id", "custom_price_ngn"],
+	"set_listing": ["business_id", "product_record_id", "available"],
+	"update_price": ["business_id", "product_record_id", "price_ngn"],
 	"buy_product": ["business_id", "product_record_id", "quantity"],
 	"buy_service": ["business_id", "product_record_id"],
 	"restock": ["business_id", "product_definition_id", "quantity", "unit_cost_ngn"],
 	"pay_salary": ["business_id", "employee_character_id", "amount_ngn"],
+	"hire_employee": ["business_id", "employee_character_id"],
+	"fire_employee": ["business_id", "employee_character_id", "reason"],
 	"transfer_funds": ["business_id", "to_business_id", "amount_ngn"],
 	"contribute_capital": ["business_id", "amount_ngn"],
 	"withdraw": ["business_id", "amount_ngn"],
+	"add_branch": ["business_id", "name", "location_id", "premises_type"],
+	"transfer_ownership": ["business_id", "to_character_id", "new_role", "share_percent"],
 	"close": ["business_id", "reason"],
 }
 const BUSINESS_CHANGING_ACTIONS: Array[String] = [
-	"buy_product", "buy_service", "restock", "pay_salary", "transfer_funds", "contribute_capital",
-	"withdraw", "close",
+	"create", "add_product", "add_service", "set_listing", "update_price", "buy_product",
+	"buy_service", "restock", "pay_salary", "hire_employee", "fire_employee", "transfer_funds",
+	"contribute_capital", "withdraw", "add_branch", "transfer_ownership", "close",
 ]
 
 ## The roles that the server's authorizeBusinessAction allows, for each role-restricted operation
-## the screen sends. Buying has no role restriction; an owner or co-owner is refused for their own
-## business (business_self_purchase).
+## the screen sends. Buying and creating have no role restriction; an owner or co-owner is refused
+## for their own business (business_self_purchase). The server checks again on every request.
 const BUSINESS_ROLES: Dictionary = {
+	"add_product": ["owner", "co_owner", "manager", "inventory_manager"],
+	"add_service": ["owner", "co_owner", "manager", "inventory_manager"],
+	"set_listing": ["owner", "co_owner", "manager"],
+	"update_price": ["owner", "co_owner", "manager"],
 	"restock": ["owner", "co_owner", "manager", "inventory_manager"],
 	"pay_salary": ["owner", "co_owner"],
+	"hire_employee": ["owner", "co_owner", "manager"],
+	"fire_employee": ["owner", "co_owner", "manager"],
 	"transfer_funds": ["owner", "co_owner"],
 	"contribute_capital": ["owner", "co_owner"],
 	"withdraw": ["owner", "co_owner"],
+	"add_branch": ["owner", "co_owner"],
+	"transfer_ownership": ["owner"],
 	"close": ["owner", "co_owner"],
 }
 
@@ -119,6 +139,45 @@ static func furniture_label(furniture_id: String) -> String:
 static func business_product_definitions() -> Array:
 	var rows: Variant = business_catalog().get("business_products", [])
 	return rows.duplicate(true) if rows is Array else []
+
+
+## The stock goods a business can buy in and list (every definition that is not a service).
+static func goods_definitions() -> Array:
+	return business_product_definitions().filter(
+		func(row): return str(row.get("category", "")) != SERVICE_CATEGORY)
+
+
+## The services a business can list (every definition in the service category).
+static func service_definitions() -> Array:
+	return business_product_definitions().filter(
+		func(row): return str(row.get("category", "")) == SERVICE_CATEGORY)
+
+
+## The business templates a founder can start, that the catalogue marks active.
+static func business_templates() -> Array:
+	var rows: Variant = business_catalog().get("templates", [])
+	var active: Array = []
+	if rows is Array:
+		for row in rows:
+			if row is Dictionary and bool(row.get("active", true)):
+				active.append(row.duplicate(true))
+	return active
+
+
+## One business template by ID, active or not, or an empty Dictionary.
+static func template_definition(template_id: String) -> Dictionary:
+	var rows: Variant = business_catalog().get("templates", [])
+	if rows is Array:
+		for row in rows:
+			if row is Dictionary and str(row.get("id", "")) == template_id:
+				return row.duplicate(true)
+	return {}
+
+
+## The premises types the server accepts for a branch (the catalogue's list).
+static func premises_types() -> Array:
+	var rows: Variant = business_catalog().get("premises_types", [])
+	return rows.duplicate() if rows is Array else []
 
 
 static func product_definition(definition_id: String) -> Dictionary:

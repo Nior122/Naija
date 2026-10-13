@@ -214,6 +214,7 @@ func _add_tab_bar() -> void:
 
 
 func _add_owned() -> void:
+	_add_create_form()
 	if _owned.is_empty():
 		_add_text(
 			"You do not own or co-own a business yet. Discover businesses to buy from, or ask the "
@@ -313,7 +314,8 @@ func _add_business_profile(card: VBoxContainer, profile: Dictionary) -> void:
 	)
 	_add_account_section(card, profile)
 	_add_owners_section(card, profile)
-	_add_products_section(card, profile, is_member)
+	_add_products_section(card, profile, role)
+	_add_branches_section(card, profile)
 	_add_inventory_section(card, profile)
 	_add_transactions_section(card, profile)
 	_add_sales_section(card, profile)
@@ -357,7 +359,7 @@ func _add_owners_section(card: VBoxContainer, profile: Dictionary) -> void:
 		)
 
 
-func _add_products_section(card: VBoxContainer, profile: Dictionary, is_member: bool) -> void:
+func _add_products_section(card: VBoxContainer, profile: Dictionary, role: String) -> void:
 	_add_text("Products and services", 13, TEXT_DARK, card)
 	var products: Variant = profile.get("products", [])
 	if not products is Array or products.is_empty():
@@ -365,11 +367,14 @@ func _add_products_section(card: VBoxContainer, profile: Dictionary, is_member: 
 		return
 	for product in products:
 		if product is Dictionary:
-			_add_product_row(card, profile, product, is_member)
+			_add_product_row(card, profile, product, role)
 
 
-func _add_product_row(card: VBoxContainer, profile: Dictionary, product: Dictionary,
-	is_member: bool) -> void:
+## A product row. Members see its listing controls (deactivate, reactivate, set price) when
+## their role allows
+## them. Other characters see the buy controls for an available product.
+func _add_product_row(
+		card: VBoxContainer, profile: Dictionary, product: Dictionary, role: String) -> void:
 	var definition_id := str(product.get("product_definition_id", ""))
 	var is_service := PropertyBusinessContract.is_service_product(definition_id)
 	var available := bool(product.get("available", false))
@@ -380,7 +385,13 @@ func _add_product_row(card: VBoxContainer, profile: Dictionary, product: Diction
 		"" if available else " · unavailable",
 	]
 	_add_text(label, 12, TEXT_DARK, card)
-	if is_member or not available or str(profile.get("status", "")) != "active":
+	if not role.is_empty():
+		var can_list := PropertyBusinessContract.can_perform("set_listing", role)
+		var can_price := PropertyBusinessContract.can_perform("update_price", role)
+		if str(profile.get("status", "")) == "active" and can_list and can_price:
+			_add_listing_controls(card, profile, product)
+		return
+	if not available or str(profile.get("status", "")) != "active":
 		return
 	var row := HBoxContainer.new()
 	card.add_child(row)
@@ -490,6 +501,10 @@ func _add_sales_section(card: VBoxContainer, profile: Dictionary) -> void:
 func _add_owner_actions(card: VBoxContainer, profile: Dictionary, role: String) -> void:
 	var business_id := str(profile.get("business_id", ""))
 	_add_text("Actions for your role", 13, TEXT_DARK, card)
+	if PropertyBusinessContract.can_perform("add_product", role):
+		_add_goods_listing_form(card, profile)
+	if PropertyBusinessContract.can_perform("add_service", role):
+		_add_service_listing_form(card, profile)
 	if PropertyBusinessContract.can_perform("restock", role):
 		_add_restock_form(card, profile)
 	if PropertyBusinessContract.can_perform("pay_salary", role):
@@ -502,6 +517,14 @@ func _add_owner_actions(card: VBoxContainer, profile: Dictionary, role: String) 
 	if PropertyBusinessContract.can_perform("withdraw", role):
 		_add_money_form(card, business_id, "withdraw", "Withdraw to your cash",
 			int(_rules.get("maximum_owner_withdrawal_ngn", 0)))
+	if PropertyBusinessContract.can_perform("hire_employee", role):
+		_add_hire_form(card, profile)
+	if PropertyBusinessContract.can_perform("fire_employee", role):
+		_add_fire_form(card, profile)
+	if PropertyBusinessContract.can_perform("add_branch", role):
+		_add_branch_form(card, profile)
+	if PropertyBusinessContract.can_perform("transfer_ownership", role):
+		_add_transfer_ownership_form(card, profile)
 	if PropertyBusinessContract.can_perform("close", role):
 		_add_close_form(card, profile)
 
@@ -511,14 +534,14 @@ func _add_restock_form(card: VBoxContainer, profile: Dictionary) -> void:
 	var row := HBoxContainer.new()
 	card.add_child(row)
 	var product_option := OptionButton.new()
-	var products: Variant = profile.get("products", [])
-	if products is Array:
-		for product in products:
-			if product is Dictionary:
-				var definition_id := str(product.get("product_definition_id", ""))
-				var index := product_option.item_count
-				product_option.add_item(str(product.get("display_name", definition_id)), index)
-				product_option.set_item_metadata(index, definition_id)
+	# Stock is held before it is listed (the server does not need a listing to restock),
+	# so the choice is the goods catalogue.
+	for definition in PropertyBusinessContract.goods_definitions():
+		var index := product_option.item_count
+		product_option.add_item(str(definition.get("label", definition.get("id", ""))), index)
+		product_option.set_item_metadata(index, str(definition.get("id", "")))
+	if product_option.item_count > 0:
+		product_option.select(0)
 	row.add_child(product_option)
 	var quantity := _line_edit("Units")
 	row.add_child(quantity)
@@ -670,6 +693,379 @@ func _add_close_form(card: VBoxContainer, profile: Dictionary) -> void:
 		_confirm_change("close", {"business_id": business_id, "reason": reason.text.strip_edges()},
 			"Ask the server to close %s now?" % str(profile.get("name", "this business"))))
 	row.add_child(close)
+
+
+## The start-a-business form (Stage 43). The server checks the template, the location, the name, the
+## capital, the owner's age, and the owner's cash. The setup fee and the capital are paid from the
+## owner's own cash, and the confirmation names both amounts.
+func _add_create_form() -> void:
+	var card := _card()
+	_add_text("Start a business", 14, TEXT_DARK, card)
+	var templates := PropertyBusinessContract.business_templates()
+	if templates.is_empty():
+		_add_text(
+			"The business catalogue is not loaded on this client, so a business cannot be started here.",
+			11, TEXT_MUTED, card)
+		return
+	var template_option := OptionButton.new()
+	for template in templates:
+		var index := template_option.item_count
+		template_option.add_item(str(template.get("label", "")), index)
+		template_option.set_item_metadata(index, str(template.get("id", "")))
+	template_option.select(0)
+	card.add_child(template_option)
+	var setup_note := _add_text("", 11, TEXT_MUTED, card)
+	var location_option := OptionButton.new()
+	card.add_child(location_option)
+	_fill_create_options(template_option, location_option, setup_note)
+	template_option.item_selected.connect(func(_index: int):
+		_fill_create_options(template_option, location_option, setup_note))
+	var name_edit := _line_edit("Business name")
+	card.add_child(name_edit)
+	var description_edit := _line_edit("Describe the business")
+	card.add_child(description_edit)
+	var capital_edit := _line_edit("Starting capital (₦, optional)")
+	card.add_child(capital_edit)
+	var create := _button("Start business")
+	create.disabled = _tracker.has_pending()
+	create.pressed.connect(func():
+		var name_text := name_edit.text.strip_edges()
+		var description_text := description_edit.text.strip_edges()
+		var capital_text := capital_edit.text.strip_edges()
+		var capital := 0
+		if not capital_text.is_empty():
+			capital = PropertyBusinessContract.parse_whole(capital_text)
+		var min_name := int(_rules.get("minimum_business_name_length", 2))
+		var max_name := int(_rules.get("maximum_business_name_length", 60))
+		var max_capital := int(_rules.get("maximum_capital_contribution_ngn", 0))
+		if name_text.length() < min_name or name_text.length() > max_name:
+			_notice = "Enter a business name of %d to %d characters." % [min_name, max_name]
+			_render()
+			return
+		if description_text.is_empty():
+			_notice = "Describe the business in a few words."
+			_render()
+			return
+		if capital < 0 or capital > max_capital:
+			_notice = "Enter the starting capital as a whole number of naira, from 0 to %s." % (
+				PropertyBusinessContract.naira(max_capital))
+			_render()
+			return
+		var template_id := str(template_option.get_item_metadata(template_option.selected))
+		var location_id := str(location_option.get_item_metadata(location_option.selected))
+		var setup := int(
+			PropertyBusinessContract.template_definition(template_id).get("setup_cost_ngn", 0))
+		_confirm_change("create", {
+			"template_id": template_id,
+			"name": name_text,
+			"description": description_text,
+			"location_id": location_id,
+			"initial_capital_ngn": capital,
+		}, ("Start %s for a setup fee of %s plus %s starting capital, all from your cash? "
+			+ "The server checks your funds.") % [
+			name_text, PropertyBusinessContract.naira(setup), PropertyBusinessContract.naira(capital),
+		]))
+	card.add_child(create)
+
+
+## Fills the location list for the chosen template, and shows its setup fee.
+func _fill_create_options(
+		template_option: OptionButton, location_option: OptionButton, setup_note: Label) -> void:
+	if template_option.selected < 0:
+		return
+	var template_id := str(template_option.get_item_metadata(template_option.selected))
+	var template := PropertyBusinessContract.template_definition(template_id)
+	location_option.clear()
+	var locations: Variant = template.get("allowed_locations", [])
+	if locations is Array:
+		for location in locations:
+			var index := location_option.item_count
+			location_option.add_item(PropertyBusinessContract.label_for(str(location)), index)
+			location_option.set_item_metadata(index, str(location))
+	if location_option.item_count > 0:
+		location_option.select(0)
+	setup_note.text = "Setup fee %s, paid from your cash." % (
+		PropertyBusinessContract.naira(template.get("setup_cost_ngn", 0)))
+
+
+## Deactivate, reactivate, or set the price of a listed product. These are not money movements,
+## so they are sent without a confirmation; the server checks the role and the price range.
+func _add_listing_controls(card: VBoxContainer, profile: Dictionary, product: Dictionary) -> void:
+	var business_id := str(profile.get("business_id", ""))
+	var record_id := str(product.get("product_record_id", ""))
+	var available := bool(product.get("available", false))
+	var row := HBoxContainer.new()
+	card.add_child(row)
+	var toggle := _button("Deactivate" if available else "Reactivate")
+	toggle.disabled = _tracker.has_pending()
+	toggle.pressed.connect(func():
+		_change("set_listing", {
+			"business_id": business_id, "product_record_id": record_id, "available": not available,
+		}))
+	row.add_child(toggle)
+	var price := _line_edit("New price (₦)")
+	row.add_child(price)
+	var set_price := _button("Set price")
+	set_price.disabled = _tracker.has_pending()
+	set_price.pressed.connect(func():
+		var value := PropertyBusinessContract.parse_whole(price.text)
+		if value < 1:
+			_notice = "Enter the new price as a whole number of naira, at least 1."
+			_render()
+			return
+		_change("update_price", {
+			"business_id": business_id, "product_record_id": record_id, "price_ngn": value,
+		}))
+	row.add_child(set_price)
+
+
+## The goods that this business does not list yet, as an option list.
+func _listable_option(profile: Dictionary, definitions: Array) -> OptionButton:
+	var listed := {}
+	var products: Variant = profile.get("products", [])
+	if products is Array:
+		for product in products:
+			if product is Dictionary:
+				listed[str(product.get("product_definition_id", ""))] = true
+	var option := OptionButton.new()
+	for definition in definitions:
+		if definition is Dictionary:
+			var definition_id := str(definition.get("id", ""))
+			if listed.has(definition_id):
+				continue
+			var index := option.item_count
+			option.add_item("%s (catalogue price %s)" % [
+				str(definition.get("label", definition_id)),
+				PropertyBusinessContract.naira(definition.get("base_price_ngn", 0)),
+			], index)
+			option.set_item_metadata(index, definition_id)
+	if option.item_count > 0:
+		option.select(0)
+	return option
+
+
+## Lists a stock good for sale. The selling price is required, and the server checks it against
+## the markup limits.
+func _add_goods_listing_form(card: VBoxContainer, profile: Dictionary) -> void:
+	var business_id := str(profile.get("business_id", ""))
+	_add_text("List a stock good for sale (the selling price is required)", 11, TEXT_MUTED, card)
+	var row := HBoxContainer.new()
+	card.add_child(row)
+	var product_option := _listable_option(profile, PropertyBusinessContract.goods_definitions())
+	row.add_child(product_option)
+	var price := _line_edit("Selling price (₦)")
+	row.add_child(price)
+	var list_goods := _button("List goods")
+	list_goods.disabled = _tracker.has_pending() or product_option.item_count == 0
+	list_goods.pressed.connect(func():
+		var value := PropertyBusinessContract.parse_whole(price.text)
+		if value < 1:
+			_notice = "Enter the selling price as a whole number of naira, at least 1."
+			_render()
+			return
+		_change("add_product", {
+			"business_id": business_id,
+			"product_definition_id": str(product_option.get_item_metadata(product_option.selected)),
+			"custom_price_ngn": value,
+		}))
+	row.add_child(list_goods)
+
+
+## Lists a service for sale. A service has no stock; the server checks its price against the
+## catalogue ceiling.
+func _add_service_listing_form(card: VBoxContainer, profile: Dictionary) -> void:
+	var business_id := str(profile.get("business_id", ""))
+	_add_text("List a service for sale (the price is required)", 11, TEXT_MUTED, card)
+	var row := HBoxContainer.new()
+	card.add_child(row)
+	var service_option := _listable_option(profile, PropertyBusinessContract.service_definitions())
+	row.add_child(service_option)
+	var price := _line_edit("Price (₦)")
+	row.add_child(price)
+	var list_service := _button("List service")
+	list_service.disabled = _tracker.has_pending() or service_option.item_count == 0
+	list_service.pressed.connect(func():
+		var value := PropertyBusinessContract.parse_whole(price.text)
+		if value < 1:
+			_notice = "Enter the price as a whole number of naira, at least 1."
+			_render()
+			return
+		var service_id := str(service_option.get_item_metadata(service_option.selected))
+		_add_service_from_form(business_id, service_id, value))
+	row.add_child(list_service)
+
+
+## The service route. It is separate from the goods route on purpose: the server refuses a
+## service on add_product.
+func _add_service_from_form(business_id: String, definition_id: String, value: int) -> void:
+	_change("add_service", {
+		"business_id": business_id,
+		"product_definition_id": definition_id,
+		"custom_price_ngn": value,
+	})
+
+
+## The active employees of a business profile, as the employment records the server returns.
+func _active_employee_rows(profile: Dictionary) -> Array:
+	var employees: Array = []
+	for row in PropertyBusinessContract.active_owners(profile):
+		if str(row.get("role", "")) == "employee":
+			employees.append(row)
+	return employees
+
+
+## The hiring form. The owner or a manager enters the character ID of the person to hire. The
+## server checks the age,
+## the cash account, the staff limit, and any career job. Hiring moves no money, so it is sent
+## without a confirmation.
+func _add_hire_form(card: VBoxContainer, profile: Dictionary) -> void:
+	var business_id := str(profile.get("business_id", ""))
+	_add_text(
+		"Hire a staff member by character ID. The server checks eligibility, the staff limit, "
+		+ "and any other job.",
+		11, TEXT_MUTED, card)
+	var row := HBoxContainer.new()
+	card.add_child(row)
+	var employee := _line_edit("Employee character ID")
+	row.add_child(employee)
+	var hire := _button("Hire")
+	hire.disabled = _tracker.has_pending()
+	hire.pressed.connect(func():
+		var employee_id := employee.text.strip_edges()
+		if employee_id.is_empty():
+			_notice = "Enter the character ID of the person to hire."
+			_render()
+			return
+		_change("hire_employee", {"business_id": business_id, "employee_character_id": employee_id}))
+	row.add_child(hire)
+
+
+## The dismissal form. Firing ends an employment; no money moves, and the employee is not paid
+## after it.
+func _add_fire_form(card: VBoxContainer, profile: Dictionary) -> void:
+	var business_id := str(profile.get("business_id", ""))
+	var employees := _active_employee_rows(profile)
+	if employees.is_empty():
+		_add_text("No active employees to dismiss.", 11, TEXT_MUTED, card)
+		return
+	var row := HBoxContainer.new()
+	card.add_child(row)
+	var employee_option := OptionButton.new()
+	for employee in employees:
+		var index := employee_option.item_count
+		employee_option.add_item(str(employee.get("character_id", "")), index)
+		employee_option.set_item_metadata(index, str(employee.get("character_id", "")))
+	employee_option.select(0)
+	row.add_child(employee_option)
+	var reason := _line_edit("Reason (optional)")
+	row.add_child(reason)
+	var fire := _button("Dismiss")
+	fire.disabled = _tracker.has_pending()
+	fire.pressed.connect(func():
+		var employee_id := str(employee_option.get_item_metadata(employee_option.selected))
+		_confirm_change("fire_employee", {
+			"business_id": business_id,
+			"employee_character_id": employee_id,
+			"reason": reason.text.strip_edges(),
+		}, "Dismiss employee %s? Their post ends. No money moves, and no pay is due after this." % (
+			employee_id)))
+	row.add_child(fire)
+
+
+## The branch list: the active branches of the business (a branch costs nothing to open, see
+## STAGE_43).
+func _add_branches_section(card: VBoxContainer, profile: Dictionary) -> void:
+	_add_text("Branches", 13, TEXT_DARK, card)
+	var rows: Variant = profile.get("branches", [])
+	if not rows is Array or rows.is_empty():
+		_add_text("No branches are open.", 11, TEXT_MUTED, card)
+		return
+	for row in rows:
+		if row is Dictionary and str(row.get("status", "")) == "active":
+			_add_text("%s — %s, %s" % [
+				str(row.get("name", "Branch")),
+				PropertyBusinessContract.label_for(str(row.get("location_id", ""))),
+				PropertyBusinessContract.label_for(str(row.get("premises_type", ""))),
+			], 11, TEXT_MUTED, card)
+
+
+## The branch form. A branch must be in a location the business's template allows, and in a
+## premises type the catalogue lists. The server checks both.
+func _add_branch_form(card: VBoxContainer, profile: Dictionary) -> void:
+	var business_id := str(profile.get("business_id", ""))
+	var template := PropertyBusinessContract.template_definition(str(profile.get("template_id", "")))
+	var row := HBoxContainer.new()
+	card.add_child(row)
+	var name_edit := _line_edit("Branch name")
+	row.add_child(name_edit)
+	var location_option := OptionButton.new()
+	var locations: Variant = template.get("allowed_locations", [])
+	if locations is Array:
+		for location in locations:
+			var index := location_option.item_count
+			location_option.add_item(PropertyBusinessContract.label_for(str(location)), index)
+			location_option.set_item_metadata(index, str(location))
+	if location_option.item_count > 0:
+		location_option.select(0)
+	row.add_child(location_option)
+	var premises_option := OptionButton.new()
+	for premises in PropertyBusinessContract.premises_types():
+		var index := premises_option.item_count
+		premises_option.add_item(PropertyBusinessContract.label_for(str(premises)), index)
+		premises_option.set_item_metadata(index, str(premises))
+	premises_option.select(0)
+	row.add_child(premises_option)
+	var open_branch := _button("Open branch")
+	open_branch.disabled = _tracker.has_pending() or location_option.item_count == 0
+	open_branch.pressed.connect(func():
+		var branch_name := name_edit.text.strip_edges()
+		if branch_name.is_empty():
+			_notice = "Enter a name for the branch."
+			_render()
+			return
+		_change("add_branch", {
+			"business_id": business_id,
+			"name": branch_name,
+			"location_id": str(location_option.get_item_metadata(location_option.selected)),
+			"premises_type": str(premises_option.get_item_metadata(premises_option.selected)),
+		}))
+	row.add_child(open_branch)
+
+
+## The ownership handover. Only the owner can hand the business on, and the recipient becomes
+## the owner. The confirmation names the recipient. The recipient is not asked to consent (an
+## open decision, see STAGE_43), so the warning says so.
+func _add_transfer_ownership_form(card: VBoxContainer, profile: Dictionary) -> void:
+	var business_id := str(profile.get("business_id", ""))
+	_add_text(
+		"Hand the whole business to another character. You stop being the owner, and the server "
+		+ "refuses your owner actions after that. The recipient is not asked to consent (an open "
+		+ "decision). It cannot be undone from here.",
+		11,
+		WARNING,
+		card,
+	)
+	var row := HBoxContainer.new()
+	card.add_child(row)
+	var recipient := _line_edit("Recipient character ID")
+	row.add_child(recipient)
+	var transfer := _button("Transfer ownership")
+	transfer.disabled = _tracker.has_pending()
+	transfer.pressed.connect(func():
+		var recipient_id := recipient.text.strip_edges()
+		if recipient_id.is_empty():
+			_notice = "Enter the character ID of the new owner."
+			_render()
+			return
+		_confirm_change("transfer_ownership", {
+			"business_id": business_id,
+			"to_character_id": recipient_id,
+			"new_role": "owner",
+			"share_percent": 100,
+		}, "Hand %s to character %s? This cannot be undone from this screen." % [
+			str(profile.get("name", "this business")), recipient_id,
+		]))
+	row.add_child(transfer)
 
 
 # --- Event handlers ---
