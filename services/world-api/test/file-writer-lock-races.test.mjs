@@ -24,7 +24,7 @@ import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { after, test } from "node:test";
 import { WorldStore } from "../dist/multiplayer/persistence.js";
-import { WorldFileLockedError, WorldFileWriterLock } from "../dist/persistence/writer-lock.js";
+import { WorldFileLockedError, WorldFileWriterLock, processIsAlive } from "../dist/persistence/writer-lock.js";
 import { saveOutcomeOf } from "../dist/persistence-status.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -117,7 +117,7 @@ test("a lock file that cannot be read refuses only that save: not_saved, not fen
   assert.equal(existsSync(lock), false);
 });
 
-function spawnServer(dataFile, port) {
+function spawnServer(dataFile, port, options = {}) {
   const env = {
     PATH: process.env.PATH,
     NAIJA_ENV: "test",
@@ -125,7 +125,8 @@ function spawnServer(dataFile, port) {
     DATA_FILE: dataFile,
     PORT: String(port),
   };
-  const child = spawn(process.execPath, [serverEntry], { env, stdio: ["ignore", "pipe", "pipe"] });
+  // detached: the server leads its own process group, so a signal to the group reaches it and its lock holder.
+  const child = spawn(process.execPath, [serverEntry], { env, stdio: ["ignore", "pipe", "pipe"], detached: options.detached === true });
   let output = "";
   child.stdout.on("data", (chunk) => { output += chunk; });
   child.stderr.on("data", (chunk) => { output += chunk; });
@@ -165,6 +166,89 @@ test("a clean SIGTERM saves, exits 0, and removes the lock; a new start can take
   assert.ok(next.isHeld(), "a new start takes the released lock");
   next.release();
 });
+
+// Stage 44: a signal to the whole process group (Ctrl-C in a terminal, or a supervisor that signals the group) also
+// reached the lock holder, which is a child of the server in the same group. The holder died, the lock was lost, and
+// the final save was refused (WorldFileLockLostError). The holder now ignores INT and TERM, so the server alone handles
+// them, saves, and then releases the holder. The holder still ends when the server exits (its stdin pipe closes).
+for (const signal of ["SIGTERM", "SIGINT"]) {
+  test(`a group ${signal} saves the world, exits 0, and removes the lock (the lock holder does not die first)`, async () => {
+    const file = fileInDirectory();
+    await saveMinute(file, 100);
+    const run = spawnServer(file, await freePort(), { detached: true });
+    await run.listening;
+    assert.ok(existsSync(lockPathOf(file)), "premise: the running server holds the lock");
+    process.kill(-run.child.pid, signal);
+    const { code, signal: exitSignal } = await run.exited;
+    const output = run.output();
+    assert.equal(exitSignal, null, output.slice(-300));
+    assert.equal(code, 0, `exit code (output tail: ${output.slice(-300)})`);
+    assert.doesNotMatch(output, /WorldFileLockLostError|world_file_lock_lost/, output.slice(-300));
+    assert.equal(existsSync(lockPathOf(file)), false, "the lock is released after the final save");
+  });
+}
+
+// Stage 44 (Stage 43 section 8.3): a store whose lock was released must not write again. In production the final
+// save is followed by releasing the lock; a save that was still queued then used to write the file with no lock at all,
+// over a file that another process had taken the lock for.
+test("a store whose lock was released is fenced: a later save is refused and does not overwrite another writer's file", async () => {
+  const file = fileInDirectory();
+  const first = new WorldStore(file, Date.now());
+  first.acquireWriterLock();
+  first.state.worldClock.minute_of_day = 100;
+  await first.saveState(first.state);
+  first.releaseWriterLock();
+  const second = new WorldStore(file, Date.now());
+  second.acquireWriterLock();
+  second.state.worldClock.minute_of_day = 200;
+  await second.saveState(second.state);
+  first.state.worldClock.minute_of_day = 300;
+  await assert.rejects(first.saveState(first.state), (error) => {
+    assert.equal(saveOutcomeOf(error), "not_saved", "the released store reports that nothing was saved");
+    return true;
+  });
+  assert.equal(minuteIn(file), 200, "the released store does not overwrite the second writer's file");
+  assert.equal(first.isFenced(), true, "a released store is fenced");
+  second.releaseWriterLock();
+});
+
+// Stage 44: the lock is held by a holder process that the server starts. The holder ends when its stdin pipe closes,
+// and a server that exits normally or is killed with SIGKILL closes that pipe. So the holder ends with its server, and
+// the lock is then free for the next start. (Ending a holder while its server still runs is a different case, not
+// tested here.)
+const holderChild = join(here, "support", "writer-lock-holder-child.mjs");
+for (const how of ["exit", "SIGKILL"]) {
+  test(`the lock holder ends when its server ends (${how}), and the lock is then free`, async () => {
+    const file = fileInDirectory();
+    const child = spawn(process.execPath, [holderChild], {
+      env: { ...process.env, WORLD_FILE: file },
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    let stderr = "";
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    const holderPid = await new Promise((resolve, reject) => {
+      let text = "";
+      child.stdout.on("data", (chunk) => {
+        text += chunk;
+        const match = /HOLDER (\d+)/.exec(text);
+        if (match) resolve(Number(match[1]));
+      });
+      child.once("exit", (code) => reject(new Error(`the server stand-in exited early (${code}): ${stderr.slice(-300)}`)));
+    });
+    assert.ok(processIsAlive(holderPid), "premise: the holder is running while its server holds the lock");
+    if (how === "exit") child.stdin.write("QUIT\n");
+    else child.kill("SIGKILL");
+    await new Promise((resolve) => child.once("exit", resolve));
+    const deadline = Date.now() + 5000;
+    while (processIsAlive(holderPid) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.equal(processIsAlive(holderPid), false, "the holder ends with its server");
+    const next = WorldFileWriterLock.acquire(file);
+    assert.ok(next.isHeld(), "the lock is free for the next start");
+    next.release();
+  });
+}
 
 // ─── Part B: race 1 (a lock replaced between the check and the rename) ────────
 

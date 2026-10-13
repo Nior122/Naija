@@ -101,6 +101,10 @@ const HOLDER_REPORT_TIMEOUT_MS = 5_000;
 const HOLDER_EXIT_TIMEOUT_MS = 2_000;
 const ACQUIRE_ATTEMPTS = 4;
 
+// The holder ignores INT and TERM. It shares the server's process group, so a Ctrl-C or a group SIGTERM reaches it too.
+// Without this, the holder died before the server's final save, the lock was lost, and the save failed with
+// WorldFileLockLostError (Stage 44). The server handles both signals itself and releases the holder after its save.
+// The holder still ends when the server exits, because its stdin pipe closes. SIGKILL is not affected (endHolder).
 /**
  * The holder. `$1` is the directory that holds the world file, `$2` the status file it reports to. The directory opened
  * on fd 9 is inherited by `cat`, so the lock is held until `cat` exits. `cat` exits when its stdin (a pipe from the
@@ -108,6 +112,7 @@ const ACQUIRE_ATTEMPTS = 4;
  */
 const HOLDER_SCRIPT = [
   "umask 077",
+  "trap '' INT TERM",
   'exec 9<"$1" || { echo FAILED > "$2"; exit 1; }',
   'if ! flock -n 9; then echo REFUSED > "$2"; exit 1; fi',
   'if [ "$(stat -L -c %d:%i /proc/$$/fd/9 2>/dev/null)" != "$(stat -c %d:%i "$1" 2>/dev/null)" ]; then echo RETRY > "$2"; exit 1; fi',

@@ -1164,8 +1164,13 @@ export class WorldStore implements WorldStoreLike {
     this.writerLock = WorldFileWriterLock.acquire(this.filePath);
   }
 
-  /** Releases the lock after the final save. A crashed process leaves a lock that the next start takes over. */
+  /**
+   * Releases the lock after the final save. A crashed process leaves a lock that the next start takes over.
+   * A store that held the lock is fenced once it is released: its file may now belong to another writer, so a save
+   * still queued behind this point must be refused, not written (Stage 44, Stage 43 section 8.3).
+   */
   releaseWriterLock(): void {
+    if (this.writerLock !== null) this.fenced = true;
     this.writerLock?.release();
     this.writerLock = null;
   }
@@ -1233,6 +1238,8 @@ export class WorldStore implements WorldStoreLike {
         await this.fileWriteFaultHook?.("after-temp-sync");
         // Stage 35: the lock is checked again immediately before the rename, after the temp file is synced. The first
         // check above is only the early refusal. This one is the check that a replaced lock file must not pass.
+        // A store released while this save was in progress is fenced, and must not rename either.
+        if (this.fenced) throw markSaveOutcome(new WorldFileLockLostError(), "not_saved");
         if (this.writerLock !== null) {
           try {
             this.writerLock.assertHeld();
