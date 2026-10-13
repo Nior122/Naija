@@ -129,10 +129,10 @@ func _process(delta: float) -> void:
 			else:
 				_send_create_identity()
 		while _socket != null and _socket.get_available_packet_count() > 0:
-			if not _socket.was_string_packet():
-				_socket.get_packet()
-				continue
+			# was_string_packet() describes the packet get_packet() returned last. Read the packet first.
 			var packet := _socket.get_packet()
+			if not _socket.was_string_packet():
+				continue
 			_handle_packet(packet.get_string_from_utf8())
 		return
 
