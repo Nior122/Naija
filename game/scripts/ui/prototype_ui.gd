@@ -15,12 +15,20 @@ signal consume_requested(item_id: String)
 signal attend_requested
 signal education_action_requested(action: String, payload: Dictionary)
 signal career_action_requested(action: String, payload: Dictionary)
+signal housing_action_requested(action: String, payload: Dictionary, request_id: String)
+signal business_action_requested(action: String, payload: Dictionary, request_id: String)
 signal modal_changed(is_open: bool)
 
 const SCHOOL_SERVICE = preload("res://scripts/domain/school_service.gd")
 const EducationServiceScript = preload("res://scripts/domain/education_service.gd")
 const LifeSimulationServiceScript = preload("res://scripts/domain/life_simulation_service.gd")
 const CareerPanelScript = preload("res://scripts/ui/career_panel.gd")
+const HousingPanelScript = preload("res://scripts/ui/housing_panel.gd")
+const BusinessPanelScript = preload("res://scripts/ui/business_panel.gd")
+const TIMEOUT_NOTICE := "No answer came from the server in time. Its records show the current " \
+	+ "state. Retry sends the same request ID, which the server applies at most once."
+const DUPLICATE_NOTICE := "The server had already processed this request. " \
+	+ "The records shown are its current state."
 const SKIN_TONES: Array[Dictionary] = [
 	{"label": "Warm brown", "hex": "#9b654d"},
 	{"label": "Deep brown", "hex": "#70452f"},
@@ -51,6 +59,11 @@ var _showing_chat: bool = false
 var _quiz_id: String = ""
 var _quiz_mode: String = "school"
 var _career_panel: CareerPanel
+var _housing_panel: HousingPanel
+var _business_panel: BusinessPanel
+# The trackers belong to the UI layer, so a request keeps its state when a modal closes (Stage 41).
+var _housing_tracker := ServerRequestTracker.new()
+var _business_tracker := ServerRequestTracker.new()
 
 
 func _ready() -> void:
@@ -178,6 +191,8 @@ func show_game(character: CharacterState, clock: WorldClock, location_name: Stri
 	_add_menu_button(menu_grid, "Inventory", "inventory")
 	_add_menu_button(menu_grid, "Education", "school")
 	_add_menu_button(menu_grid, "Careers", "careers")
+	_add_menu_button(menu_grid, "Housing", "housing")
+	_add_menu_button(menu_grid, "Businesses", "businesses")
 	_add_menu_button(menu_grid, "Nearby chat", "chat")
 	_add_menu_button(menu_grid, "Save / Load", "save")
 	_add_menu_button(menu_grid, "Settings", "settings")
@@ -528,6 +543,129 @@ func update_career_world_context(character: CharacterState, clock: WorldClock) -
 
 func _on_career_action_requested(action: String, payload: Dictionary) -> void:
 	career_action_requested.emit(action, payload.duplicate(true))
+
+
+## Housing (Stage 41). The panel renders the server's state; the trackers record each request.
+func show_housing(
+	character: CharacterState, is_online: bool, profiles: Array, rentals: Array
+) -> void:
+	var card := _open_modal(
+		"Housing",
+		"Market, purchases, rent and agreements, through the shared property service"
+	)
+	_housing_panel = HousingPanelScript.new()
+	_housing_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_housing_panel.bind_tracker(_housing_tracker)
+	_housing_panel.housing_action_requested.connect(_on_housing_action_requested)
+	card.add_child(_housing_panel)
+	_housing_panel.configure(character.character_id, character.money, is_online)
+	_housing_panel.show_profiles(profiles, rentals, character.money)
+	_add_modal_close(card)
+
+
+func update_housing_profiles(profiles: Array, rentals: Array, money: int) -> void:
+	if is_instance_valid(_housing_panel):
+		_housing_panel.show_profiles(profiles, rentals, money)
+
+
+func show_housing_response(message: Dictionary) -> void:
+	var answered := _housing_tracker.apply_reply(message)
+	if is_instance_valid(_housing_panel):
+		_housing_panel.apply_server_response(message, answered)
+	elif answered:
+		notify(str(message.get("message", "Housing request answered.")))
+
+
+## Businesses (Stage 41). The panel renders the server's state; the trackers record each request.
+func show_businesses(character: CharacterState, is_online: bool, profiles: Array) -> void:
+	var card := _open_modal(
+		"Businesses",
+		"Balances, products, staff and purchases, through the shared business service"
+	)
+	_business_panel = BusinessPanelScript.new()
+	_business_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_business_panel.bind_tracker(_business_tracker)
+	_business_panel.business_action_requested.connect(_on_business_action_requested)
+	card.add_child(_business_panel)
+	var rules: Variant = PropertyBusinessContract.business_catalog().get("rules", {})
+	_business_panel.configure(
+		character.character_id, character.money, rules if rules is Dictionary else {}, is_online
+	)
+	_business_panel.show_profiles(profiles, character.money)
+	_add_modal_close(card)
+
+
+func update_business_profiles(profiles: Array, money: int) -> void:
+	if is_instance_valid(_business_panel):
+		_business_panel.show_profiles(profiles, money)
+
+
+func show_business_response(message: Dictionary) -> void:
+	var answered := _business_tracker.apply_reply(message)
+	if is_instance_valid(_business_panel):
+		_business_panel.apply_server_response(message, answered)
+	elif answered:
+		notify(str(message.get("message", "Business request answered.")))
+
+
+## The server replied command.duplicate. Each tracker releases only the request that has that ID.
+func show_command_duplicate(request_id: String) -> void:
+	var housing_answered := _housing_tracker.apply_duplicate(request_id)
+	var business_answered := _business_tracker.apply_duplicate(request_id)
+	if housing_answered:
+		_tell_housing(DUPLICATE_NOTICE)
+	if business_answered:
+		_tell_business(DUPLICATE_NOTICE)
+
+
+## The socket reconnects or goes offline. A waiting change may or may not have been saved, so it is
+## marked unconfirmed.
+func show_connection_lost(message: String) -> void:
+	var housing_waiting := _housing_tracker.is_waiting()
+	var business_waiting := _business_tracker.is_waiting()
+	_housing_tracker.apply_transport_loss()
+	_business_tracker.apply_transport_loss()
+	if housing_waiting:
+		_tell_housing(message)
+	if business_waiting:
+		_tell_business(message)
+
+
+func request_timed_out(request_id: String) -> void:
+	if _housing_tracker.apply_timeout(request_id):
+		_tell_housing(TIMEOUT_NOTICE)
+	if _business_tracker.apply_timeout(request_id):
+		_tell_business(TIMEOUT_NOTICE)
+
+
+## The request never reached the socket, so the server did not receive it and nothing changed.
+func show_send_failure(request_id: String, message: String) -> void:
+	if _housing_tracker.apply_send_failure(request_id):
+		_tell_housing(message)
+	if _business_tracker.apply_send_failure(request_id):
+		_tell_business(message)
+
+
+func _tell_housing(message: String) -> void:
+	if is_instance_valid(_housing_panel):
+		_housing_panel.show_notice_text(message)
+	else:
+		notify(message)
+
+
+func _tell_business(message: String) -> void:
+	if is_instance_valid(_business_panel):
+		_business_panel.show_notice_text(message)
+	else:
+		notify(message)
+
+
+func _on_housing_action_requested(action: String, payload: Dictionary, request_id: String) -> void:
+	housing_action_requested.emit(action, payload.duplicate(true), request_id)
+
+
+func _on_business_action_requested(action: String, payload: Dictionary, request_id: String) -> void:
+	business_action_requested.emit(action, payload.duplicate(true), request_id)
 
 
 func show_education(
@@ -1360,6 +1498,8 @@ func _on_purchase_pressed(item_id: String) -> void:
 func _close_modal() -> void:
 	if not _modal_open:
 		_career_panel = null
+		_housing_panel = null
+		_business_panel = null
 		return
 	if is_instance_valid(_modal_layer):
 		_modal_layer.queue_free()
@@ -1367,6 +1507,8 @@ func _close_modal() -> void:
 	_modal_open = false
 	_showing_chat = false
 	_career_panel = null
+	_housing_panel = null
+	_business_panel = null
 	modal_changed.emit(false)
 
 
@@ -1381,6 +1523,8 @@ func _clear_screen() -> void:
 	_showing_chat = false
 	_quiz_id = ""
 	_career_panel = null
+	_housing_panel = null
+	_business_panel = null
 
 
 func _add_label(parent: Node, text_value: String, size: int, color: Color, alignment: int) -> Label:

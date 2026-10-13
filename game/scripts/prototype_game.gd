@@ -27,6 +27,11 @@ var playing: bool = false
 var multiplayer_client: Node
 var _online_mode: bool = false
 var _online_career_profile: Dictionary = {}
+# Stage 41: the character's own property, rental and business records, from session.ready and
+# character.snapshot.
+var _online_property_profiles: Array = []
+var _online_rental_agreements: Array = []
+var _online_business_profiles: Array = []
 var _online_input_accumulator: float = 0.0
 var _remote_players: Dictionary = {}
 var _time_accumulator: float = 0.0
@@ -71,6 +76,8 @@ func _ready() -> void:
 	ui.load_requested.connect(_continue_game)
 	ui.education_action_requested.connect(_on_education_action_requested)
 	ui.career_action_requested.connect(_on_career_action_requested)
+	ui.housing_action_requested.connect(_on_housing_action_requested)
+	ui.business_action_requested.connect(_on_business_action_requested)
 	ui.answer_requested.connect(_on_quiz_answer)
 	ui.purchase_requested.connect(_purchase_item)
 	ui.consume_requested.connect(_consume_item)
@@ -237,6 +244,7 @@ func _on_online_session_ready(
 	character.load_dictionary(character_data, clock.calendar_date())
 	var career_data: Variant = character_data.get("career_profile", {})
 	_online_career_profile = career_data.duplicate(true) if career_data is Dictionary else {}
+	_store_online_profiles(character_data)
 	playing = true
 	_time_accumulator = 0.0
 	_online_input_accumulator = 0.0
@@ -266,6 +274,7 @@ func _on_online_message(message: Dictionary) -> void:
 					_online_career_profile = career_data.duplicate(true)
 					ui.update_career_profile(_online_career_profile)
 				_apply_online_character_snapshot(character_data)
+				_store_online_profiles(character_data)
 				if clock != null:
 					ui.update_career_world_context(character, clock)
 		"world.snapshot":
@@ -334,7 +343,12 @@ func _on_online_message(message: Dictionary) -> void:
 					"There is no class or registered exam session available at this time. Check your timetable."
 				)
 			)
+		"property.result", "property.error":
+			ui.show_housing_response(message)
+		"business.result", "business.error":
+			ui.show_business_response(message)
 		"command.duplicate":
+			ui.show_command_duplicate(str(message.get("requestId", "")))
 			ui.notify("That action was already processed by the server.")
 
 
@@ -342,6 +356,11 @@ func _on_online_status_changed(status: String) -> void:
 	ui.set_online_status(status.capitalize())
 	if playing and status == "reconnecting":
 		ui.notify("Connection lost. Reconnecting to the shared world…")
+	if playing and (status == "reconnecting" or status == "offline"):
+		ui.show_connection_lost(
+			"Connection lost. A change that was waiting may or may not have been saved. "
+			+ "Retry sends the same request ID, which the server applies at most once."
+		)
 
 
 func _on_online_error(code: String, description: String) -> void:
@@ -1064,6 +1083,63 @@ func _on_career_action_requested(action: String, payload: Dictionary) -> void:
 		)
 
 
+## Stage 41: keeps the property, rental and business records that the screens show. The server's
+## records are the source; an open panel is refreshed from them.
+func _store_online_profiles(character_data: Dictionary) -> void:
+	var properties: Variant = character_data.get("property_profiles", null)
+	var rentals: Variant = character_data.get("rental_agreements", null)
+	var businesses: Variant = character_data.get("business_profiles", null)
+	if properties is Array:
+		_online_property_profiles = properties.duplicate(true)
+	if rentals is Array:
+		_online_rental_agreements = rentals.duplicate(true)
+	if businesses is Array:
+		_online_business_profiles = businesses.duplicate(true)
+	if character != null:
+		ui.update_housing_profiles(_online_property_profiles, _online_rental_agreements, character.money)
+		ui.update_business_profiles(_online_business_profiles, character.money)
+
+
+func _on_housing_action_requested(action: String, payload: Dictionary, request_id: String) -> void:
+	_send_domain_action("property.action", action, payload, request_id)
+
+
+func _on_business_action_requested(action: String, payload: Dictionary, request_id: String) -> void:
+	_send_domain_action("business.action", action, payload, request_id)
+
+
+## Sends a housing or business request on the existing authenticated socket (Stage 41). A read has
+## no request ID and does not block the game. A change that gets no answer in time is marked
+## unconfirmed, and a retry reuses its ID.
+func _send_domain_action(
+	message_type: String, action: String, payload: Dictionary, request_id: String
+) -> void:
+	var failure := ""
+	if not _online_mode:
+		failure = "The shared world is not connected. Nothing was changed."
+	elif not multiplayer_client.send_command(
+		message_type, {"action": action, "payload": payload.duplicate(true)}, request_id
+	):
+		failure = (
+			"The request could not reach the shared server. Nothing was changed. "
+			+ "Reconnect and try again."
+		)
+	if not failure.is_empty():
+		if request_id.is_empty():
+			ui.notify(failure)
+		else:
+			ui.show_send_failure(request_id, failure)
+		return
+	if not request_id.is_empty():
+		get_tree().create_timer(ServerRequestTracker.REQUEST_TIMEOUT_SECONDS).timeout.connect(
+			_on_request_timeout.bind(request_id)
+		)
+
+
+func _on_request_timeout(request_id: String) -> void:
+	ui.request_timed_out(request_id)
+
+
 func _can_enter_education_location(destination: String) -> bool:
 	if _online_mode:
 		return true
@@ -1151,6 +1227,12 @@ func _open_panel(panel_id: String) -> void:
 			ui.show_education(character, clock, character.current_location, _online_mode)
 		"careers":
 			ui.show_careers(character, _online_career_profile, _online_mode, clock)
+		"housing":
+			ui.show_housing(
+				character, _online_mode, _online_property_profiles, _online_rental_agreements
+			)
+		"businesses":
+			ui.show_businesses(character, _online_mode, _online_business_profiles)
 		"chat":
 			if _online_mode:
 				ui.show_chat()
