@@ -335,6 +335,12 @@ static func persistence_notice(message: Dictionary) -> String:
 	return PERSISTENCE_RESTORED_NOTICE
 
 
+## A new unique request ID, for a screen that must recognise its own refused request in a
+## reply.
+func new_request_id() -> String:
+	return _new_request_id()
+
+
 func _new_request_id() -> String:
 	var crypto := Crypto.new()
 	return crypto.generate_random_bytes(16).hex_encode()

@@ -27,6 +27,9 @@ var playing: bool = false
 var multiplayer_client: Node
 var _online_mode: bool = false
 var _online_career_profile: Dictionary = {}
+# Stage 44: the request ID of the career action now in flight. A refused career.action comes back as
+# a plain "error" with this ID, and the career panel is told only when the ID matches.
+var _career_request_id: String = ""
 # Stage 41: the character's own property, rental and business records, from session.ready and
 # character.snapshot.
 var _online_property_profiles: Array = []
@@ -338,6 +341,7 @@ func _on_online_message(message: Dictionary) -> void:
 		"education.result", "education.error":
 			ui.show_education_result(message)
 		"career.result", "career.error":
+			_clear_career_request(message)
 			ui.show_career_response(message)
 		"school.complete":
 			(
@@ -358,6 +362,13 @@ func _on_online_message(message: Dictionary) -> void:
 			# request. Without this, the request waited for its timeout, then showed as unconfirmed.
 			if not str(message.get("requestId", "")).is_empty():
 				ui.show_request_error(message)
+				if str(message.get("requestId", "")) == _career_request_id:
+					# The career panel shows its own refusal and is no longer busy. Other families
+					# keep the toast only.
+					_career_request_id = ""
+					ui.show_career_transport_error(
+						str(message.get("message", "The server refused this career request."))
+					)
 		"command.duplicate":
 			ui.show_command_duplicate(str(message.get("requestId", "")))
 			ui.notify("That action was already processed by the server.")
@@ -1079,6 +1090,12 @@ func _on_education_action_requested(action: String, payload: Dictionary = {}) ->
 	ui.show_education_result(result)
 
 
+## Stage 44: forgets the in-flight career request once the server has answered it.
+func _clear_career_request(message: Dictionary) -> void:
+	if str(message.get("requestId", "")) == _career_request_id:
+		_career_request_id = ""
+
+
 func _on_career_action_requested(action: String, payload: Dictionary) -> void:
 	if not _online_mode:
 		ui.show_career_transport_error("Career actions require the connected shared world.")
@@ -1088,9 +1105,12 @@ func _on_career_action_requested(action: String, payload: Dictionary) -> void:
 			"Deceased characters cannot start work, apply or earn future salary."
 		)
 		return
+	var request_id: String = multiplayer_client.new_request_id()
+	_career_request_id = request_id
 	if not multiplayer_client.send_command(
-		"career.action", {"action": action, "payload": payload.duplicate(true)}
+		"career.action", {"action": action, "payload": payload.duplicate(true)}, request_id
 	):
+		_career_request_id = ""
 		ui.show_career_transport_error(
 			"The career request could not reach the shared server. Reconnect before trying again."
 		)
