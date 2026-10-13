@@ -1083,6 +1083,8 @@ function refreshNpcCareers(state: PersistentWorldState, date: CalendarDate, now:
   const employerByJob = new Map<string, string>();
   for (const vacancy of catalog.vacancies) if (vacancy.employer_id) employerByJob.set(vacancy.job_id, vacancy.employer_id);
   for (const person of Object.values(state.people)) {
+    // Stage 42: the neighbourhood residents have no career assignment. Assigning them would take vacancies from players.
+    if (person.family_role === "neighbour") continue;
     const existing = state.npcCareers[person.person_id];
     let status: CareerEmploymentStatus | "student" | "unemployed" = "unemployed";
     if (person.life_status === "deceased") status = "deceased";

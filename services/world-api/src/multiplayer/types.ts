@@ -1,3 +1,4 @@
+import type { NPCSocialProfile } from "../npc/types.js";
 import type { GeographicLocation } from "../geography/types.js";
 import type { StudentEducationRecord } from "../education/types.js";
 import type { WorldClockState } from "../life/calendar.js";
@@ -84,6 +85,8 @@ export interface CharacterRecord extends CharacterLifeFields {
   economy_profile?: EconomyProfileSnapshot;
   /** List of business profile snapshots for businesses this character owns or manages. */
   business_profiles?: BusinessProfileSnapshot[];
+  /** Stage 42: the NPCs this character can see now, with this character's own bond only. Built by the server. */
+  npc_profiles?: NPCSocialProfile[];
   /** List of property profile snapshots for properties this character owns. */
   property_profiles?: PropertyProfileSnapshot[];
   /** List of rental agreement snapshots for agreements where this character is the tenant. */

@@ -521,12 +521,14 @@ test("online creation exposes persistent DOB/family/history, shared calendar and
       assert.equal(typeof a.ready.world.clock.second, "number");
       const saved = JSON.parse(await readFile(stateFile, "utf8"));
       assert.equal(saved.schemaVersion, 18);
+      // Stage 42: the seeded neighbourhood residents (family_role "neighbour", households "household-nb-") are excluded,
+      // so this still counts exactly the records the two characters created.
       assert.equal(
-        Object.keys(saved.people).length,
+        Object.values(saved.people).filter((person) => person.family_role !== "neighbour").length,
         a.ready.character.life_profile.family_members.length +
           b.ready.character.life_profile.family_members.length - 2,
       );
-      assert.equal(Object.keys(saved.households).length, 2);
+      assert.equal(Object.keys(saved.households).filter((id) => !id.startsWith("household-nb-")).length, 2);
       assert.equal(Object.keys(saved.families).length, 2);
       assert.ok(Object.values(saved.relationships).some((relation) =>
         relation.type === "parent_of" || relation.type === "guardian_of"));

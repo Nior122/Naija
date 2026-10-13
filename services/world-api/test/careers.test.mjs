@@ -583,7 +583,8 @@ test("Stage 5 schema version 2 migrates to Stage 6 version 3 without dropping li
   const legacyPlayer = addPlayer(original.state, "legacy-character", { age: 45, name: "Preserved Person" });
   createStarterFamily(original.state, legacyPlayer.playerId, legacyPlayer.character, Date.UTC(2025, 0, 1));
   delete original.state.players[legacyPlayer.playerId];
-  const preservedPersonId = Object.keys(original.state.people)[0];
+  // Stage 42: the seeded neighbourhood residents come first in the map, so pick the family member this test is about.
+  const preservedPersonId = Object.keys(original.state.people).find((id) => original.state.people[id].family_role !== "neighbour");
   const preservedPersonName = original.state.people[preservedPersonId].name;
   await original.flush();
   const legacy = JSON.parse(await readFile(stateFile, "utf8"));

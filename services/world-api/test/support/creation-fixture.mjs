@@ -54,8 +54,9 @@ export function openFileBackend() {
 export function recordCounts(state) {
   return {
     players: Object.keys(state.players).length,
-    people: Object.keys(state.people).length,
-    households: Object.keys(state.households).length,
+    // Stage 42: the seeded neighbourhood residents are not counted here, so the counts stay those of player-created records.
+    people: Object.values(state.people).filter((person) => person.family_role !== "neighbour").length,
+    households: Object.keys(state.households).filter((id) => !id.startsWith("household-nb-")).length,
     families: Object.keys(state.families).length,
   };
 }
@@ -75,8 +76,13 @@ export function orphanProblems(state) {
     if (!referencedPeople.has(id)) problems.push(`person without a household or family: ${id}`);
   }
   const householdIds = new Set(Object.values(state.players).map((player) => player.character.household_id));
+  // Stage 42: the neighbourhood residents are seeded by the server from the NPC social catalog, with no player. Only a
+  // household that is exactly such a seeded one (its ID and every member are catalog neighbours) is exempt.
+  const seededNeighbourHousehold = (household) => household.household_id.startsWith("household-nb-") &&
+    (household.member_ids ?? []).length > 0 &&
+    (household.member_ids ?? []).every((id) => state.people[id]?.family_role === "neighbour");
   for (const id of Object.keys(state.households)) {
-    if (!householdIds.has(id)) problems.push(`household without a player: ${id}`);
+    if (!householdIds.has(id) && !seededNeighbourHousehold(state.households[id])) problems.push(`household without a player: ${id}`);
   }
   const familyIds = new Set(Object.values(state.players).flatMap((player) => player.character.family_ids ?? []));
   for (const id of Object.keys(state.families)) {

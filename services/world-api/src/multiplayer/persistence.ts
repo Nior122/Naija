@@ -12,6 +12,7 @@ import { isEducationStudentRecord, normalizeEducationRecord, syncLegacyEducation
 import { loadLifeCatalog, normalizeWorldClock, isValidDate } from "../life/calendar.js";
 import { normalizeLifeWorldState } from "../life/service.js";
 import { initializeCareerWorldState } from "../careers/service.js";
+import { loadNPCSocialCatalog, seedNeighbourResidents, validateNPCSocialRecords } from "../npc/index.js";
 import { assertRecordsValid, validateElectionRecords, validateGovernmentRecords, validateJusticeRecords, validatePropertyRecords } from "./record-validation.js";
 import { initializeEconomyWorldState } from "../economy/service.js";
 import { businessAccountMismatches, initializeBusinessWorldState, migrateLegacyBusinessAccounts } from "../businesses/service.js";
@@ -154,7 +155,7 @@ function isPersistentPlayerBase(value: unknown, playerId: string): value is Reco
 function isFamilyPerson(value: unknown, key: string): boolean {
   return isRecord(value) && value.person_id === key && typeof value.name === "string" &&
     isFiniteNumber(value.age) && Number.isSafeInteger(value.age) && value.age >= 0 && value.age <= 9998 &&
-    hasLifeFields(value) && ["parent", "guardian", "sibling", "child", "relative"].includes(String(value.family_role)) &&
+    hasLifeFields(value) && ["parent", "guardian", "sibling", "child", "relative", "neighbour"].includes(String(value.family_role)) &&
     typeof value.home_id === "string" && typeof value.current_location === "string" &&
     typeof value.education_level === "string" && typeof value.created_at === "string" && typeof value.updated_at === "string";
 }
@@ -959,6 +960,13 @@ export function validateState(value: unknown, now: number): PersistentWorldState
   initializeSocialWorldState(state);
   initializeTransportationWorldState(state);
   initializeNPCWorldState(state, { year: catalog.calendar.epoch_world_date.year, month: catalog.calendar.epoch_world_date.month, day: catalog.calendar.starting_world_day });
+  // Stage 42: residents are seeded once with fixed IDs (an existing ID is kept), then their stored fields are checked.
+  const npcSocialCatalog = loadNPCSocialCatalog();
+  seedNeighbourResidents(state, npcSocialCatalog, now);
+  const npcSocialProblems = validateNPCSocialRecords(state, npcSocialCatalog);
+  if (npcSocialProblems.length > 0) {
+    throw new Error(`World data contains an invalid NPC social record: ${npcSocialProblems[0]}.`);
+  }
   initializeWorldEventState(state, new WorldEventCatalogService());
   // Record-level checks for the property, government, election, and justice maps. They run on the
   // completed state (after seeding), so invalid records are rejected rather than loaded silently.
@@ -1015,6 +1023,7 @@ export function initialState(now: number): PersistentWorldState {
   initializeTransportationWorldState(state);
   initializeNPCWorldState(state, { year: catalog.calendar.epoch_world_date.year, month: catalog.calendar.epoch_world_date.month, day: catalog.calendar.starting_world_day });
   initializeWorldEventState(state, new WorldEventCatalogService());
+  seedNeighbourResidents(state, loadNPCSocialCatalog(), now);
   return state;
 }
 

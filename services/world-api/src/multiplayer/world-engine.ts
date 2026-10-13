@@ -13,6 +13,17 @@ import {
 } from "../geography/catalog.js";
 import type { GeographicRegion } from "../geography/types.js";
 import { loadEducationCatalog } from "../education/catalog.js";
+import {
+  applyNPCSocialAction,
+  loadNPCSocialCatalog,
+  NPCSocialError,
+  npcBondView,
+  npcSocialMessage,
+  syncNPCActivities,
+  visibleNPCProfiles,
+  type NPCSocialCatalog,
+  type NPCSocialOutcome,
+} from "../npc/index.js";
 import { loadCareerCatalog } from "../careers/catalog.js";
 import {
   buildCareerProfile,
@@ -407,6 +418,7 @@ const CONSEQUENTIAL_TYPE_FAMILIES: ReadonlyMap<string, ConsequentialFamily> = ne
   ["character.rest", "rest"],
   ["relationship.progress", "relationship"],
   ["family.childbirth", "family"],
+  ["npc.action", "npc"],
 ]);
 const CONSEQUENTIAL_ACTION_FAMILIES: ReadonlyMap<string, { family: ConsequentialFamily; actions: ReadonlySet<string> }> = new Map([
   ["justice.action", { family: "justice", actions: new Set(["create_proposal", "submit_proposal", "file_case", "submit_evidence", "issue_judgment", "file_appeal"]) }],
@@ -442,7 +454,7 @@ const ECONOMY_MONEY_ACTIONS: ReadonlySet<string> = new Set([
 const MAX_PENDING_MONEY_REPLIES = 256;
 
 /** Stage 37: the families whose changing actions reply only after their save. */
-type ConsequentialFamily = "justice" | "police" | "military" | "crime" | "relationship" | "family" | "rest";
+type ConsequentialFamily = "justice" | "police" | "military" | "crime" | "relationship" | "family" | "rest" | "npc";
 
 /**
  * A money change whose reply waits for its save (Stage 34). `generation` is the changeGeneration that holds the change.
@@ -495,6 +507,9 @@ const SAVE_OUTCOME_MESSAGES: Readonly<Record<string, string>> = {
   relationship_persistence_unavailable: "Saving is failing, so relationship changes are paused. Nothing was changed.",
   relationship_not_saved: "The relationship change could not be saved, so it is not confirmed. Retry with the same request ID; it will not be applied twice.",
   relationship_outcome_unknown: "The relationship change may or may not have been saved, so it is not confirmed. Retry with the same request ID; it will not be applied twice.",
+  npc_persistence_unavailable: "Saving is failing, so social changes with people are paused. Nothing was changed.",
+  npc_not_saved: "The social change could not be saved, so it is not confirmed. Retry with the same request ID; it will not be applied twice.",
+  npc_outcome_unknown: "The social change may or may not have been saved, so it is not confirmed. Retry with the same request ID; it will not be applied twice.",
   family_persistence_unavailable: "Saving is failing, so family changes are paused. Nothing was changed.",
   family_not_saved: "The family change could not be saved, so it is not confirmed. Retry with the same request ID; it will not be applied twice.",
   family_outcome_unknown: "The family change may or may not have been saved, so it is not confirmed. Retry with the same request ID; it will not be applied twice.",
@@ -895,6 +910,7 @@ export class MultiplayerWorld {
   private readonly creationFaultHook: ((point: string) => void) | undefined;
   private readonly geographyRegion: GeographicRegion;
   private readonly educationCatalog: EducationCatalog;
+  private readonly socialCatalog: NPCSocialCatalog = loadNPCSocialCatalog();
   private readonly careerCatalog: CareerCatalog = loadCareerCatalog();
   private readonly economyCatalog: EconomyCatalog = loadEconomyCatalog();
   private readonly businessCatalog: BusinessCatalog = loadBusinessCatalog();
@@ -1453,6 +1469,8 @@ export class MultiplayerWorld {
       case "chat.send": this.handleChat(context, player, message, requestId); return;
       case "player.interact": this.handlePlayerInteraction(context, player, message, requestId); return;
       case "relationship.progress": await this.progressRelationship(context, player, message, requestId); return;
+      case "npc.action": await this.npcAction(context, player, message, requestId); return;
+      case "npc.view": this.npcView(context, player, message, requestId); return;
       case "family.childbirth": await this.recordChildbirth(context, player, message, requestId); return;
       default: this.invalid(context, "unknown_message", requestId);
     }
@@ -5455,6 +5473,81 @@ export class MultiplayerWorld {
     return null;
   }
 
+  /**
+   * Stage 42: a server-validated social action toward an NPC the character can see. The client sends only the NPC ID and
+   * the action name. Affinity, cooldowns, and history are computed here. A refusal changes nothing and is not recorded,
+   * so the same request ID may be retried. A success is recorded and replied to only after its save succeeds.
+   */
+  private async npcAction(
+    context: ConnectionContext,
+    actor: PersistentPlayer,
+    message: Record<string, unknown>,
+    requestId?: string,
+  ): Promise<void> {
+    if (requestId === undefined) {
+      this.sendError(context, "request_id_required", "This action requires a unique request ID.");
+      return;
+    }
+    const action = typeof message.action === "string" && message.action.length <= 32 ? message.action : "";
+    const npcId = typeof message.npcId === "string" && message.npcId.length > 0 && message.npcId.length <= 96 ? message.npcId : "";
+    if (npcId === "") {
+      this.send(context, appendOptionalRequestId({ type: "npc.error", action, code: "npc_id_invalid", message: npcSocialMessage("npc_id_invalid") }, requestId));
+      return;
+    }
+    let outcome: NPCSocialOutcome;
+    try {
+      outcome = applyNPCSocialAction(
+        this.store.state,
+        { character: actor.character, npcId, action, now: this.now() },
+        this.socialCatalog,
+        this.educationCatalog.calendar.school_days_of_week,
+      );
+    } catch (error) {
+      const refusal = error instanceof NPCSocialError ? error : undefined;
+      this.send(context, appendOptionalRequestId({
+        type: "npc.error", action, npcId,
+        code: refusal?.code ?? "npc_action_failed",
+        message: refusal?.message ?? npcSocialMessage("npc_action_unknown"),
+        ...(refusal?.dialogue !== undefined ? { dialogue: refusal.dialogue } : {}),
+      }, requestId));
+      return;
+    }
+    this.markRequestProcessed(actor, requestId);
+    this.touchPlayer(actor);
+    const payload = appendOptionalRequestId({
+      type: "npc.result",
+      action: outcome.action,
+      npcId: outcome.npc_id,
+      ok: true,
+      message: outcome.message,
+      dialogue: outcome.dialogue,
+      affinityChange: outcome.affinity_change,
+      event: outcome.event === null ? null : { kind: outcome.event.kind, summary: outcome.event.summary },
+      npc: outcome.profile,
+    }, requestId);
+    await this.replyAfterSave(context, actor, requestId, "npc", payload);
+  }
+
+  /** Stage 42: read-only summary and bounded history of one visible NPC, for the requesting character only. */
+  private npcView(context: ConnectionContext, player: PersistentPlayer, message: Record<string, unknown>, requestId?: string): void {
+    const npcId = typeof message.npcId === "string" && message.npcId.length > 0 && message.npcId.length <= 96 ? message.npcId : "";
+    if (npcId === "") {
+      this.send(context, appendOptionalRequestId({ type: "npc.error", action: "view", code: "npc_id_invalid", message: npcSocialMessage("npc_id_invalid") }, requestId));
+      return;
+    }
+    try {
+      const view = npcBondView(this.store.state, player.character, npcId, this.socialCatalog, this.educationCatalog.calendar.school_days_of_week);
+      this.send(context, appendOptionalRequestId({ type: "npc.view", npcId, npc: view.profile, history: view.history }, requestId));
+    } catch (error) {
+      const refusal = error instanceof NPCSocialError ? error : undefined;
+      this.send(context, appendOptionalRequestId({
+        type: "npc.error", action: "view", npcId,
+        code: refusal?.code ?? "npc_view_failed",
+        message: refusal?.message ?? "Those details are not available.",
+      }, requestId));
+    }
+  }
+
   private async progressRelationship(
     context: ConnectionContext,
     actor: PersistentPlayer,
@@ -5596,6 +5689,8 @@ export class MultiplayerWorld {
       dateChanged = true;
     } else clock.minute_of_day += 1;
     clock.updated_at = new Date(now).toISOString();
+    // Stage 42: NPC activity follows the same clock. Records change only at transitions, so this is one comparison per NPC.
+    syncNPCActivities(this.store.state, this.socialCatalog, this.educationCatalog.calendar.school_days_of_week);
     if (dateChanged) {
       advanceWorldLife(this.store.state, clock.world_date);
       processCareerWorldDate(this.store.state, clock.world_date, now, this.careerCatalog,
@@ -5695,6 +5790,7 @@ export class MultiplayerWorld {
     try { const militaryService = new MilitaryService(this.store.state, this.militaryCatalog); const mp = militaryService.getMilitaryProfile(player.character.character_id); if (mp.is_service_member) snapshot.military_profile = mp; } catch { /* ignore */ }
     try { const crimeService = new CrimeService(this.store.state, this.crimeCatalog); const cp = crimeService.getCriminalProfile(player.character.character_id); if (cp.has_criminal_record || cp.notoriety_score > 0) snapshot.criminal_profile = cp; } catch { /* ignore */ }
     try { const cultureService = new CultureService(this.store.state, this.cultureCatalog); const cup = cultureService.getCulturalProfileSnapshot(player.character.character_id); if (cup.languages_spoken.length > 0 || cup.community_memberships_count > 0 || cup.institution_memberships_count > 0) snapshot.cultural_profile = cup; } catch { /* ignore */ }
+    snapshot.npc_profiles = visibleNPCProfiles(this.store.state, player.character, this.socialCatalog, this.educationCatalog.calendar.school_days_of_week);
     try { const entertainmentService = new EntertainmentService(this.store.state, this.entertainmentCatalog); const ep = entertainmentService.getProfileSnapshot(player.character.character_id); if (ep) snapshot.entertainment_profile = ep; } catch { /* ignore */ }
     return snapshot;
   }
