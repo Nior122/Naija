@@ -488,11 +488,14 @@ test("addBranch opens a new branch and respects branch limits", () => {
   const { characterId } = addPlayer(world, "Branch Owner", { age: 30, money: 2000000 });
   const catalog = loadBusinessCatalog();
   const business = createBusiness(world.state, characterId, "template:provision-store", "Branch Test Shop", "Testing branches.", "market", 500000, world.date, 480, world.now, catalog);
-  const branch = addBranch(world.state, business.business_id, characterId, "Lekki Branch", "lekki-market", "shop", world.date, 480, world.now, catalog);
+  // Stage 43 fixture change: the location was "lekki-market", which the provision-store template does not allow. Stage 43 now
+  // refuses a branch outside the template's allowed_locations (business_location_invalid). The branch rule is unchanged;
+  // only the fixture location is corrected to an allowed one ("market"), and the assertions below check that location.
+  const branch = addBranch(world.state, business.business_id, characterId, "Lekki Branch", "market", "shop", world.date, 480, world.now, catalog);
   assert.equal(branch.business_id, business.business_id);
   assert.equal(branch.name, "Lekki Branch");
   assert.equal(branch.status, "active");
-  assert.equal(branch.location_id, "lekki-market");
+  assert.equal(branch.location_id, "market");
   assert.equal(branch.premises_type, "shop");
 
   // Verify event was recorded

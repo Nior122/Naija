@@ -165,7 +165,8 @@ for (const backendName of backendNames) {
       try {
         const owner = await citizen(backend, started, "Owner", 500_000);
         const businessId = await ownedBusiness(backend, started, owner);
-        const payload = { business_id: businessId, kind: "utilities", amount_ngn: 500, description: "Generator fuel" };
+        // Stage 43: the expense kind is operating or rent (Stage 40). This fixture used "utilities", which is now refused; the save-and-retry behaviour under test is unchanged.
+        const payload = { business_id: businessId, kind: "operating", amount_ngn: 500, description: "Generator fuel" };
         const transactionsBefore = Object.keys(backend.store.state.businessTransactions).length;
 
         backend.store.failNextWrite("disk full");

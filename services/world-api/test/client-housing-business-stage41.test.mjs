@@ -145,9 +145,12 @@ const businessCases = caseBlocks(propertyEngine, 'case "discover": {', 'default:
 describe("Stage 41 contract parsers find real content", () => {
   test("the tables, server cases and panel calls are non-empty, so the comparisons below are not vacuous", () => {
     assert.ok(clientPropertyActions.size === 14, `14 housing actions parsed (got ${clientPropertyActions.size})`);
-    assert.ok(clientBusinessActions.size === 10, `10 business actions parsed (got ${clientBusinessActions.size})`);
+    // Stage 43: 19 business actions (10 from Stage 41, plus create, add_product, add_service, set_listing, update_price,
+    // hire_employee, fire_employee, add_branch, transfer_ownership). produce and record_expense are not in the client.
+    assert.ok(clientBusinessActions.size === 19, `19 business actions parsed (got ${clientBusinessActions.size})`);
     assert.ok(clientPropertyChanging.size === 10, `10 housing changing actions (got ${clientPropertyChanging.size})`);
-    assert.ok(clientBusinessChanging.size === 8, `8 business changing actions (got ${clientBusinessChanging.size})`);
+    // Stage 43: 17 changing actions (the 8 from Stage 41, plus the 9 new changing actions; discover and view are the reads).
+    assert.ok(clientBusinessChanging.size === 17, `17 business changing actions (got ${clientBusinessChanging.size})`);
     assert.ok(serverPropertyChanging.size === 10, `server has 10 housing changing actions (got ${serverPropertyChanging.size})`);
     assert.ok(propertyCases.size >= 13 && businessCases.size >= 10, "server switch cases were found");
     assert.ok(panelCalls(housingPanel, "_read").length >= 3, "housing panel reads were found");
@@ -243,12 +246,25 @@ describe("Stage 41 client action tables match the server", () => {
     roleMap.set("pay_salary", "paySalary");
     roleMap.set("transfer_funds", "transferBetweenBusinesses");
     roleMap.set("close", "closeBusiness");
+    roleMap.set("add_product", "addBusinessProduct");
+    roleMap.set("add_service", "addBusinessProduct");
+    roleMap.set("set_listing", "setBusinessListing");
+    roleMap.set("update_price", "updateBusinessPrice");
+    roleMap.set("hire_employee", "hireEmployee");
+    roleMap.set("fire_employee", "fireEmployee");
+    roleMap.set("add_branch", "addBranch");
+    roleMap.set("transfer_ownership", "transferOwnership");
     const clientRoles = gdLiteral(contract, "BUSINESS_ROLES");
     for (const [action, serverFunction] of roleMap) {
       const body = tsFunctionBody(businessService, `export function ${serverFunction}(`);
       const call = body.match(/authorizeBusinessAction\([^;]*\[([^\]]*)\]\)/);
-      assert.ok(call, `${serverFunction} authorises by role`);
-      const serverRoles = [...call[1].matchAll(/"(\w+)"/g)].map((m) => m[1]).sort();
+      // A function may name its role list in a constant (for example LISTING_ROLES); resolve that constant.
+      const named = call ? null : body.match(/authorizeBusinessAction\([^;]*,\s*([A-Z_]+)\)/);
+      const roleSource = call
+        ? call[1]
+        : (named ? (businessService.match(new RegExp(`const ${named[1]}[^=]*=\\s*\\[([^\\]]*)\\]`))?.[1] ?? null) : null);
+      assert.ok(roleSource !== null, `${serverFunction} authorises by role`);
+      const serverRoles = [...roleSource.matchAll(/"(\w+)"/g)].map((m) => m[1]).sort();
       const clientMatch = clientRoles.match(new RegExp(`"${action}":\\s*\\[([^\\]]*)\\]`));
       assert.ok(clientMatch, `client lists roles for ${action}`);
       const clientList = [...clientMatch[1].matchAll(/"(\w+)"/g)].map((m) => m[1]).sort();
@@ -323,7 +339,11 @@ describe("Stage 41 panels call only server-backed actions with the payload keys 
   });
 
   test("role-restricted business controls are gated with can_perform for the same action", () => {
-    for (const action of ["restock", "pay_salary", "transfer_funds", "contribute_capital", "withdraw", "close"]) {
+    for (const action of [
+      "restock", "pay_salary", "transfer_funds", "contribute_capital", "withdraw", "close",
+      "add_product", "add_service", "set_listing", "update_price", "hire_employee", "fire_employee", "add_branch",
+      "transfer_ownership",
+    ]) {
       assert.match(
         businessPanel,
         new RegExp(`can_perform\\("${action}"`),
@@ -434,5 +454,87 @@ describe("Stage 41 request state and wiring", () => {
     assert.match(prototypeUi, /_add_menu_button\(menu_grid, "Businesses", "businesses"\)/);
     assert.match(prototypeGame, /"housing":\s*\n\s*ui\.show_housing\(/);
     assert.match(prototypeGame, /"businesses":\s*\n\s*ui\.show_businesses\(/);
+  });
+});
+
+// Stage 43: the lifecycle screens. Financial and destructive actions are confirmed first; listing, staffing, and branch
+// actions are sent directly (they move no money), and each is still checked by the server.
+describe("Stage 43 lifecycle screens", () => {
+  const confirmed = new Set(panelCalls(businessPanel, "_confirm_change").map((c) => c.action));
+  const sentDirectly = new Set(panelCalls(businessPanel, "_change").map((c) => c.action));
+
+  test("every financial or destructive business action asks for confirmation first", () => {
+    for (const action of [
+      "create", "buy_product", "buy_service", "restock", "pay_salary", "transfer_funds", "fire_employee",
+      "transfer_ownership", "close",
+    ]) {
+      assert.ok(confirmed.has(action), `${action} is sent through _confirm_change`);
+    }
+    // The two money forms pass their action name as a variable, so the literal scan cannot see them. They are checked
+    // here by their form call and by the confirmation helper they both use.
+    assert.match(businessPanel, /_add_money_form\(card, business_id, "contribute_capital"/);
+    assert.match(businessPanel, /_add_money_form\(card, business_id, "withdraw"/);
+    assert.match(businessPanel, /_confirm_change\(action, \{"business_id": business_id, "amount_ngn": value\}/);
+  });
+
+  test("listing, staffing, and branch actions are sent without a confirmation, and each is a changing action", () => {
+    for (const action of ["add_product", "add_service", "set_listing", "update_price", "hire_employee", "add_branch"]) {
+      assert.ok(sentDirectly.has(action), `${action} is sent through _change`);
+      assert.ok(clientBusinessChanging.has(action), `${action} is a changing action`);
+    }
+  });
+
+  test("the ownership handover is offered only as an owner handover, with a fixed share and no unseen role choice", () => {
+    assert.match(businessPanel, /"new_role": "owner",/);
+    assert.match(businessPanel, /"share_percent": 100,/);
+    assert.ok(!/new_role.*co_owner/.test(businessPanel.slice(businessPanel.indexOf("_add_transfer_ownership_form"))),
+      "the transfer form does not offer a co-owner handover");
+  });
+
+  test("the create form names the setup fee and the capital, and the server result is shown, not a local success", () => {
+    assert.match(businessPanel, /setup fee of %s plus %s starting capital/);
+    assert.match(businessPanel, /_notice = str\(message\.get\("message", "Done\."\)\)/);
+    assert.match(businessPanel, /if not _online:\n\t\t_notice = "Business changes need the connected shared world\."/);
+  });
+
+  test("the GDScript of the business screens has balanced brackets (strings and comments are ignored)", () => {
+    for (const [name, source] of [
+      ["property_business_contract.gd", contract],
+      ["business_panel.gd", businessPanel],
+      ["housing_panel.gd", housingPanel],
+    ]) {
+      const stack = [];
+      const pairs = { ")": "(", "]": "[", "}": "{" };
+      let line = 1;
+      let inString = null;
+      for (let i = 0; i < source.length; i += 1) {
+        const ch = source[i];
+        if (ch === "\n") {
+          line += 1;
+          inString = null;
+          continue;
+        }
+        if (inString) {
+          if (ch === "\\") i += 1;
+          else if (ch === inString) inString = null;
+          continue;
+        }
+        if (ch === "#") {
+          while (i < source.length && source[i] !== "\n") i += 1;
+          i -= 1;
+          continue;
+        }
+        if (ch === '"' || ch === "'") {
+          inString = ch;
+          continue;
+        }
+        if (ch === "(" || ch === "[" || ch === "{") stack.push({ ch, line });
+        else if (pairs[ch]) {
+          const open = stack.pop();
+          assert.ok(open && open.ch === pairs[ch], `${name}:${line} closes ${ch} that does not match`);
+        }
+      }
+      assert.equal(stack.length, 0, `${name} has no unclosed bracket (first at line ${stack[0]?.line})`);
+    }
   });
 });
