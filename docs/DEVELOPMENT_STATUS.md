@@ -636,7 +636,7 @@ Full record: `docs/STAGE_43_BUSINESS_LIFECYCLE.md`. Summary:
 | `npm run build` (root; includes `tsc`) | Passed (exit 0) |
 | `npm run lint` (ESLint on `services/world-api/src`) | Passed (exit 0) |
 | Full suite, file backend | **1514 total, 1460 pass, 0 fail, 54 skipped** (PostgreSQL-only), exit 0 |
-| Full suite, PostgreSQL (`DATABASE_URL`, `NAIJA_ALLOW_DB_TESTS=true`, `DB_SSL=false`) | **1812 total, 1808 pass, 0 fail, 4 skipped**, exit 0 |
+| Full suite, PostgreSQL (`DATABASE_URL`, `NAIJA_ALLOW_DB_TESTS=true`, `DB_SSL=false`) | **1812 total, 1808 pass, 0 fail, 4 skipped**, exit 0 (re-run). The first run had one load-sensitive 20 s timeout in `property-actions-stage35` ("owner no longer the owner"); it passed 3 of 3 alone and on the re-run. |
 | Stage 43 lifecycle test | File 51 of 51; PostgreSQL 64 of 64 |
 | Client contract tests (Stage 41, Stage 42, business) | 77 of 77 pass |
 | `gdparse` on all 28 tracked `game/scripts/*.gd` | All parse; three known-bad samples are rejected |

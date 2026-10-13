@@ -268,12 +268,12 @@ Fixture changes (no assertion weakened):
   `set_listing` and `update_price`, the role list is resolved from the `LISTING_ROLES` constant, because the server
   names it there. The gated-action list includes the new financial and destructive actions.
 
-Results (run on 2026-10-13 against the working tree at the time of the run; see the commit list below):
+Results (2026-10-13). The code was tested at commit `020d417`. Commit `54ac97a` changed only this document. The re-run was on `54ac97a`, with identical code:
 
 | Check | Result |
 |---|---|
 | Full suite, file backend (`node --test test/*.test.mjs`) | **1514 total, 1460 pass, 0 fail, 54 skipped** (PostgreSQL-only tests), exit 0 |
-| Full suite, PostgreSQL (`DATABASE_URL` set, `NAIJA_ALLOW_DB_TESTS=true`, `DB_SSL=false`) | **1812 total, 1808 pass, 0 fail, 4 skipped**, exit 0 |
+| Full suite, PostgreSQL (`DATABASE_URL` set, `NAIJA_ALLOW_DB_TESTS=true`, `DB_SSL=false`) | **1812 total, 1808 pass, 0 fail, 4 skipped**, exit 0 (the re-run on the same code). The first PostgreSQL run had **one** failure: `property-actions-stage35` "an open listing whose owner is no longer the owner" timed out at 20 s waiting for a market reply while the other files ran in parallel. It passed 3 of 3 when run alone, and the full re-run passed. It is a load-sensitive harness timeout in a property test, not a business change. It is recorded here and not hidden. |
 | Stage 43 lifecycle test | File backend 51 of 51. PostgreSQL 64 of 64. |
 | Business and career files | File backend 182 of 182. PostgreSQL 230 of 230 (before the last comment-only edit to `businesses.test.mjs`; the full run includes it). |
 | Client contract tests (`client-housing-business-stage41`, `client-npc-stage42`, `businesses`) | 77 of 77 pass |
