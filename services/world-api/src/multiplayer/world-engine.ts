@@ -76,8 +76,11 @@ import {
   processBusinessWorldDate,
   recordBusinessExpense,
   restockInventory,
+  runBusinessChange,
   runProduction,
   purchaseProduct,
+  setBusinessListing,
+  updateBusinessPrice,
   purchaseService,
   paySalary,
   transferBetweenBusinesses,
@@ -2756,7 +2759,9 @@ export class MultiplayerWorld {
       return value as number;
     };
 
-    try {
+    // Stage 43: the dispatch is one closure. A changing action runs under runBusinessChange, so a failure after the first
+    // write leaves no partial stock, account, ledger or ownership change behind.
+    const run = (): void => {
       switch (action) {
         case "discover": {
           const locationId = typeof payload.location_id === "string" ? payload.location_id : null;
@@ -2787,13 +2792,39 @@ export class MultiplayerWorld {
           messageText = `Business profile for '${viewProfile.name}' loaded.`;
           break;
         }
+        // Stage 43: products and services have separate listing routes. A stock product cannot be listed as a service, and
+        // a service cannot be listed as a stock product (the service layer refuses the other kind).
         case "add_product": {
           const product = addBusinessProduct(state, requiredString("business_id"), characterId,
             requiredString("product_definition_id"),
             payload.custom_price_ngn !== undefined ? requiredInteger("custom_price_ngn", 0) : null,
-            date, minuteOfDay, now, this.businessCatalog);
+            date, minuteOfDay, now, this.businessCatalog, "product");
           data.product = product;
           messageText = `Added '${product.display_name}' to the business at ₦${product.price_ngn.toLocaleString("en-NG")}.`;
+          break;
+        }
+        case "add_service": {
+          const service = addBusinessProduct(state, requiredString("business_id"), characterId,
+            requiredString("product_definition_id"),
+            payload.custom_price_ngn !== undefined ? requiredInteger("custom_price_ngn", 0) : null,
+            date, minuteOfDay, now, this.businessCatalog, "service");
+          data.product = service;
+          messageText = `Listed the service '${service.display_name}' at ₦${service.price_ngn.toLocaleString("en-NG")}.`;
+          break;
+        }
+        case "set_listing": {
+          if (typeof payload.available !== "boolean") throw new Error("business_action_invalid");
+          const listing = setBusinessListing(state, requiredString("business_id"), characterId,
+            requiredString("product_record_id"), payload.available, date, minuteOfDay, now);
+          data.product = listing;
+          messageText = listing.available ? `'${listing.display_name}' is back on sale.` : `'${listing.display_name}' was taken off sale.`;
+          break;
+        }
+        case "update_price": {
+          const priced = updateBusinessPrice(state, requiredString("business_id"), characterId,
+            requiredString("product_record_id"), requiredInteger("price_ngn", 1), date, minuteOfDay, now, this.businessCatalog);
+          data.product = priced;
+          messageText = `'${priced.display_name}' now sells at ₦${priced.price_ngn.toLocaleString("en-NG")}.`;
           break;
         }
         case "restock": {
@@ -2903,8 +2934,8 @@ export class MultiplayerWorld {
           const result = transferOwnership(state, requiredString("business_id"), characterId,
             requiredString("to_character_id"),
             (typeof payload.new_role === "string" ? payload.new_role : "co_owner") as "owner" | "co_owner" | "manager" | "accountant" | "inventory_manager" | "employee",
-            typeof payload.share_percent === "number" ? payload.share_percent as number : 100,
-            date, minuteOfDay, now);
+            payload.share_percent !== undefined ? requiredInteger("share_percent", 0, 100) : 100,
+            date, minuteOfDay, now, this.businessCatalog);
           data.ownership = result.ownership;
           data.previous = result.previous;
           messageText = `Ownership transferred to ${result.ownership.character_id} (${result.ownership.role}).`;
@@ -2930,6 +2961,10 @@ export class MultiplayerWorld {
         default:
           throw new Error("business_action_unknown");
       }
+    };
+    try {
+      if (BUSINESS_READ_ONLY_ACTIONS.has(action)) run();
+      else runBusinessChange(state, run);
     } catch (error) {
       const code = this.errorCode(error);
       this.send(context, appendOptionalRequestId({

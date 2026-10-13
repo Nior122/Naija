@@ -61,6 +61,7 @@ function validateCatalog(value: unknown): BusinessCatalog {
     !Number.isSafeInteger(rules.minimum_business_name_length) || rules.minimum_business_name_length < 1 || rules.minimum_business_name_length > rules.maximum_business_name_length ||
     !Number.isSafeInteger(rules.maximum_business_description_length) || rules.maximum_business_description_length < 10 || rules.maximum_business_description_length > 2000 ||
     !Number.isSafeInteger(rules.minimum_owner_age_years) || rules.minimum_owner_age_years < 16 || rules.minimum_owner_age_years > 65 ||
+    !Number.isSafeInteger(rules.minimum_employee_age_years) || rules.minimum_employee_age_years < 16 || rules.minimum_employee_age_years > 65 ||
     !Number.isSafeInteger(rules.maximum_price_markup_percent) || rules.maximum_price_markup_percent < 1 || rules.maximum_price_markup_percent > 5000 ||
     !Number.isSafeInteger(rules.minimum_price_markup_percent) || rules.minimum_price_markup_percent < 1 || rules.minimum_price_markup_percent > rules.maximum_price_markup_percent ||
     !Number.isSafeInteger(rules.maximum_owner_withdrawal_ngn) || rules.maximum_owner_withdrawal_ngn < 1 ||

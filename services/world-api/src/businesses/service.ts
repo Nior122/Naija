@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { hasActiveCareerEmployment } from "../careers/commitments.js";
 import { loadEconomyCatalog } from "../economy/catalog.js";
 import { accountKey, economyErrorMessage, syncCharacterCashFromEconomy } from "../economy/service.js";
 import type { EconomyAccountRecord, EconomyCatalog, EconomyTransactionKind, EconomyTransactionRecord } from "../economy/types.js";
@@ -8,6 +9,7 @@ import { loadBusinessCatalog } from "./catalog.js";
 import type {
   BusinessBranchRecord,
   BusinessCatalog,
+  BusinessProductDefinition,
   BusinessDiscoveryEntry,
   BusinessEventRecord,
   BusinessInventoryMovementRecord,
@@ -317,6 +319,112 @@ export function initializeBusinessWorldState(state: PersistentWorldState): void 
   if (!state.businessEvents) state.businessEvents = {};
 }
 
+/**
+ * Stage 43: the maps that only grow. A ledger row, a journal entry, a movement or an event is never edited once written, so
+ * a failed change only needs to remove the keys it added.
+ */
+const APPEND_ONLY_BUSINESS_MAPS = [
+  "economyTransactions", "businessTransactions", "businessInventoryMovements", "businessSales", "businessEvents",
+  "businessProductionRuns", "businessExpenses",
+] as const;
+
+/** Stage 43: the maps whose records are edited in place. A failed change puts back a copy of each record. */
+const EDITED_BUSINESS_MAPS = [
+  "businesses", "businessOwnership", "businessBranches", "businessProducts", "businessInventory", "economyAccounts",
+] as const;
+
+type BusinessMapName = (typeof APPEND_ONLY_BUSINESS_MAPS)[number] | (typeof EDITED_BUSINESS_MAPS)[number];
+
+/** Stage 43: what a business change may touch, saved before it runs (see runBusinessChange). */
+export interface BusinessStateSnapshot {
+  readonly appendOnlyKeys: ReadonlyMap<BusinessMapName, ReadonlySet<string>>;
+  readonly editedCopies: ReadonlyMap<BusinessMapName, Record<string, unknown>>;
+  readonly money: ReadonlyMap<string, number>;
+}
+
+function businessMap(state: PersistentWorldState, name: BusinessMapName): Record<string, unknown> {
+  return state[name] as unknown as Record<string, unknown>;
+}
+
+/**
+ * Stage 43: a copy of every business-related map, and of each player's money. A change that throws after it has begun
+ * to write must not leave part of itself behind, so it is run through runBusinessChange, and this snapshot is what it
+ * puts back. The snapshot is taken before each changing request, so its cost grows with the number of records.
+ */
+export function snapshotBusinessState(state: PersistentWorldState): BusinessStateSnapshot {
+  const appendOnlyKeys = new Map<BusinessMapName, ReadonlySet<string>>();
+  for (const name of APPEND_ONLY_BUSINESS_MAPS) appendOnlyKeys.set(name, new Set(Object.keys(businessMap(state, name))));
+  const editedCopies = new Map<BusinessMapName, Record<string, unknown>>();
+  for (const name of EDITED_BUSINESS_MAPS) {
+    editedCopies.set(name, Object.fromEntries(Object.entries(businessMap(state, name)).map(([key, value]) => [key, structuredClone(value)])));
+  }
+  const money = new Map<string, number>();
+  for (const [playerId, player] of Object.entries(state.players)) money.set(playerId, player.character.money);
+  return { appendOnlyKeys, editedCopies, money };
+}
+
+/** Stage 43: puts the snapshot back in place. The map objects themselves are kept, so existing references stay valid. */
+export function restoreBusinessState(state: PersistentWorldState, snapshot: BusinessStateSnapshot): void {
+  for (const [name, keys] of snapshot.appendOnlyKeys) {
+    const map = businessMap(state, name);
+    for (const key of Object.keys(map)) {
+      if (!keys.has(key)) delete map[key];
+    }
+  }
+  for (const [name, copies] of snapshot.editedCopies) {
+    const map = businessMap(state, name);
+    for (const key of Object.keys(map)) {
+      if (!(key in copies)) delete map[key];
+    }
+    Object.assign(map, copies);
+  }
+  for (const [playerId, money] of snapshot.money) {
+    const player = state.players[playerId];
+    if (player) player.character.money = money;
+  }
+}
+
+/**
+ * Stage 43: runs one business change so that it either completes or leaves the state as it was. The business functions
+ * check everything before they write, so a refusal normally changes nothing; this is the safety net for a failure that
+ * happens after the first write. The error is rethrown unchanged, so the caller still sees the refusal code.
+ */
+export function runBusinessChange<T>(state: PersistentWorldState, change: () => T): T {
+  const snapshot = snapshotBusinessState(state);
+  try {
+    return change();
+  } catch (error) {
+    restoreBusinessState(state, snapshot);
+    throw error;
+  }
+}
+
+/**
+ * Stage 43: a business that became insolvent (it could not pay a day's operating cost) returns to active once its balance
+ * covers that day again. Only an owner's capital, or a transfer in, can do this; a sale cannot happen while the business
+ * is insolvent, so nothing else credits it.
+ */
+function restoreSolvencyIfCovered(
+  state: PersistentWorldState,
+  business: BusinessRecord,
+  date: CalendarDate,
+  minuteOfDay: number,
+  now: number,
+  catalog: BusinessCatalog,
+): void {
+  if (business.status !== "insolvent") return;
+  const template = catalog.templates.find((t) => t.id === business.template_id);
+  if (!template) return;
+  const dailyCost = Math.floor((template.monthly_operating_cost_ngn + template.rent_cost_ngn) / 30);
+  const account = businessAccountFor(state, business.business_id);
+  if (dailyCost > 0 && account.balance_ngn < dailyCost) return;
+  business.status = "active";
+  business.updated_at = new Date(now).toISOString();
+  appendBusinessEvent(state, business.business_id, "business_solvent_again",
+    `Business '${business.name}' is operating again: its balance covers a day's operating cost.`, date, minuteOfDay, now,
+    { balance_ngn: account.balance_ngn, daily_cost_ngn: dailyCost });
+}
+
 export function createBusiness(
   state: PersistentWorldState,
   characterId: string,
@@ -442,6 +550,33 @@ function assertBusinessActive(business: BusinessRecord): void {
   if (business.status !== "active") throw new Error("business_not_active");
 }
 
+/**
+ * Stage 43: which route a listing request came in on. The socket routes `add_product` and `add_service` each pass their
+ * own kind, so a stock product cannot be listed through the service route, or a service through the product route.
+ * "any" is for the service layer and for the NPC seeding, which already choose by category.
+ */
+export type BusinessListingRoute = "any" | "product" | "service";
+
+const LISTING_ROLES: BusinessOwnershipRole[] = ["owner", "co_owner", "manager"];
+
+/**
+ * Stage 43: the one rule for a listed price. A goods price lies between the minimum and maximum markup on its cost. A
+ * service has no cost to mark up (most services cost nothing to provide), so its price is capped at the maximum markup
+ * percentage of its catalogue price. Every price is a whole number of at least 1. The ceiling for services is a rule
+ * chosen here; it is recorded in docs/STAGE_43_BUSINESS_LIFECYCLE.md as a decision to confirm.
+ */
+export function validateListingPrice(product: BusinessProductDefinition, priceNgn: number, catalog: BusinessCatalog): void {
+  if (!Number.isSafeInteger(priceNgn) || priceNgn < 1) throw new Error("business_price_invalid");
+  if (product.base_cost_ngn > 0) {
+    const minPrice = Math.max(1, Math.floor(product.base_cost_ngn * catalog.rules.minimum_price_markup_percent / 100));
+    const maxPrice = Math.floor(product.base_cost_ngn * catalog.rules.maximum_price_markup_percent / 100);
+    if (priceNgn < minPrice || priceNgn > maxPrice) throw new Error("business_price_invalid");
+    return;
+  }
+  const maxPrice = Math.floor(product.base_price_ngn * catalog.rules.maximum_price_markup_percent / 100);
+  if (priceNgn > maxPrice) throw new Error("business_price_invalid");
+}
+
 export function addBusinessProduct(
   state: PersistentWorldState,
   businessId: string,
@@ -452,6 +587,7 @@ export function addBusinessProduct(
   minuteOfDay: number,
   now: number,
   catalog: BusinessCatalog = loadBusinessCatalog(),
+  route: BusinessListingRoute = "any",
 ): BusinessProductRecord {
   const business = state.businesses[businessId];
   if (!business) throw new Error("business_not_found");
@@ -460,15 +596,20 @@ export function addBusinessProduct(
 
   const product = catalog.business_products.find((p) => p.id === productDefinitionId);
   if (!product) throw new Error("business_product_not_found");
+  const isService = product.category === "service";
+  if (route === "product" && isService) throw new Error("business_product_is_service");
+  if (route === "service" && !isService) throw new Error("business_service_is_product");
 
   const existingCount = Object.values(state.businessProducts).filter((p) => p.business_id === businessId).length;
   if (existingCount >= catalog.rules.maximum_products_per_business) throw new Error("business_product_limit_reached");
+  // One listing per definition. Stock is kept per definition, so a second listing would sell the same stock twice over.
+  // A listing that was taken off sale is turned back on with set_listing, not listed again.
+  if (Object.values(state.businessProducts).some((p) => p.business_id === businessId && p.product_definition_id === productDefinitionId)) {
+    throw new Error("business_product_already_listed");
+  }
 
   const priceNgn = customPriceNgn !== null ? customPriceNgn : product.base_price_ngn;
-  const minPrice = Math.max(1, Math.floor(product.base_cost_ngn * catalog.rules.minimum_price_markup_percent / 100));
-  const maxPrice = Math.floor(product.base_cost_ngn * catalog.rules.maximum_price_markup_percent / 100);
-  if (product.base_cost_ngn > 0 && (priceNgn < minPrice || priceNgn > maxPrice)) throw new Error("business_price_invalid");
-  if (!Number.isSafeInteger(priceNgn) || priceNgn < 0) throw new Error("business_price_invalid");
+  validateListingPrice(product, priceNgn, catalog);
 
   const timestamp = new Date(now).toISOString();
   const record: BusinessProductRecord = {
@@ -483,6 +624,73 @@ export function addBusinessProduct(
   };
   state.businessProducts[record.product_record_id] = record;
   business.updated_at = timestamp;
+  appendBusinessEvent(state, businessId, "listing_added",
+    `${isService ? "Service" : "Product"} '${product.label}' listed at ₦${priceNgn.toLocaleString("en-NG")}.`,
+    date, minuteOfDay, now, { product_record_id: record.product_record_id, product_definition_id: productDefinitionId, price_ngn: priceNgn });
+  return record;
+}
+
+/**
+ * Stage 43: turns a listing on or off (deactivate and reactivate). A listing taken off sale keeps its record, its price
+ * and its history. No money moves, and no stock moves.
+ */
+export function setBusinessListing(
+  state: PersistentWorldState,
+  businessId: string,
+  characterId: string,
+  productRecordId: string,
+  available: boolean,
+  date: CalendarDate,
+  minuteOfDay: number,
+  now: number,
+): BusinessProductRecord {
+  const business = state.businesses[businessId];
+  if (!business) throw new Error("business_not_found");
+  assertBusinessActive(business);
+  authorizeBusinessAction(state, businessId, characterId, LISTING_ROLES);
+  const record = state.businessProducts[productRecordId];
+  if (!record || record.business_id !== businessId) throw new Error("business_product_not_found");
+  if (record.available === available) return record;
+  const timestamp = new Date(now).toISOString();
+  record.available = available;
+  record.updated_at = timestamp;
+  business.updated_at = timestamp;
+  appendBusinessEvent(state, businessId, "listing_changed",
+    `'${record.display_name}' ${available ? "is back on sale" : "was taken off sale"}.`,
+    date, minuteOfDay, now, { product_record_id: productRecordId, available });
+  return record;
+}
+
+/** Stage 43: changes the price of an existing listing. The same price rule applies as when it was listed. */
+export function updateBusinessPrice(
+  state: PersistentWorldState,
+  businessId: string,
+  characterId: string,
+  productRecordId: string,
+  priceNgn: number,
+  date: CalendarDate,
+  minuteOfDay: number,
+  now: number,
+  catalog: BusinessCatalog = loadBusinessCatalog(),
+): BusinessProductRecord {
+  const business = state.businesses[businessId];
+  if (!business) throw new Error("business_not_found");
+  assertBusinessActive(business);
+  authorizeBusinessAction(state, businessId, characterId, LISTING_ROLES);
+  const record = state.businessProducts[productRecordId];
+  if (!record || record.business_id !== businessId) throw new Error("business_product_not_found");
+  const definition = catalog.business_products.find((p) => p.id === record.product_definition_id);
+  if (!definition) throw new Error("business_product_not_found");
+  validateListingPrice(definition, priceNgn, catalog);
+  if (record.price_ngn === priceNgn) return record;
+  const previous = record.price_ngn;
+  const timestamp = new Date(now).toISOString();
+  record.price_ngn = priceNgn;
+  record.updated_at = timestamp;
+  business.updated_at = timestamp;
+  appendBusinessEvent(state, businessId, "price_changed",
+    `'${record.display_name}' price changed from ₦${previous.toLocaleString("en-NG")} to ₦${priceNgn.toLocaleString("en-NG")}.`,
+    date, minuteOfDay, now, { product_record_id: productRecordId, previous_price_ngn: previous, price_ngn: priceNgn });
   return record;
 }
 
@@ -506,6 +714,9 @@ export function restockInventory(
   const product = catalog.business_products.find((p) => p.id === productDefinitionId);
   if (!product) throw new Error("business_product_not_found");
 
+  // Stage 43: stock is for goods only. A service has no stock to hold. A goods item does not need a listing: raw
+  // materials for production are held without being offered for sale.
+  if (product.category === "service") throw new Error("business_restock_is_service");
   if (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > catalog.rules.maximum_stock_per_product) throw new Error("business_stock_quantity_invalid");
   if (!Number.isSafeInteger(unitCostNgn) || unitCostNgn < 0) throw new Error("business_stock_cost_invalid");
 
@@ -515,6 +726,7 @@ export function restockInventory(
   // Stage 40: every check comes before any change. A cost the business cannot pay refuses the restock, and inventory is
   // left as it was. Before this stage, stock was changed first.
   const totalCost = unitCostNgn * quantity;
+  if (!Number.isSafeInteger(totalCost)) throw new Error("business_stock_cost_invalid");
   const businessAccount = businessAccountFor(state, businessId);
   if (totalCost > 0 && businessAccount.balance_ngn < totalCost) throw new Error("business_insufficient_funds");
   if (totalCost > 0 && businessAccount.status !== "active") throw new Error("economy_account_not_active");
@@ -607,7 +819,7 @@ function purchaseFromBusiness(
   if (isService && !productIsService) throw new Error("business_sale_not_service");
   if (!isService && productIsService) throw new Error("business_sale_is_service");
 
-  if (!Number.isSafeInteger(quantity) || quantity < 1) throw new Error("business_sale_quantity_invalid");
+  if (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > catalog.rules.maximum_stock_per_product) throw new Error("business_sale_quantity_invalid");
   if (isService && quantity !== 1) throw new Error("business_sale_quantity_invalid");
 
   const buyer = characterForId(state, buyerCharacterId);
@@ -622,6 +834,7 @@ function purchaseFromBusiness(
   if (!isService && (!inventory || inventory.quantity < quantity)) throw new Error("business_insufficient_stock");
 
   const totalRevenue = productRecord.price_ngn * quantity;
+  if (!Number.isSafeInteger(totalRevenue)) throw new Error("business_amount_invalid");
   const buyerCash = cashAccountFor(state, buyerCharacterId);
   if (!buyerCash) throw new Error("business_no_cash_account");
   if (buyerCash.balance_ngn < totalRevenue) throw new Error("business_insufficient_funds");
@@ -750,6 +963,7 @@ export function contributeCapital(
   appendBusinessEvent(state, businessId, "capital_contribution",
     `Owner contributed ₦${amountNgn.toLocaleString("en-NG")}.`, date, minuteOfDay, now,
     { amount_ngn: amountNgn, contributor_id: characterId });
+  restoreSolvencyIfCovered(state, business, date, minuteOfDay, now, catalog);
 
   return tx;
 }
@@ -819,6 +1033,8 @@ export function recordBusinessExpense(
 
   // Stage 40: a salary has a destination, so it is paid with pay_salary. An expense recorded here goes to nobody.
   if (kind === "salary") throw new Error("business_salary_use_payroll");
+  // Stage 43: the catalogue of expense kinds is the two the server records. Any other kind was booked as operating.
+  if (kind !== "operating" && kind !== "rent") throw new Error("business_expense_kind_invalid");
   if (!Number.isSafeInteger(amountNgn) || amountNgn < 1) throw new Error("business_expense_amount_invalid");
   const businessAccount = businessAccountFor(state, businessId);
   if (businessAccount.balance_ngn < amountNgn) throw new Error("business_insufficient_funds");
@@ -935,6 +1151,7 @@ export function transferBetweenBusinesses(
     toBusinessId, null, posted.debit!);
   const incoming = postBusinessTransaction(state, toBusinessId, "transfer_in", description, date, minuteOfDay, now, inKey,
     fromBusinessId, null, posted.credit!);
+  restoreSolvencyIfCovered(state, toBusiness, date, minuteOfDay, now, catalog);
   return { outgoing, incoming };
 }
 
@@ -965,6 +1182,12 @@ export function runProduction(
       inv.business_id === businessId && inv.product_definition_id === input.product_id && inv.location_id === business.primary_location_id);
     if (!inventory || inventory.quantity < input.quantity) throw new Error("business_insufficient_input_stock");
   }
+
+  // Stage 43: the output must fit before anything changes. Before this stage, a full output was dropped while the inputs
+  // were still used up.
+  const outputBefore = Object.values(state.businessInventory).find((inv) =>
+    inv.business_id === businessId && inv.product_definition_id === recipe.output_product_id && inv.location_id === business.primary_location_id);
+  if ((outputBefore?.quantity ?? 0) + recipe.output_quantity > catalog.rules.maximum_stock_per_product) throw new Error("business_stock_limit_exceeded");
 
   // Stage 40: the operating cost is paid before any stock changes, so a refused cost leaves stock as it was.
   let productionCostRow: EconomyTransactionRecord | null = null;
@@ -1009,26 +1232,24 @@ export function runProduction(
 
   if (outputInventory) {
     const newQty = outputInventory.quantity + recipe.output_quantity;
-    if (newQty <= catalog.rules.maximum_stock_per_product) {
-      outputInventory.quantity = newQty;
-      outputInventory.updated_at = timestamp;
-      const movement: BusinessInventoryMovementRecord = {
-        movement_id: `biz-mov-${randomUUID()}`,
-        business_id: businessId,
-        inventory_id: outputInventory.inventory_id,
-        product_definition_id: recipe.output_product_id,
-        kind: "production_output",
-        quantity: recipe.output_quantity,
-        location_id: business.primary_location_id,
-        world_date: cloneDate(date),
-        minute_of_day: minuteOfDay,
-        posted_at: timestamp,
-        reference_id: recipeId,
-        description: `Produced: ${recipe.label}.`,
-      };
-      state.businessInventoryMovements[movement.movement_id] = movement;
-      outputMovementId = movement.movement_id;
-    }
+    outputInventory.quantity = newQty;
+    outputInventory.updated_at = timestamp;
+    const movement: BusinessInventoryMovementRecord = {
+      movement_id: `biz-mov-${randomUUID()}`,
+      business_id: businessId,
+      inventory_id: outputInventory.inventory_id,
+      product_definition_id: recipe.output_product_id,
+      kind: "production_output",
+      quantity: recipe.output_quantity,
+      location_id: business.primary_location_id,
+      world_date: cloneDate(date),
+      minute_of_day: minuteOfDay,
+      posted_at: timestamp,
+      reference_id: recipeId,
+      description: `Produced: ${recipe.label}.`,
+    };
+    state.businessInventoryMovements[movement.movement_id] = movement;
+    outputMovementId = movement.movement_id;
   } else {
     const inv: BusinessInventoryRecord = {
       inventory_id: `biz-inv-${randomUUID()}`,
@@ -1090,6 +1311,17 @@ export function runProduction(
   return run;
 }
 
+/**
+ * Stage 40 kept the balance rule: a business with money in it cannot close, because the money would be stranded.
+ * Stage 43 settles the rest in the same change, and moves no money to do it:
+ *  - each active employee is released (no pay is owed, because pay is only ever made by pay_salary);
+ *  - each active branch is closed;
+ *  - stock left on the shelves is written off (quantity set to zero, with an adjustment movement);
+ *  - each listing is taken off sale;
+ *  - the ownership records stay, as the record of who owned the business when it closed;
+ *  - the business account stays, with a zero balance, and no further money can reach it.
+ * Nothing is deleted, so the history stays readable.
+ */
 export function closeBusiness(
   state: PersistentWorldState,
   businessId: string,
@@ -1113,6 +1345,50 @@ export function closeBusiness(
   business.closure_reason = reason.trim().length > 0 ? reason.trim() : "Owner closed the business.";
   business.updated_at = timestamp;
 
+  for (const employment of Object.values(state.businessOwnership)) {
+    if (employment.business_id === businessId && employment.active && employment.role === "employee") {
+      employment.active = false;
+      employment.updated_at = timestamp;
+      appendBusinessEvent(state, businessId, "employee_released",
+        `Employee ${employment.character_id} was released when the business closed.`, date, minuteOfDay, now,
+        { employee_character_id: employment.character_id, reason: "business_closed" });
+    }
+  }
+
+  for (const branch of Object.values(state.businessBranches)) {
+    if (branch.business_id === businessId && branch.status === "active") {
+      branch.status = "closed";
+      branch.updated_at = timestamp;
+      appendBusinessEvent(state, businessId, "branch_closed", `Branch '${branch.name}' was closed.`, date, minuteOfDay, now,
+        { branch_id: branch.branch_id });
+    }
+  }
+
+  for (const inventory of Object.values(state.businessInventory)) {
+    if (inventory.business_id !== businessId || inventory.quantity <= 0) continue;
+    const units = inventory.quantity;
+    inventory.quantity = 0;
+    inventory.updated_at = timestamp;
+    const productDefinitionId = inventory.product_definition_id;
+    const movement: BusinessInventoryMovementRecord = {
+      movement_id: `biz-mov-${randomUUID()}`,
+      business_id: businessId,
+      inventory_id: inventory.inventory_id,
+      product_definition_id: productDefinitionId,
+      kind: "adjustment",
+      quantity: units,
+      location_id: inventory.location_id,
+      world_date: cloneDate(date),
+      minute_of_day: minuteOfDay,
+      posted_at: timestamp,
+      reference_id: null,
+      description: `Written off at closure: ${units} units. No money was recovered.`,
+    };
+    state.businessInventoryMovements[movement.movement_id] = movement;
+    appendBusinessEvent(state, businessId, "stock_written_off", `${units} units written off at closure.`, date, minuteOfDay, now,
+      { product_definition_id: productDefinitionId, quantity: units });
+  }
+
   for (const product of Object.values(state.businessProducts)) {
     if (product.business_id === businessId) {
       product.available = false;
@@ -1127,6 +1403,12 @@ export function closeBusiness(
   return business;
 }
 
+/**
+ * Stage 43: opens a branch. A branch is a record of a place where the business trades: it has a name, a location and a
+ * premises type. It has no separate account, stock or staff, and it costs nothing to open (no setup cost is defined for
+ * branches; see docs/STAGE_43_BUSINESS_LIFECYCLE.md). The location must be one the business type may operate in, and
+ * the premises must be a catalogue type.
+ */
 export function addBranch(
   state: PersistentWorldState,
   businessId: string,
@@ -1154,7 +1436,10 @@ export function addBranch(
 
   const branchName = name.normalize("NFC").trim();
   if (branchName.length < 1 || branchName.length > 120) throw new Error("business_branch_name_invalid");
+  if (!template.allowed_locations.includes(locationId)) throw new Error("business_location_invalid");
+  if (!catalog.premises_types.includes(premisesType)) throw new Error("business_premises_invalid");
 
+  const timestamp = new Date(now).toISOString();
   const branch: BusinessBranchRecord = {
     branch_id: `biz-branch-${randomUUID()}`,
     business_id: businessId,
@@ -1162,12 +1447,12 @@ export function addBranch(
     location_id: locationId,
     premises_type: premisesType,
     status: "active",
-    created_at: new Date(now).toISOString(),
+    created_at: timestamp,
     created_world_date: cloneDate(date),
-    updated_at: new Date(now).toISOString(),
+    updated_at: timestamp,
   };
   state.businessBranches[branch.branch_id] = branch;
-  business.updated_at = new Date(now).toISOString();
+  business.updated_at = timestamp;
 
   appendBusinessEvent(state, businessId, "branch_opened",
     `Branch '${branch.name}' opened at ${locationId}.`, date, minuteOfDay, now,
@@ -1176,6 +1461,13 @@ export function addBranch(
   return branch;
 }
 
+/**
+ * Stage 43: hands the whole business from its current owner to another character. The caller must be the current owner
+ * (only an owner transfers; see docs/STAGE_43_BUSINESS_LIFECYCLE.md on the co-owner question). The recipient must be a
+ * living character of eligible age, with a cash account, who holds no active place in this business and is under the
+ * businesses-per-character limit. The recipient is not asked to accept: that consent step is an open decision. The
+ * old owner's record is deactivated, not deleted, and `owner_character_id` now names the recipient.
+ */
 export function transferOwnership(
   state: PersistentWorldState,
   businessId: string,
@@ -1186,6 +1478,7 @@ export function transferOwnership(
   date: CalendarDate,
   minuteOfDay: number,
   now: number,
+  catalog: BusinessCatalog = loadBusinessCatalog(),
 ): { ownership: BusinessOwnershipRecord; previous: BusinessOwnershipRecord } {
   const business = state.businesses[businessId];
   if (!business) throw new Error("business_not_found");
@@ -1197,13 +1490,26 @@ export function transferOwnership(
   if (fromOwnership.role !== "owner") throw new Error("business_transfer_requires_owner");
 
   if (fromCharacterId === toCharacterId) throw new Error("business_transfer_same_character");
-  if (sharePercent < 0 || sharePercent > 100) throw new Error("business_share_invalid");
-  if (!["owner", "co_owner", "manager", "accountant", "inventory_manager", "employee"].includes(newRole)) {
-    throw new Error("business_role_invalid");
-  }
+  if (!Number.isSafeInteger(sharePercent) || sharePercent < 0 || sharePercent > 100) throw new Error("business_share_invalid");
+  // Stage 43: the recipient is an owner or a co-owner. Staff are added with hire_employee, so an ownership transfer can
+  // never create an employee record that skips the hiring checks.
+  if (newRole !== "owner" && newRole !== "co_owner") throw new Error("business_role_invalid");
 
-  const toPlayer = characterForId(state, toCharacterId);
-  if (!toPlayer) throw new Error("business_transfer_character_not_found");
+  const recipient = characterForId(state, toCharacterId);
+  if (!recipient) throw new Error("business_transfer_character_not_found");
+  if (recipient.character.life_status === "deceased") throw new Error("business_transfer_recipient_deceased");
+  const template = catalog.templates.find((t) => t.id === business.template_id);
+  if (!template) throw new Error("business_template_not_found");
+  if (recipient.character.age < Math.max(template.minimum_owner_age, catalog.rules.minimum_owner_age_years)) {
+    throw new Error("business_owner_age_ineligible");
+  }
+  if (!cashAccountFor(state, toCharacterId)) throw new Error("business_no_cash_account");
+  const alreadyInvolved = Object.values(state.businessOwnership).some((o) =>
+    o.business_id === businessId && o.character_id === toCharacterId && o.active);
+  if (alreadyInvolved) throw new Error("business_transfer_recipient_already_involved");
+  if (businessesForCharacter(state, toCharacterId).length >= catalog.rules.maximum_businesses_per_character) {
+    throw new Error("business_limit_reached");
+  }
 
   const timestamp = new Date(now).toISOString();
 
@@ -1225,6 +1531,7 @@ export function transferOwnership(
     active: true,
   };
   state.businessOwnership[newOwnership.ownership_id] = newOwnership;
+  business.owner_character_id = toCharacterId;
   business.updated_at = timestamp;
 
   appendBusinessEvent(state, businessId, "ownership_transferred",
@@ -1235,6 +1542,12 @@ export function transferOwnership(
   return { ownership: newOwnership, previous: fromOwnership };
 }
 
+/**
+ * Stage 43: hires a character as an employee. The employee must be living, of at least the employee age, hold a cash
+ * account (so that pay can be made), and hold no active business place and no active career employment. A career
+ * employment and a business employment cannot both be active (see careers/commitments.ts). The owner or a manager hires;
+ * the employee is not asked to consent (an open decision, recorded in STAGE_43).
+ */
 export function hireEmployee(
   state: PersistentWorldState,
   businessId: string,
@@ -1254,7 +1567,9 @@ export function hireEmployee(
   if (!template) throw new Error("business_template_not_found");
 
   const currentEmployees = countEmployeesForBusiness(state, businessId);
-  if (currentEmployees >= template.maximum_employees) {
+  // Stage 43: the staff limit is the smaller of the template's limit and the global rule's limit, so neither is ignored.
+  const staffLimit = Math.min(template.maximum_employees, catalog.rules.maximum_employees_per_business);
+  if (currentEmployees >= staffLimit) {
     throw new Error("business_employee_limit_reached");
   }
 
@@ -1263,12 +1578,16 @@ export function hireEmployee(
   if (employeePlayer.character.character_id === employerCharacterId) {
     throw new Error("business_employee_is_owner");
   }
+  if (employeePlayer.character.life_status === "deceased") throw new Error("business_employee_deceased");
+  if (employeePlayer.character.age < catalog.rules.minimum_employee_age_years) throw new Error("business_employee_age_ineligible");
 
   // Check if already employed at this business
   const existingEmployment = Object.values(state.businessOwnership).find(
     (o) => o.business_id === businessId && o.character_id === employeeCharacterId && o.active,
   );
   if (existingEmployment) throw new Error("business_employee_already_employed");
+  if (hasActiveCareerEmployment(state, employeeCharacterId)) throw new Error("business_employee_has_career_job");
+  if (!cashAccountFor(state, employeeCharacterId)) throw new Error("business_no_cash_account");
 
   const timestamp = new Date(now).toISOString();
   const employment: BusinessOwnershipRecord = {
@@ -1293,6 +1612,10 @@ export function hireEmployee(
   return employment;
 }
 
+/**
+ * Stage 43: releases an employee. The owner, a co-owner or a manager may do so, while the business is open (active or
+ * insolvent). The employment record is deactivated, and no money moves: pay is never owed in advance.
+ */
 export function fireEmployee(
   state: PersistentWorldState,
   businessId: string,
@@ -1306,6 +1629,7 @@ export function fireEmployee(
   const business = state.businesses[businessId];
   if (!business) throw new Error("business_not_found");
   authorizeBusinessAction(state, businessId, managerCharacterId, ["owner", "co_owner", "manager"]);
+  if (business.status === "closed") throw new Error("business_not_active");
 
   const employment = Object.values(state.businessOwnership).find(
     (o) => o.business_id === businessId && o.character_id === employeeCharacterId && o.active && o.role === "employee",
@@ -1681,6 +2005,31 @@ export function businessErrorMessage(code: string): string {
     business_recipe_not_available: "This recipe is not available for this business type.",
     business_recipe_not_found: "That production recipe is not available.",
     business_insufficient_input_stock: "There is not enough input stock for this production run.",
+    business_branch_limit_reached: "This business has reached its branch limit.",
+    business_branch_name_invalid: "Enter a branch name of 1 to 120 characters.",
+    business_premises_invalid: "Choose a premises type from the catalogue.",
+    business_closed: "This business is closed, so it cannot change.",
+    business_employee_age_ineligible: "This character is too young to be hired by a business.",
+    business_employee_already_employed: "That character already has a place in this business.",
+    business_employee_deceased: "A deceased character cannot be hired.",
+    business_employee_has_career_job: "This character already has a career job. They must leave it before a business can hire them.",
+    business_employee_is_owner: "An owner cannot be hired as an employee of their own business.",
+    business_employee_limit_reached: "This business has no free staff places.",
+    business_employee_not_found: "That character is not an employee of this business.",
+    business_expense_kind_invalid: "Choose operating or rent as the kind of expense.",
+    business_not_owner: "Only the owner can transfer this business.",
+    business_product_already_listed: "This item is already listed. Turn its listing back on instead of listing it again.",
+    business_product_is_service: "A service is listed with the service route, not as a stock product.",
+    business_product_not_listed: "List this product before restocking it.",
+    business_restock_is_service: "A service has no stock to restock.",
+    business_role_invalid: "Ownership can only pass to an owner or a co-owner.",
+    business_service_is_product: "A stock product is listed with the product route, not as a service.",
+    business_share_invalid: "Enter a whole share percentage from 0 to 100.",
+    business_transfer_character_not_found: "That character does not exist in this world.",
+    business_transfer_recipient_already_involved: "That character already has a place in this business.",
+    business_transfer_recipient_deceased: "A deceased character cannot receive a business.",
+    business_transfer_requires_owner: "Only the owner can transfer this business.",
+    business_transfer_same_character: "Choose someone other than yourself to receive the business.",
   };
   return messages[code] ?? economyErrorMessage(code) ?? "The business request could not be completed.";
 }

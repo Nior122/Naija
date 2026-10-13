@@ -69,6 +69,8 @@ export interface BusinessRules {
   readonly minimum_business_name_length: number;
   readonly maximum_business_description_length: number;
   readonly minimum_owner_age_years: number;
+  /** Stage 43: the youngest age at which a character may be hired. A conservative rule, not a legal age; see STAGE_43. */
+  readonly minimum_employee_age_years: number;
   readonly maximum_price_markup_percent: number;
   readonly minimum_price_markup_percent: number;
   readonly maximum_owner_withdrawal_ngn: number;
@@ -125,7 +127,8 @@ export interface BusinessRecord {
   readonly created_world_date: CalendarDate;
   updated_at: string;
   last_operating_date: CalendarDate | null;
-  readonly owner_character_id: string;
+  /** Stage 43: the character who holds the business now. An ownership transfer updates it. */
+  owner_character_id: string;
   closed_at: string | null;
   closed_world_date: CalendarDate | null;
   closure_reason: string | null;

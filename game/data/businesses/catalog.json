@@ -13,6 +13,7 @@
     "minimum_business_name_length": 2,
     "maximum_business_description_length": 300,
     "minimum_owner_age_years": 18,
+    "minimum_employee_age_years": 18,
     "maximum_price_markup_percent": 500,
     "minimum_price_markup_percent": 1,
     "maximum_owner_withdrawal_ngn": 5000000,

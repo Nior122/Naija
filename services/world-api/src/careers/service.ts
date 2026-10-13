@@ -11,6 +11,7 @@ import { loadLifeCatalog } from "../life/calendar.js";
 import type { CalendarDate } from "../life/types.js";
 import type { CharacterRecord, PersistentPlayer, PersistentWorldState } from "../multiplayer/types.js";
 import { loadCareerCatalog } from "./catalog.js";
+import { hasActiveBusinessEmployment } from "./commitments.js";
 import type {
   CareerApplicationRecord,
   CareerCatalog,
@@ -197,6 +198,10 @@ export function careerEligibility(
   }
   if (options.checkCurrentEmployment !== false && activeEmploymentFor(state, character.character_id)) {
     missing.push("Resign or complete the current employment before taking another full work commitment.");
+  }
+  // Stage 43: a business employment is a full work commitment too. See careers/commitments.ts.
+  if (options.checkCurrentEmployment !== false && hasActiveBusinessEmployment(state, character.character_id)) {
+    missing.push("End the current business employment before taking a career job.");
   }
   if (options.checkVacancy) {
     const vacancy = options.checkVacancy;
