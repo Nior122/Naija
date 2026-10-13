@@ -243,6 +243,18 @@ The shared NPC economy is therefore a **foundation**, not a finished system.
 
 These are recorded as blockers. The client does not show a fake action for any of them.
 
+### 8.3 Open limitation: saves that follow a shutdown
+
+`WorldEngine.shutdown()` closes the sockets and flushes the store, then resolves. A closing socket fires a disconnect,
+and the disconnect can queue a save after `shutdown()` has resolved. The server does not wait for those saves. If a
+new server loads the same database while such a save is still pending, the save raises the version fence
+(`WorldStateConflictError`), and the new server refuses financial writes until it restarts. The process is expected
+to exit after shutdown, which limits the window, but overlapping old and new instances are not made safe.
+
+The Stage 35 test now waits for the stopped store's accepted writes before the new server loads (section 9). The
+production change was not made: making `shutdown()` wait for close-triggered saves needs a bounded wait, and that is
+a shutdown-semantics decision. It is open.
+
 ## 9. Tests and results
 
 Test files:
@@ -268,12 +280,12 @@ Fixture changes (no assertion weakened):
   `set_listing` and `update_price`, the role list is resolved from the `LISTING_ROLES` constant, because the server
   names it there. The gated-action list includes the new financial and destructive actions.
 
-Results (2026-10-13). The code was tested at commit `020d417`. Commit `54ac97a` changed only this document. The re-run was on `54ac97a`, with identical code:
+Results (2026-10-13). These are from the final run, on the working tree that contains the test-support fix and this document. The earlier results at `020d417` are superseded:
 
 | Check | Result |
 |---|---|
-| Full suite, file backend (`node --test test/*.test.mjs`) | **1514 total, 1460 pass, 0 fail, 54 skipped** (PostgreSQL-only tests), exit 0 |
-| Full suite, PostgreSQL (`DATABASE_URL` set, `NAIJA_ALLOW_DB_TESTS=true`, `DB_SSL=false`) | **1812 total, 1808 pass, 0 fail, 4 skipped**, exit 0 (the re-run on the same code). The first PostgreSQL run had **one** failure: `property-actions-stage35` "an open listing whose owner is no longer the owner" timed out at 20 s waiting for a market reply while the other files ran in parallel. It passed 3 of 3 when run alone, and the full re-run passed. It is a load-sensitive harness timeout in a property test, not a business change. It is recorded here and not hidden. |
+| Full suite, file backend (`node --test test/*.test.mjs`) | **1514 total, 1460 pass, 0 fail, 54 skipped** (PostgreSQL-only tests), exit 0 (final run, `/tmp/s43/final_file.log`) |
+| Full suite, PostgreSQL (`DATABASE_URL` set, `NAIJA_ALLOW_DB_TESTS=true`, `DB_SSL=false`) | **1812 total, 1808 pass, 0 fail, 4 skipped**, exit 0 (final run, `/tmp/s43/final_pg.log`, after the test-support fix). The first PostgreSQL run had **one** failure: `property-actions-stage35` test 108 ("an open listing whose owner is no longer the owner", line 459) timed out at 20 s. An earlier note called this load-related and said it passed 3 of 3 alone. Both statements were wrong. Run alone before the fix, it failed in 2 of 3 runs (1 pass, 2 fail). The cause: when the old server stopped, its closing sockets queued a disconnect save. That save reached the database after the new server had loaded the world, and moved the stored version from 16 to 17. The new server's version fence (`WorldStateConflictError`) then refused financial writes, so `rent` returned `property_persistence_unavailable`, and the test waited for a listing reply that never came. The fix is in test support only: `FaultyStore.drain()` waits for the old store's accepted writes after it is killed and before the new server loads the world (`test/support/faulty-store.mjs`, `test/support/property-socket.mjs`). The timeout and the expected codes were not changed. After the fix, standalone: 5 of 5 pass (112 pass, 0 fail each). Full PostgreSQL re-run after the fix: 1808 pass, 0 fail. The production form of this window is recorded in section 8 (open limitation). |
 | Stage 43 lifecycle test | File backend 51 of 51. PostgreSQL 64 of 64. |
 | Business and career files | File backend 182 of 182. PostgreSQL 230 of 230 (before the last comment-only edit to `businesses.test.mjs`; the full run includes it). |
 | Client contract tests (`client-housing-business-stage41`, `client-npc-stage42`, `businesses`) | 77 of 77 pass |
