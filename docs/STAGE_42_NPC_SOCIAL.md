@@ -223,9 +223,9 @@ Fixes made to existing tests while the stage was built. None of them weakened an
 
 ### 4.3 CI
 
-The CI workflow (`.github/workflows/ci.yml`) runs `npm run check` (lint and the file-backend suite) and, in a second job,
-the full suite against a disposable PostgreSQL service. No CI run has been made for this stage. The commit SHA and CI run
-ID will be recorded in the handoff once the push has been verified. Until then, CI status for this stage is unknown.
+The CI workflow (`.github/workflows/ci.yml`) has two jobs: "World API build, lint, and tests" (`npm run check`) and "World
+API live PostgreSQL tests (disposable service)". CI run `38334472218` passed on the tested commit `c7da0c1`: both jobs
+succeeded. The later docs-only commit that records this result does not change the code that was tested.
 
 ## 5. Not verified
 
