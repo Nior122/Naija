@@ -98,7 +98,7 @@ Re-run for this handoff (on `8e564f7`): `npm ci`, `npm run build`, and `npm run 
 - **Stage 43** (business lifecycle, validation, and economic integration): create, listings, restock, purchases,
   hire, pay, fire, branches, owner-only ownership transfer, closure, and the business panel's lifecycle screens.
   Failed changes roll back through a snapshot. Record: `docs/STAGE_43_BUSINESS_LIFECYCLE.md`. Server tests pass on both
-  backends (file 1460/1514, PostgreSQL 1808/1812, 0 failures). Godot not run.
+  backends (file 1460/1514, PostgreSQL 1808/1812, 0 failures). CI run `38338742349` passed on `17e9d71`. Godot not run.
 
 ## 6. Feature status
 

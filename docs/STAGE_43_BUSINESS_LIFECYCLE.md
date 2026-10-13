@@ -283,7 +283,7 @@ Results (2026-10-13). The code was tested at commit `020d417`. Commit `54ac97a` 
 | GDScript: `gdparse` on all 28 tracked `game/scripts/*.gd` | All parse. Three known-bad samples are rejected. |
 | GDScript: `gdlint` on the two edited files | **One finding:** `business_panel.gd` is 1188 lines, above the 1000-line limit (`max-file-lines`). It was clean before Stage 43. The file was not split because the new forms share private helpers and state with the panel, and that split cannot be checked without Godot. It is a known finding for the next Godot pass. |
 | Godot 4.7 | **Not run.** Not installed; the release asset host is blocked from the sandbox. No screen was loaded or clicked. |
-| CI | **Not yet recorded.** A run ID and tested SHA are recorded here only once a run is identified after the push. |
+| CI | Run `38338742349` on commit `17e9d71`: **success**. Jobs: "World API build, lint, and tests" and "World API live PostgreSQL tests (disposable service)", both successful. |
 
 Coverage of the required test areas:
 
@@ -308,9 +308,16 @@ Coverage of the required test areas:
 
 ## 10. Commits
 
-Stage 43 is recorded in focused commits on `arena/00cdea0e-naija`. The commit list and the pushed SHA are recorded in
-the handoff (`docs/ARENA_HANDOFF.md`) and `docs/DEVELOPMENT_STATUS.md` after the push. Nothing is claimed as pushed
-or as CI-verified until the remote SHA is checked.
+Stage 43 is recorded in focused commits on `arena/00cdea0e-naija`, fast-forward from `3df94f7`:
+
+- `ae215b1` server: lifecycle rules, rollback, career conflict, catalogue age rule
+- `6ce95cd` tests: lifecycle suite, socket helpers, contract checks, two fixture changes
+- `e9e2b79` client: business panel lifecycle screens
+- `020d417` docs: this record, inventory rows 11–12, status, handoff
+- `54ac97a` docs: ledger direction correction
+- `17e9d71` docs: test results, including one load-sensitive PostgreSQL timeout on re-run
+
+The remote branch was verified at `17e9d71`. CI run `38338742349` passed on that SHA (section 9).
 
 ## 11. Next steps
 
