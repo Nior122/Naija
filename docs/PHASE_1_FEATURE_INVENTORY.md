@@ -1,7 +1,8 @@
 # Phase 1 feature inventory
 
 Status of each planned system at the start of Phase 1 (Stage 39), with evidence from the repository. Rows 11 and 12 and the
-priority and dependency lists were updated in Stage 40, and rows 6–8 and 11–12 and the next-group note in Stage 41. This is an
+priority and dependency lists were updated in Stage 40, rows 6–8 and 11–12 and the next-group note in Stage 41, and rows
+23–24 and the next-group note in Stage 42. This is an
 audit, not a claim of completion. The game is not finished, and this inventory does not make it production-ready.
 
 Statuses:
@@ -48,8 +49,8 @@ Statuses:
 | 20 | Revenue, taxation, borrowing, unrestricted minting | MISSING, not to be enabled | `tax_payment` and loan kinds exist in the ledger type; no enabled route | Excluded from Phase 1 by the user's constraints. |
 | 21 | Education (school) | PARTIAL | `school.begin` is a client call and a dispatch case | `EDUCATION_HIERARCHY` mismatch (row 16). |
 | 22 | Family (46 engine references) | PARTIAL, not re-audited | Handled in the engine; no `family` module directory | Not re-audited. |
-| 23 | Relationships and social | MISSING | `relationship` dispatch case exists; the `social` module has 0 engine references | Persisted type only. |
-| 24 | NPC simulation | MISSING | `npc` module: 0 engine references | Seeded NPC landlords exist as property owners (data only). |
+| 23 | Relationships and social | PARTIAL (Stage 42: player-to-NPC relationships implemented and server-tested; Godot not run) | Player-to-NPC bonds on the person records (`npc_social.bonds`): affinity, acquaintance, greet, talk, acquaint, argue, apologise, bounded history, cooldowns. `npc.action` and `npc.view` in the engine. `test/npc-social-stage42.test.mjs` (file 17, PostgreSQL 34), `npc-social-rules-stage42.test.mjs` (15), `client-npc-stage42.test.mjs` (22). See `docs/STAGE_42_NPC_SOCIAL.md`. | Player-to-player `relationship.progress` is unchanged and still needs an online, nearby partner. No family generation. The `social/` module is the Stage 18 social-media network and is not used for this. No effect on money, jobs, or housing. |
+| 24 | NPC simulation | PARTIAL (Stage 42: six fixed neighbours with clock-derived activity implemented and server-tested; Godot not run) | Residents `npc-nb-*` in `game/data/npc/social_catalog.json`, seeded and validated with the people records (no schema bump). Activity (asleep, at school, socialising, relaxing) derived from `state.worldClock` in the existing minute tick. Visibility and presence rules. Careers exclusion for neighbours in `careers/service.ts`. Tests: see row 23. | Not runtime-verified in Godot. Entry is the People menu only; world avatars are not linked to server IDs. NPCs do not move. No economy, job, housing, or quest effect. No distance rule. The dormant `npc/catalog.ts` is not used. Seeded NPC landlords remain property owners (data only). |
 | 25 | World events | MISSING | `world-events` module: 0 engine references | Persisted type only. |
 | 26 | Transportation (beyond bus fare) | MISSING | `transportation` module: 0 engine references | Bus fare route is row 5. |
 | 27 | Chat, inventory, shop, movement, geography, entertainment, culture | PARTIAL, not re-audited | Dispatch cases exist; `chat.send`, `inventory.consume`, `shop.purchase`, `geography.enter` and `geography.leave` are client calls | Per-feature tests not verified in this pass. |
@@ -68,6 +69,20 @@ this sandbox, and its asset host is blocked, so no screen has been run in an eng
 | Missing | Socket-level tests for `my_rentals` (function-level only), `add_branch` and `fire_employee` (function-level only), and `buy_product` on a service (function-level refusal only). No Godot runtime test, scene test, or GDScript parse or lint step in CI. |
 | Suspended or blocked | Unchanged: government writes, elections, police, crime, military, justice (fail-closed). Stations (decision 10), shares (STAGE_40 2.2), and rent arrears (not designed). |
 
+## Stage 42 status (NPC simulation and social relationships)
+
+Stage 42 added six fixed neighbours with clock-derived activity, and player-to-NPC relationships with server-validated
+social actions. The server is tested on both backends. The Godot People panel is written and statically checked, but
+Godot has not been run.
+
+| Category | Items |
+|---|---|
+| Implemented and tested | Stable resident identities that survive a restart (`npc-nb-*`). Clock-derived activity in four states, synced in the existing minute tick. Presence and visibility rules. `npc.action` for greet, talk, acquaint, argue, and apologise, with cooldowns, refusals, idempotence by request ID, and `npc_not_saved` and `npc_outcome_unknown` handling. `npc.view` with bounded history (20). `npc_profiles` in the snapshot (at most 24). Dialogue that varies by tier and recognition. Validation of the persisted records. Covered on the file backend and on PostgreSQL. |
+| Implemented, not runtime-verified | Godot People panel (`game/scripts/ui/npc_panel.gd`): visible list, detail, five actions, confirmation before argue, pending, success, failure, and timeout states through `ServerRequestTracker`, and history. Checked by `gdparse`, `gdlint`, and the Node contract test only. |
+| Partial | Player-to-NPC relationships (no family, no economy effect). NPC activity (locations change, but NPCs do not move). The panel is reached from the menu only. |
+| Missing | Interacting with a neighbour's avatar in the world. NPC movement. NPC-driven events, quests, jobs, or housing. Residents beyond the six. Distance-based rules. |
+| Suspended or blocked | No new suspension. Suspended systems remain fail-closed. Open decisions 9, 10, and 11 are unchanged. Godot runtime verification is blocked in the sandbox (no Godot binary can be downloaded). |
+
 ## Missing and partial systems that matter most
 
 1. **Business client UI (rows 11–12).** Stage 41 added a business screen covering the operations in row 11 that the
@@ -79,7 +94,8 @@ this sandbox, and its asset host is blocked, so no screen has been run in an eng
 4. **Client UI for housing and businesses (rows 6–8, 11–12).** Implemented in Stage 41 but not run in Godot. Business
    lifecycle operations (create, add product, hire, fire, branches, ownership transfer, production, expenses) have no
    client yet.
-5. **Simulation of NPCs, social, world events, and transportation (rows 24–26, MISSING).** Persisted types only.
+5. **World events and transportation (rows 25–26, MISSING), and NPC movement and effects (row 24, PARTIAL).** Stage 42
+   gives six fixed neighbours with activity and player relationships. They do not move and have no economy effect.
 6. **Rent collection, arrears, and eviction (row 8).** Not implemented, and not invented on the client. Rent is paid only
    when a tenant sends `pay_rent`.
 
@@ -89,10 +105,14 @@ The client surfaces for housing and businesses were the previous recommendation.
 need a Godot run before they count as verified. Two verification items remain before the next group should start
 (see `docs/STAGE_41_HOUSING_BUSINESS_CLIENT.md`).
 
-Next substantive Phase 1 group: **NPC simulation and social relationships (rows 23–24, both MISSING)**. Together they
-are the largest gap between the planned game and a connected playable simulation, and rows 25–26 (world events,
-transportation beyond bus fare) depend on the same NPC state. It is not blocked by an open owner decision, but its
-design (what NPCs do, how relationships change) needs a plan document before implementation.
+Stage 42 implemented NPC simulation and social relationships (rows 23–24, PARTIAL). Its record is
+`docs/STAGE_42_NPC_SOCIAL.md`.
+
+Next Phase 1 priority: **Godot runtime verification** of the Stage 41 housing and business screens and the Stage 42 People
+panel. Neither can count as verified until a Godot 4.7 binary runs them. It is blocked in the sandbox and needs a
+network route to the release asset host. The next feature group after that is the **business lifecycle client and server
+checks** (row 11), which are well defined. World events (row 25) can now read the NPC activity state, but they are not
+designed yet and need a plan first.
 
 Smaller follow-on, which can be done first if the owner prefers: **business lifecycle client and server checks** (create,
 add product, hire and fire, branches, ownership transfer, production, expenses). The server supports these; the client
@@ -109,7 +129,8 @@ decision 10 in row 28. Housing arrears and eviction are not designed (the user h
 2. Station and jurisdiction model, then police and crime enablement (rows 15–17), with negative tests.
 3. Judge assignment and the authority model, then justice and military mutations (rows 18–19).
 4. Client UI for housing and businesses (rows 6–8, 11–12). Implemented in Stage 41; Godot run pending.
-5. Simulation of NPC, social, world events, and transportation (rows 23–26). Recommended next group, above.
+5. NPC simulation and social relationships (rows 23–24). Implemented in Stage 42 (PARTIAL; Godot run pending). World
+   events and transportation (rows 25–26) remain MISSING.
 6. Remaining authority and suspended mechanisms, as the owner decides.
 
 Revenue, taxation, fines, borrowing, minting, and organisation payments are outside this order, by the user's

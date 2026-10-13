@@ -4,11 +4,13 @@
 
 ## Current state (handoff)
 
-**Latest work: Stage 41 (housing and business client) on `arena/00cdea0e-naija`.** Adds the Godot housing and business screens, a request tracker that prevents duplicate submissions and reports unconfirmed requests, and the server fixes found while checking the contract: sale-kind refusals (`business_sale_not_service`, `business_sale_is_service`) and the owner/co-owner filter on `business_profiles`. Stage 40 (business accounts in the economy ledger) is complete at `8e564f7`; its CI run `38243775351` passed on that SHA. Stage 39 (`b95dedb`) is complete; its foundation job failed once with no cause identified. Details: `docs/STAGE_41_HOUSING_BUSINESS_CLIENT.md`.
+**Latest work: Stage 42 (NPC simulation and social relationships) on `arena/00cdea0e-naija`.** Adds six fixed neighbours (`npc-nb-*`) with stable identities that survive a restart, clock-derived activity (asleep, at school, socialising, relaxing) synced in the existing minute tick, and persisted player-to-NPC relationships. The server validates five social actions (greet, talk, acquaint, argue, apologise) and a read-only view, each idempotent by request ID, with cooldowns, refusals, bounded history, and `npc_profiles` in the snapshot. The Godot People panel reuses the Stage 41 `ServerRequestTracker`. Neighbours are excluded from careers. There is no schema bump. Server tests on the final code: file backend 1404 of 1458 pass (54 PostgreSQL-only skipped); PostgreSQL 1739 of 1743 pass (4 TLS skipped); 0 failures on either. The Godot panel is statically checked only. Details: `docs/STAGE_42_NPC_SOCIAL.md`.
 
-**Next:** Godot verification of the Stage 41 screens (not run: no Godot binary in the sandbox). Then the next Phase 1 group, recommended in `docs/PHASE_1_FEATURE_INVENTORY.md`: NPC simulation and social relationships (rows 23–24). Business lifecycle client and server checks are the smaller follow-on. Not started.
+**Previous:** Stage 41 (housing and business client) added the Godot housing and business screens, a request tracker that prevents duplicate submissions and reports unconfirmed requests, and the server fixes for sale kinds and the owner/co-owner filter. Details: `docs/STAGE_41_HOUSING_BUSINESS_CLIENT.md`. Stage 40 (business accounts) is complete at `8e564f7`, with CI run `38243775351` passing on that SHA.
 
-Godot 4.7 is not installed in the sandbox, so no Godot runtime check has been run for Stages 34–41. The Stage 41 screens were written and statically checked (`gdparse`, `gdlint`) and are covered by Node contract tests, but they have not been loaded or clicked in an engine. The Stage 21 section below was last updated at Stage 21. Stages 22–41 are recorded in their own `docs/STAGE_NN_*.md` documents and the handoff.
+**Next:** Godot runtime verification of the Stage 41 and Stage 42 screens. This is blocked: no Godot binary can be installed in the sandbox. Then the business lifecycle client and server checks (inventory row 11). World events (row 25) are not designed yet. See `docs/PHASE_1_FEATURE_INVENTORY.md`.
+
+Godot 4.7 is not installed in the sandbox, so no Godot runtime check has been run for Stages 34–42. The Stage 41 and Stage 42 screens were written and statically checked (`gdparse`, `gdlint`) and are covered by Node contract tests, but they have not been loaded or clicked in an engine. The Stage 21 section below was last updated at Stage 21. Stages 22–41 are recorded in their own `docs/STAGE_NN_*.md` documents and the handoff.
 
 ## Current stage and verification gate (historical, Stage 21)
 
@@ -656,4 +658,5 @@ When Godot 4.7.2 is available, run the import check and retained client tests in
 5. Stage 7 replaces the Stage 6 prototype salary adapter with the canonical Naira ledger. Tax estimation is display-only; no automatic tax deduction, inter-player transfers, businesses, property, or estate wage settlement are implemented.
 6. Godot 4.7.2 client/runtime verification for Stages 1–12 remains blocked. Node tests and gdformat do not substitute for engine/runtime checks.
 7. Preserve Stage 5 life status and age as the sole authority for death and retirement; do not enable work or future wages for deceased characters.
-8. **Next planned stage: Stage 10 — Government System.** Keep it inside the same world and use Stage 9 for government property and public facilities.
+8. (Historical, from Stage 9.) "Next planned stage: Stage 10 — Government System." Superseded; see the current state above.
+9. Stage 42 NPCs are six fixed fictional residents. They do not move, have no economy, job, housing, or quest effect, and are reached only from the People menu. Their relationships are server state, but the Godot panel is not runtime-verified.
