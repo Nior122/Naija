@@ -1953,6 +1953,8 @@ export function discoverBusinesses(
 
 export function businessErrorMessage(code: string): string {
   const messages: Readonly<Record<string, string>> = {
+    business_action_invalid: "A value in this business request is missing or outside the allowed range. Nothing was changed.",
+    business_action_unknown: "The server does not support this business action. Nothing was changed.",
     business_character_not_found: "Your character record is not available in this world.",
     business_character_deceased: "Deceased characters cannot operate businesses.",
     business_template_not_found: "That business template is not available.",
@@ -2031,5 +2033,8 @@ export function businessErrorMessage(code: string): string {
     business_transfer_requires_owner: "Only the owner can transfer this business.",
     business_transfer_same_character: "Choose someone other than yourself to receive the business.",
   };
-  return messages[code] ?? economyErrorMessage(code) ?? "The business request could not be completed.";
+  // economyErrorMessage always returns text, so it is used only for economy codes. Any other unmapped business code
+  // gets the business fallback, not economy wording.
+  if (messages[code] !== undefined) return messages[code];
+  return code.startsWith("economy_") ? economyErrorMessage(code) : "The business request could not be completed.";
 }
