@@ -27,14 +27,14 @@ The contract is in `game/scripts/domain/property_business_contract.gd`. The cont
 
 | Operation (`business.action`) | Who may use it (server) | Confirmation in the panel | Money moved |
 |---|---|---|---|
-| `create` | Any adult founder, with own cash | Yes (names the setup fee and the capital) | Setup fee and capital from the founder's cash |
+| `create` | Any adult founder, with own cash | Yes (names the setup fee and the capital) | Setup fee from the founder's cash (a sink); capital from the founder's cash to the business account |
 | `add_product` | owner, co_owner, manager, inventory_manager | No | None |
 | `add_service` | owner, co_owner, manager, inventory_manager | No | None |
 | `set_listing` (on/off) | owner, co_owner, manager | No | None |
 | `update_price` | owner, co_owner, manager | No | None |
-| `restock` | owner, co_owner, manager, inventory_manager | Yes | Business pays supplier from its account |
-| `buy_product` | Anyone except the owner or co-owner of that business | Yes | Buyer's cash to the business account |
-| `buy_service` | Anyone except the owner or co-owner of that business | Yes | Buyer's cash to the business account |
+| `restock` | owner, co_owner, manager, inventory_manager | Yes | Stock cost paid from the business account (a sink: there is no supplier account) |
+| `buy_product` | Anyone except the owner or co-owner of that business | Yes | Buyer's cash to the business account (`business_purchase` debit, `business_sale` credit) |
+| `buy_service` | Anyone except the owner or co-owner of that business | Yes | Buyer's cash to the business account (`business_purchase` debit, `business_sale` credit) |
 | `hire_employee` | owner, co_owner, manager | No (no money moves) | None |
 | `fire_employee` | owner, co_owner, manager | Yes | None |
 | `add_branch` | owner, co_owner | No (opening costs nothing) | None |
@@ -106,13 +106,13 @@ system.
 
 | Ledger kind | Movement | Notes |
 |---|---|---|
-| `business_setup_fee` | founder cash to the business account | Creation |
-| `business_capital` | owner cash to the business account | Contribution |
+| `business_setup_fee` | founder cash to nothing (sink) | Creation. The fee is not credited to any account. |
+| `business_capital` | owner cash to the business account | Creation and contribution |
 | `business_withdrawal` | business account to the caller's cash | Owner or co-owner only; the caller's own cash |
-| `business_sale` | buyer cash to the business account | Buyer-paid only; seller-initiated sales are refused |
-| `business_purchase` | business account to supplier | Restock |
+| `business_purchase` | buyer cash debit | Paired with `business_sale`. Buyer-paid only; seller-initiated sales are refused |
+| `business_sale` | business account credit | Paired with `business_purchase`, in the same movement |
 | `business_salary` | business account to employee cash | Owner or co-owner only |
-| `business_expense` | business account to nothing (sink) | Operating or rent only; salary-type expenses must use payroll |
+| `business_expense` | business account to nothing (sink) | Operating and rent expenses, and restock cost. Salary-type expenses must use payroll. |
 | `business_transfer` | business account to another business account | Caller owns both |
 | `business_seed_capital` | issuance to an NPC-owned business | Unresolved policy (section 7) |
 | `business_legacy_import` | Stage 40 migration of older balances | Unchanged |
