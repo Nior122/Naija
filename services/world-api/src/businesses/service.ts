@@ -600,6 +600,12 @@ function purchaseFromBusiness(
   const productRecord = state.businessProducts[productRecordId];
   if (!productRecord || productRecord.business_id !== businessId) throw new Error("business_product_not_found");
   if (!productRecord.available) throw new Error("business_product_unavailable");
+  // Stage 41: the sale kind must match the product. A stock product bought as a service would skip the stock check, and a
+  // service bought as a stock product would need stock it does not have. The category is the same rule the seeding uses.
+  const definition = catalog.business_products.find((p) => p.id === productRecord.product_definition_id);
+  const productIsService = definition?.category === "service";
+  if (isService && !productIsService) throw new Error("business_sale_not_service");
+  if (!isService && productIsService) throw new Error("business_sale_is_service");
 
   if (!Number.isSafeInteger(quantity) || quantity < 1) throw new Error("business_sale_quantity_invalid");
   if (isService && quantity !== 1) throw new Error("business_sale_quantity_invalid");
@@ -1634,6 +1640,8 @@ export function businessErrorMessage(code: string): string {
     business_insufficient_funds: "The business or your personal account does not have enough funds.",
     business_sale_must_be_purchase: "A sale is recorded when a buyer pays. Ask a customer to buy from the business.",
     business_self_purchase: "An owner cannot buy from their own business.",
+    business_sale_not_service: "This is a stock product. Buy it as a product, not as a service.",
+    business_sale_is_service: "This is a service. Buy it as a service, not as a stock product.",
     business_salary_use_payroll: "A salary is paid to an employee with the payroll action, not recorded as an expense.",
     business_salary_employee_invalid: "That character is not an active employee of this business.",
     business_salary_amount_invalid: "Enter a salary amount within the allowed limit.",

@@ -5674,7 +5674,15 @@ export class MultiplayerWorld {
     snapshot.life_profile = buildLifeProfile(this.store.state, player.character);
     snapshot.career_profile = buildCareerProfile(this.store.state, player.character, this.careerCatalog);
     snapshot.economy_profile = buildEconomyProfile(this.store.state, player.character.character_id, this.economyCatalog);
-    const ownedBusinesses = Object.values(this.store.state.businesses).filter((biz) => biz.owner_character_id === player.character.character_id);
+    // Stage 41: "owned" means an active owner or co-owner record. The founder field is not updated by a transfer, so it
+    // cannot identify the current owners, and it would hide a co-owned business from its co-owner.
+    const characterId = player.character.character_id;
+    const ownedBusinessIds = new Set(
+      Object.values(this.store.state.businessOwnership)
+        .filter((o) => o.character_id === characterId && o.active && (o.role === "owner" || o.role === "co_owner"))
+        .map((o) => o.business_id),
+    );
+    const ownedBusinesses = Object.values(this.store.state.businesses).filter((biz) => ownedBusinessIds.has(biz.business_id));
     snapshot.business_profiles = ownedBusinesses.map((biz) => {
       try { return buildBusinessProfile(this.store.state, biz.business_id, this.businessCatalog); } catch { return null; }
     }).filter((profile): profile is NonNullable<typeof profile> => profile !== null);
