@@ -8,6 +8,9 @@
 import { markSaveOutcome } from "../../dist/persistence-status.js";
 
 export class FaultyStore {
+  /** Writes this wrapper has accepted and not yet finished. Used by drain(). */
+  #inFlight;
+
   constructor(inner) {
     this.inner = inner;
     this.failures = [];
@@ -17,6 +20,7 @@ export class FaultyStore {
     this.committedCount = 0;
     this.heldCount = 0;
     this.killed = false;
+    this.#inFlight = new Set();
   }
 
   /**
@@ -96,7 +100,20 @@ export class FaultyStore {
     return this.inner.findOperation ? this.inner.findOperation(playerId, requestId) : Promise.resolve(undefined);
   }
 
-  async #write(perform) {
+  /** Waits until every write this wrapper has accepted has finished, whether it committed or failed. */
+  async drain() {
+    while (this.#inFlight.size > 0) {
+      await Promise.allSettled([...this.#inFlight]);
+    }
+  }
+
+  #write(perform) {
+    const work = this.#writeOnce(perform);
+    this.#inFlight.add(work);
+    return work.finally(() => this.#inFlight.delete(work));
+  }
+
+  async #writeOnce(perform) {
     this.writeCount += 1;
     if (this.killed) throw new Error("the process has stopped");
     const failure = this.failures.shift();

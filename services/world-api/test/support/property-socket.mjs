@@ -90,6 +90,12 @@ export function purchase(peer, requestId, listingId) {
 /** Stops the running server, reopens the storage, and starts a fresh server over it (a process restart). */
 export async function restart(world) {
   await world.started.stop();
+  // The stopped server cannot write. Closing its sockets can still start a save after the graceful flush (a disconnect
+  // marks the world dirty and saves). If that save reached the storage after the new server had loaded the world, it
+  // would fence the new server. So the old store refuses new writes (as a crash test does), and the writes it already
+  // accepted finish before the new server loads the world.
+  world.backend.store.kill();
+  await world.backend.store.drain();
   await world.backend.reopen();
   const started = await startOver(world.backend, STARTUP);
   world.started = started;
