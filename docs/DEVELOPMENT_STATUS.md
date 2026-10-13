@@ -4,11 +4,11 @@
 
 ## Current state (handoff)
 
-**Latest completed work: Stage 40 (business accounts in the economy ledger), commit `8e564f7`.** CI run `38243775351` (push, branch `arena/00cdea0e-naija`) passed on that SHA: both the build/lint/test job and the live PostgreSQL job. Stage 39 (`b95dedb`) is complete; its foundation job failed once with no cause identified.
+**Latest work: Stage 41 (housing and business client) on `arena/00cdea0e-naija`.** Adds the Godot housing and business screens, a request tracker that prevents duplicate submissions and reports unconfirmed requests, and the server fixes found while checking the contract: sale-kind refusals (`business_sale_not_service`, `business_sale_is_service`) and the owner/co-owner filter on `business_profiles`. Stage 40 (business accounts in the economy ledger) is complete at `8e564f7`; its CI run `38243775351` passed on that SHA. Stage 39 (`b95dedb`) is complete; its foundation job failed once with no cause identified. Details: `docs/STAGE_41_HOUSING_BUSINESS_CLIENT.md`.
 
-**Next:** Stage 41, Housing and Business Gameplay Interfaces (Godot 4.7 client). Not started. See `docs/ARENA_HANDOFF.md` for the full handoff.
+**Next:** Godot verification of the Stage 41 screens (not run: no Godot binary in the sandbox). Then the next Phase 1 group, recommended in `docs/PHASE_1_FEATURE_INVENTORY.md`: NPC simulation and social relationships (rows 23–24). Business lifecycle client and server checks are the smaller follow-on. Not started.
 
-Godot 4.7 is not installed in the sandbox, so no Godot runtime check has been run for Stages 34–40. The Stage 21 section below was last updated at Stage 21. Stages 22–40 are recorded in their own `docs/STAGE_NN_*.md` documents and the handoff.
+Godot 4.7 is not installed in the sandbox, so no Godot runtime check has been run for Stages 34–41. The Stage 41 screens were written and statically checked (`gdparse`, `gdlint`) and are covered by Node contract tests, but they have not been loaded or clicked in an engine. The Stage 21 section below was last updated at Stage 21. Stages 22–41 are recorded in their own `docs/STAGE_NN_*.md` documents and the handoff.
 
 ## Current stage and verification gate (historical, Stage 21)
 
