@@ -363,9 +363,15 @@ describe("Stage 41 request state and wiring", () => {
   });
 
   test("prototype_game sends housing and business actions over the existing socket with the request ID", () => {
+    // Stage 42 moved the send into a shared path (_send_tracked_command), which the housing and business sender now
+    // calls. The envelope {action, payload} and the request ID are still what reaches the socket.
     assert.match(
       prototypeGame,
-      /multiplayer_client\.send_command\(\s*message_type, \{"action": action, "payload": payload\.duplicate\(true\)\}, request_id\s*\)/,
+      /_send_domain_action\([\s\S]*?_send_tracked_command\(\s*message_type, \{"action": action, "payload": payload\.duplicate\(true\)\}, request_id\s*\)/,
+    );
+    assert.match(
+      prototypeGame,
+      /func _send_tracked_command\([\s\S]*?multiplayer_client\.send_command\(message_type, values, request_id\)/,
     );
     assert.match(prototypeGame, /_send_domain_action\("property\.action"/);
     assert.match(prototypeGame, /_send_domain_action\("business\.action"/);

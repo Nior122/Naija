@@ -17,6 +17,8 @@ signal education_action_requested(action: String, payload: Dictionary)
 signal career_action_requested(action: String, payload: Dictionary)
 signal housing_action_requested(action: String, payload: Dictionary, request_id: String)
 signal business_action_requested(action: String, payload: Dictionary, request_id: String)
+signal npc_action_requested(action: String, npc_id: String, request_id: String)
+signal npc_view_requested(npc_id: String)
 signal modal_changed(is_open: bool)
 
 const SCHOOL_SERVICE = preload("res://scripts/domain/school_service.gd")
@@ -25,6 +27,7 @@ const LifeSimulationServiceScript = preload("res://scripts/domain/life_simulatio
 const CareerPanelScript = preload("res://scripts/ui/career_panel.gd")
 const HousingPanelScript = preload("res://scripts/ui/housing_panel.gd")
 const BusinessPanelScript = preload("res://scripts/ui/business_panel.gd")
+const NpcPanelScript = preload("res://scripts/ui/npc_panel.gd")
 const TIMEOUT_NOTICE := "No answer came from the server in time. Its records show the current " \
 	+ "state. Retry sends the same request ID, which the server applies at most once."
 const DUPLICATE_NOTICE := "The server had already processed this request. " \
@@ -64,6 +67,8 @@ var _business_panel: BusinessPanel
 # The trackers belong to the UI layer, so a request keeps its state when a modal closes (Stage 41).
 var _housing_tracker := ServerRequestTracker.new()
 var _business_tracker := ServerRequestTracker.new()
+var _npc_panel: NpcPanel
+var _npc_tracker := ServerRequestTracker.new()
 
 
 func _ready() -> void:
@@ -193,6 +198,7 @@ func show_game(character: CharacterState, clock: WorldClock, location_name: Stri
 	_add_menu_button(menu_grid, "Careers", "careers")
 	_add_menu_button(menu_grid, "Housing", "housing")
 	_add_menu_button(menu_grid, "Businesses", "businesses")
+	_add_menu_button(menu_grid, "People", "people")
 	_add_menu_button(menu_grid, "Nearby chat", "chat")
 	_add_menu_button(menu_grid, "Save / Load", "save")
 	_add_menu_button(menu_grid, "Settings", "settings")
@@ -608,14 +614,49 @@ func show_business_response(message: Dictionary) -> void:
 		notify(str(message.get("message", "Business request answered.")))
 
 
+## People (Stage 42). The panel renders the server's list of visible NPCs and the server's replies.
+func show_people(character: CharacterState, is_online: bool, profiles: Array) -> void:
+	var card := _open_modal(
+		"People",
+		"Neighbours you can see now, and your relationship with each, kept by the shared world"
+	)
+	_npc_panel = NpcPanelScript.new()
+	_npc_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_npc_panel.bind_tracker(_npc_tracker)
+	_npc_panel.npc_action_requested.connect(_on_npc_action_requested)
+	_npc_panel.npc_view_requested.connect(_on_npc_view_requested)
+	card.add_child(_npc_panel)
+	_npc_panel.configure(character.character_id, is_online)
+	_npc_panel.show_profiles(profiles)
+	_add_modal_close(card)
+
+
+func update_npc_profiles(profiles: Array) -> void:
+	if is_instance_valid(_npc_panel):
+		_npc_panel.show_profiles(profiles)
+
+
+## Applies npc.result, npc.error or npc.view. The tracker is updated first, so a reply to a pending
+## social request is recorded even when the panel is closed.
+func show_npc_response(message: Dictionary) -> void:
+	var answered := _npc_tracker.apply_reply(message)
+	if is_instance_valid(_npc_panel):
+		_npc_panel.apply_server_response(message, answered)
+	elif answered:
+		notify(str(message.get("message", "Social request answered.")))
+
+
 ## The server replied command.duplicate. Each tracker releases only the request that has that ID.
 func show_command_duplicate(request_id: String) -> void:
 	var housing_answered := _housing_tracker.apply_duplicate(request_id)
 	var business_answered := _business_tracker.apply_duplicate(request_id)
+	var npc_answered := _npc_tracker.apply_duplicate(request_id)
 	if housing_answered:
 		_tell_housing(DUPLICATE_NOTICE)
 	if business_answered:
 		_tell_business(DUPLICATE_NOTICE)
+	if npc_answered:
+		_tell_npc(DUPLICATE_NOTICE)
 
 
 ## The socket reconnects or goes offline. A waiting change may or may not have been saved, so it is
@@ -623,12 +664,16 @@ func show_command_duplicate(request_id: String) -> void:
 func show_connection_lost(message: String) -> void:
 	var housing_waiting := _housing_tracker.is_waiting()
 	var business_waiting := _business_tracker.is_waiting()
+	var npc_waiting := _npc_tracker.is_waiting()
 	_housing_tracker.apply_transport_loss()
 	_business_tracker.apply_transport_loss()
+	_npc_tracker.apply_transport_loss()
 	if housing_waiting:
 		_tell_housing(message)
 	if business_waiting:
 		_tell_business(message)
+	if npc_waiting:
+		_tell_npc(message)
 
 
 func request_timed_out(request_id: String) -> void:
@@ -636,6 +681,8 @@ func request_timed_out(request_id: String) -> void:
 		_tell_housing(TIMEOUT_NOTICE)
 	if _business_tracker.apply_timeout(request_id):
 		_tell_business(TIMEOUT_NOTICE)
+	if _npc_tracker.apply_timeout(request_id):
+		_tell_npc(TIMEOUT_NOTICE)
 
 
 ## The request never reached the socket, so the server did not receive it and nothing changed.
@@ -644,6 +691,8 @@ func show_send_failure(request_id: String, message: String) -> void:
 		_tell_housing(message)
 	if _business_tracker.apply_send_failure(request_id):
 		_tell_business(message)
+	if _npc_tracker.apply_send_failure(request_id):
+		_tell_npc(message)
 
 
 func _tell_housing(message: String) -> void:
@@ -660,12 +709,27 @@ func _tell_business(message: String) -> void:
 		notify(message)
 
 
+func _tell_npc(message: String) -> void:
+	if is_instance_valid(_npc_panel):
+		_npc_panel.show_notice_text(message)
+	else:
+		notify(message)
+
+
 func _on_housing_action_requested(action: String, payload: Dictionary, request_id: String) -> void:
 	housing_action_requested.emit(action, payload.duplicate(true), request_id)
 
 
 func _on_business_action_requested(action: String, payload: Dictionary, request_id: String) -> void:
 	business_action_requested.emit(action, payload.duplicate(true), request_id)
+
+
+func _on_npc_action_requested(action: String, npc_id: String, request_id: String) -> void:
+	npc_action_requested.emit(action, npc_id, request_id)
+
+
+func _on_npc_view_requested(npc_id: String) -> void:
+	npc_view_requested.emit(npc_id)
 
 
 func show_education(
@@ -1500,6 +1564,7 @@ func _close_modal() -> void:
 		_career_panel = null
 		_housing_panel = null
 		_business_panel = null
+		_npc_panel = null
 		return
 	if is_instance_valid(_modal_layer):
 		_modal_layer.queue_free()
@@ -1509,6 +1574,7 @@ func _close_modal() -> void:
 	_career_panel = null
 	_housing_panel = null
 	_business_panel = null
+	_npc_panel = null
 	modal_changed.emit(false)
 
 
@@ -1525,6 +1591,7 @@ func _clear_screen() -> void:
 	_career_panel = null
 	_housing_panel = null
 	_business_panel = null
+	_npc_panel = null
 
 
 func _add_label(parent: Node, text_value: String, size: int, color: Color, alignment: int) -> Label:

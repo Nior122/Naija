@@ -32,6 +32,8 @@ var _online_career_profile: Dictionary = {}
 var _online_property_profiles: Array = []
 var _online_rental_agreements: Array = []
 var _online_business_profiles: Array = []
+# Stage 42: the NPCs this character can see now, from character.snapshot (bounded by the server).
+var _online_npc_profiles: Array = []
 var _online_input_accumulator: float = 0.0
 var _remote_players: Dictionary = {}
 var _time_accumulator: float = 0.0
@@ -78,6 +80,8 @@ func _ready() -> void:
 	ui.career_action_requested.connect(_on_career_action_requested)
 	ui.housing_action_requested.connect(_on_housing_action_requested)
 	ui.business_action_requested.connect(_on_business_action_requested)
+	ui.npc_action_requested.connect(_on_npc_action_requested)
+	ui.npc_view_requested.connect(_on_npc_view_requested)
 	ui.answer_requested.connect(_on_quiz_answer)
 	ui.purchase_requested.connect(_purchase_item)
 	ui.consume_requested.connect(_consume_item)
@@ -347,6 +351,8 @@ func _on_online_message(message: Dictionary) -> void:
 			ui.show_housing_response(message)
 		"business.result", "business.error":
 			ui.show_business_response(message)
+		"npc.result", "npc.error", "npc.view":
+			ui.show_npc_response(message)
 		"command.duplicate":
 			ui.show_command_duplicate(str(message.get("requestId", "")))
 			ui.notify("That action was already processed by the server.")
@@ -1095,9 +1101,13 @@ func _store_online_profiles(character_data: Dictionary) -> void:
 		_online_rental_agreements = rentals.duplicate(true)
 	if businesses is Array:
 		_online_business_profiles = businesses.duplicate(true)
+	var npcs: Variant = character_data.get("npc_profiles", null)
+	if npcs is Array:
+		_online_npc_profiles = npcs.duplicate(true)
 	if character != null:
 		ui.update_housing_profiles(_online_property_profiles, _online_rental_agreements, character.money)
 		ui.update_business_profiles(_online_business_profiles, character.money)
+		ui.update_npc_profiles(_online_npc_profiles)
 
 
 func _on_housing_action_requested(action: String, payload: Dictionary, request_id: String) -> void:
@@ -1108,18 +1118,43 @@ func _on_business_action_requested(action: String, payload: Dictionary, request_
 	_send_domain_action("business.action", action, payload, request_id)
 
 
+## Stage 42: a social action toward one NPC. The server validates it and applies it at most once for
+## the request ID.
+func _on_npc_action_requested(action: String, npc_id: String, request_id: String) -> void:
+	var message := NPCSocialContract.action_message(action, npc_id)
+	if message.is_empty():
+		ui.show_send_failure(request_id, "That social action is not available. Nothing was changed.")
+		return
+	_send_tracked_command(NPCSocialContract.CHANGING_MESSAGE, message, request_id)
+
+
+## Stage 42: a read-only summary and history of one NPC. Not tracked; it does not block the game.
+func _on_npc_view_requested(npc_id: String) -> void:
+	var message := NPCSocialContract.view_message(npc_id)
+	if message.is_empty() or not _online_mode:
+		return
+	multiplayer_client.send_command(NPCSocialContract.VIEW_MESSAGE, message)
+
+
 ## Sends a housing or business request on the existing authenticated socket (Stage 41). A read has
 ## no request ID and does not block the game. A change that gets no answer in time is marked
 ## unconfirmed, and a retry reuses its ID.
 func _send_domain_action(
 	message_type: String, action: String, payload: Dictionary, request_id: String
 ) -> void:
+	_send_tracked_command(
+		message_type, {"action": action, "payload": payload.duplicate(true)}, request_id
+	)
+
+
+## Sends one command on the existing socket. A changing request (request_id not empty) that cannot
+## be sent is reported to its screen, and one that gets no answer in time is marked unconfirmed by
+## the tracker.
+func _send_tracked_command(message_type: String, values: Dictionary, request_id: String) -> void:
 	var failure := ""
 	if not _online_mode:
 		failure = "The shared world is not connected. Nothing was changed."
-	elif not multiplayer_client.send_command(
-		message_type, {"action": action, "payload": payload.duplicate(true)}, request_id
-	):
+	elif not multiplayer_client.send_command(message_type, values, request_id):
 		failure = (
 			"The request could not reach the shared server. Nothing was changed. "
 			+ "Reconnect and try again."
@@ -1233,6 +1268,8 @@ func _open_panel(panel_id: String) -> void:
 			)
 		"businesses":
 			ui.show_businesses(character, _online_mode, _online_business_profiles)
+		"people":
+			ui.show_people(character, _online_mode, _online_npc_profiles)
 		"chat":
 			if _online_mode:
 				ui.show_chat()
