@@ -26,7 +26,8 @@ Stage 7 replaces the Stage 6 prototype salary adapter with an atomic canonical N
 - No inter-player transfers — all accounts are character-owned.
 - No estate wage settlement, asset inheritance, or life-insurance flows.
 - No price volatility, inflation modelling, or dynamic supply/demand.
-- Godot client/runtime verification remains blocked (same as Stages 1–6).
+- Godot client verification is partial. Headless runs of the existing scripts pass in the sandbox build, and the
+  economy screens have not been run in Godot.
 
 ## Data boundaries
 

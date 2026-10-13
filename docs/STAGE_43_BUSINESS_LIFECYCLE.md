@@ -299,6 +299,14 @@ Results (2026-10-13). These are from the final run, on the working tree that con
 | Godot 4.7.2 (built from source in the sandbox; headless, simulated input; 2026-10-13) | Editor import (`--headless --editor --quit`) exits 0. Existing headless scripts, all pass: `domain_smoke` 99, `player_movement` 4, `persistence_notice` 11, `save_restart` write and read, `ui_flow_headless` 57, `input_bindings_headless` 26, `load_confirmation_headless` 104, `performance_metrics` 11, `regional_handoff` 41, `regional_visual_profiles` 43, `return_path` 47, `save_guard_headless` 77, `session_policy`. New: `online_businesses_headless` **11 of 11** (two runs before the packet fix's comment edit, and one run after it). The test opens the panel only. No business action was clicked. |
 | CI | Run `38338742349` on commit `17e9d71`: **success**. Jobs: "World API build, lint, and tests" and "World API live PostgreSQL tests (disposable service)", both successful. |
 
+Repository note (2026-10-13). During the Godot pass the local branch ref was found at the base commit `44483b4`, and the
+local objects for `f4d948b` and the later commits were missing. The remote branch was still at `f4d948b`. The branch
+was recovered without a reset of the working tree: the remote was fetched, a backup of every modified and untracked file
+was taken, the ref was moved with a compare-and-swap to `f4d948b`, and only the index was reset to that commit. The
+working tree then differed from `f4d948b` only in the files listed in section 10. The two commits that had not been
+pushed (the client packet fix and the headless test) were recreated from the working tree. Their content is the same,
+and their SHAs differ from the first attempt. The cause of the ref change is not known.
+
 Coverage of the required test areas:
 
 - Creation and authorisation: yes (creation refusals, stranger refusal, per-character limit, socket `business_unauthorized`).
@@ -330,8 +338,17 @@ Stage 43 is recorded in focused commits on `arena/00cdea0e-naija`, fast-forward 
 - `020d417` docs: this record, inventory rows 11–12, status, handoff
 - `54ac97a` docs: ledger direction correction
 - `17e9d71` docs: test results, including one load-sensitive PostgreSQL timeout on re-run
+- `45690ba` docs: CI run `38338742349` recorded for `17e9d71`
+- `0cf3ac2` test support: drain the stopped store before a restart (the Stage 35 flake, section 9)
+- `7534674` client: correct the empty-state text in the business panel
+- `f4d948b` docs: the flake diagnosis and the final PostgreSQL and file-backend results
+- `22d2003` client: read each WebSocket packet before checking its type (the online session bug, section 9)
+- `dfc7147` test: headless online smoke test for the business panel
+- `10708d4` docs: Godot headless results and the packet fix
 
-The remote branch was verified at `17e9d71`. CI run `38338742349` passed on that SHA (section 9).
+The first two Godot commits were recreated after a local branch-ref problem (section 9 records the details). Their
+content is the same as the commits first written. The remote branch is fast-forward from `17e9d71`. The CI run for the
+commit that adds this section is not yet recorded; it is not claimed here.
 
 ## 11. Next steps
 

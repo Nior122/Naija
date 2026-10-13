@@ -13,7 +13,8 @@ the later record wins:
   internal ledger and is superseded.
 - **Lifecycle and client:** `docs/STAGE_43_BUSINESS_LIFECYCLE.md`. Stage 43 adds separate `add_product` and `add_service`
   routes, `set_listing`, `update_price`, the hire and fire rules, the branch rules, owner-only ownership transfer, the
-  closure wind-down, and the Godot business panel (not runtime-verified).
+  closure wind-down, and the Godot business panel. In Godot only the open and read path is runtime-verified
+  (headless, 2026-10-13); the other panel actions are not.
 - **Branches:** the Stage 8 text says branches are "foundation, not yet wired". Stage 43 wires them. Opening a branch costs
   nothing (no setup cost is defined), and its location must be in the template's `allowed_locations`.
 - **Ownership:** the Stage 8 text says "100% share" and "splitting shares among multiple co-owners is not yet wired".
@@ -59,7 +60,8 @@ Stage 8 adds a configurable business simulation where players can establish, own
 - No property/real-estate integration (Stage 9).
 - No government, taxation integration, or business licensing beyond template-level age rules.
 - No scheduled NPC business simulation (NPC businesses are seeded but do not autonomously trade or grow).
-- Godot client/runtime verification remains blocked (same as Stages 1–7).
+- Godot client verification is partial: headless only, and only the Businesses panel's open and read path has run
+  (Stage 43 document, section 9).
 
 ## Data boundaries
 

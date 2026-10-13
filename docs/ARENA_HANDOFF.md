@@ -51,9 +51,10 @@ From the repository root:
 - Live PostgreSQL: the CI job sets `DATABASE_URL` to a `naija_test` database on a `postgres:18` service and runs `npm test`.
   Local runs also need `NAIJA_ALLOW_DB_TESTS=true`. Use a scratch database whose name contains "test". The TLS tests need a
   separate `TLS_TEST_DATABASE_URL` server, and they skip without it. See the Stage 40 document, section 7.3.
-- Godot 4.7 is the client engine (`game/project.godot`, `config/features` `4.7`, GL Compatibility). **Godot is not installed
-  in the sandbox**, so no Godot runtime test was run in any Stage 34–40 work. The headless scripts in `game/tests/` also
-  have not been run in this work. `docs/CONTRIBUTING.md` recommends Godot 4.7.2.
+- Godot 4.7 is the client engine (`game/project.godot`, `config/features` `4.7`, GL Compatibility). Godot 4.7.2 is built
+  from source in the sandbox (reproduction steps in `docs/DEVELOPMENT_STATUS.md`). On 2026-10-13 the 13 existing headless
+  scripts passed, and the online business smoke test opened the Businesses panel against the live server. Only that
+  open-and-read path has run for the business screens. `docs/CONTRIBUTING.md` recommends Godot 4.7.2.
 
 Test results recorded in `docs/STAGE_40_BUSINESS_ACCOUNTS.md` section 7.3. They were **not re-run for this handoff**:
 
@@ -92,13 +93,15 @@ Re-run for this handoff (on `8e564f7`): `npm ci`, `npm run build`, and `npm run 
   29 with PostgreSQL), `test/businesses.test.mjs` (22 of 22), and `test/business-money-stage34.test.mjs` (8 of 8 on the file
   backend).
 - **Stage 41** (housing and business client): Godot housing and business screens, and `ServerRequestTracker` for
-  duplicate protection. Record: `docs/STAGE_41_HOUSING_BUSINESS_CLIENT.md`. Not runtime-verified.
+  duplicate protection. Record: `docs/STAGE_41_HOUSING_BUSINESS_CLIENT.md`. Housing screens not runtime-verified; the
+  Businesses panel's open path is (Stage 43).
 - **Stage 42** (NPC simulation and social relationships): six fixed neighbours with clock-derived activity, and
-  player-to-NPC relationships. Record: `docs/STAGE_42_NPC_SOCIAL.md`. Pushed in `3df94f7`; Godot not run.
+  player-to-NPC relationships. Record: `docs/STAGE_42_NPC_SOCIAL.md`. Pushed in `3df94f7`; the People panel has not been run in Godot.
 - **Stage 43** (business lifecycle, validation, and economic integration): create, listings, restock, purchases,
   hire, pay, fire, branches, owner-only ownership transfer, closure, and the business panel's lifecycle screens.
   Failed changes roll back through a snapshot. Record: `docs/STAGE_43_BUSINESS_LIFECYCLE.md`. Server tests pass on both
-  backends (file 1460/1514, PostgreSQL 1808/1812, 0 failures). CI run `38338742349` passed on `17e9d71`. Godot not run.
+  backends (file 1460/1514, PostgreSQL 1808/1812, 0 failures). CI run `38338742349` passed on `17e9d71`. Godot: headless
+  online smoke test of the Businesses panel, 11 of 11. No business action was clicked in Godot.
 
 ## 6. Feature status
 
@@ -121,15 +124,17 @@ business:
 ## 7. Known limitations
 
 **Client (Godot):**
-- `game/scripts` has no housing or business commands or screens. Checked with a grep at this handoff.
-- The Godot client has not been run against any Stage 34–40 server work.
+- Housing and business screens exist (Stages 41 and 43). Only the Businesses panel's open path has run in Godot.
+- Stage 34–43 server work has not been exercised through Godot journeys, except the online start and the Businesses open
+  path. The packet-read bug that blocked every online session was found and fixed in this pass.
 
 **Housing:**
 - Rent is paid only when a tenant sends `pay_rent`. There is no arrears, late fee, eviction, or automatic rent collection.
 - Stage 39 section 5 lists its remaining scope limits. Read it before any housing change.
 
 **Business (Stage 40 section 5 and 7.4):**
-- The business panel (Stages 41 and 43) is not runtime-verified in Godot. `produce` and `record_expense` have no client.
+- The business panel's create, listing, purchase, hire, transfer, and closure actions are not runtime-verified in Godot.
+  `produce` and `record_expense` have no client.
   Co-owner add and remove are not implemented on the server.
 - Recipient consent for hiring and ownership transfer is not implemented. A co-owner-only business cannot be
   transferred onward. The branch setup cost is undefined, and the service price ceiling is provisional.
@@ -147,12 +152,15 @@ work is not the current phase.
 
 **Lint:** the Godot static lint has known structural findings (see the README and `docs/DEVELOPMENT_STATUS.md`).
 
-## 8. Next task: Godot runtime verification, then the open business decisions
+## 8. Next task: extend the Godot runs, then the open business decisions
 
-The next work is **Godot runtime verification** of the Stage 41 housing and business screens, the Stage 42 People panel,
-and the Stage 43 business panel. None of them is verified yet. Godot 4.7 is not installed, and its release asset host is
-blocked from the sandbox. If a Godot binary becomes available, run the project and record exactly what ran. Also resolve
-the `max-file-lines` finding in `game/scripts/ui/business_panel.gd` (1188 lines) during that pass.
+The next work is **Godot runtime verification of the business actions**: create, product and service listing, buy, hire,
+transfer, and closure, each with its confirmation. Then the Stage 41 housing screens and the Stage 42 People panel. The
+headless harness is `game/tests/online_businesses_headless.gd`, which runs against the world server on
+`ws://127.0.0.1:3000/ws`. Record exactly what ran. Split `business_panel.gd` (1188 lines, `max-file-lines`) only after the
+actions are covered by runs, so the split is checked.
+
+Also decide the shutdown save window (`docs/STAGE_43_BUSINESS_LIFECYCLE.md` section 8.3).
 
 Before any further business change, the owner needs to decide the items in `docs/STAGE_43_BUSINESS_LIFECYCLE.md`
 section 8.2: recipient consent, the service price ceiling, the co-owner-only ownership state, the NPC seed-capital source,
