@@ -1,7 +1,9 @@
 # Stage 41: housing and business client
 
-Status: implemented in the working tree on `arena/00cdea0e-naija`. Godot was not available in the sandbox, so the
-Godot screens have NOT been run. Server behaviour was verified with Node tests. Read `docs/PHASE_1_FEATURE_INVENTORY.md`
+Status: implemented on `arena/00cdea0e-naija`. Godot 4.7.2 was built from source in the sandbox on 2026-10-13. Its
+headless runs cover the existing test scripts and one online check that opens the Businesses panel (see
+`docs/STAGE_43_BUSINESS_LIFECYCLE.md` section 9). The housing screens and the Stage 41 money and listing actions have
+NOT been run in Godot. Server behaviour was verified with Node tests. Read `docs/PHASE_1_FEATURE_INVENTORY.md`
 for the status of each row. This stage does not mark housing or business as complete.
 
 ## 1. What this stage does
@@ -108,16 +110,16 @@ Server checks: `npm run build` and `npm run lint` passed after the server edits.
 
 ## 5. Not verified
 
-- No Godot run. The screens have not been loaded, clicked, or connected to a live server. A script error in a `.gd` file
-  would be found only by a Godot run. `gdparse` checks syntax only.
+- The Godot housing screens have not been loaded, clicked, or connected to a live server. The Businesses panel has
+  been opened once, headless, against a live server (read path only). `gdparse` checks syntax only.
 - No scene or layout check on the existing screen sizes or input devices.
 - No CI step for GDScript. CI runs only the Node build, lint, and tests.
 
 ### 5.1 Exact verification still needed
 
-1. Install Godot 4.7.2 (`Godot_v4.7.2-stable_linux.x86_64.zip`). The sandbox could not download it, so it needs a
-   network route that allows the release asset host.
-2. Load the project headless (for example `godot --headless --path game --quit`) and check the output for script errors in the new files. Confirm the exact flags against the installed Godot version.
+1. Done (2026-10-13): Godot 4.7.2 built from source, because the release asset host is blocked. See the reproduction
+   section of `docs/DEVELOPMENT_STATUS.md`.
+2. Done: `godot --headless --editor --path game --quit` exits 0. The project loads with no script error in the output.
 3. Start `services/world-api` against a test world. Log in as a seeded test character with the Godot client.
 4. Open Housing and Businesses. Confirm the market, my properties, and rentals lists load from the server.
 5. Buy or rent a listing. Confirm the success message appears only after the server reply, the balance updates, and a
@@ -130,7 +132,8 @@ Server checks: `npm run build` and `npm run lint` passed after the server edits.
 
 ## 6. Remaining gaps
 
-- Business lifecycle operations have no client (listed in section 3.3).
+- Business lifecycle operations have a client since Stage 43 (`business_panel.gd`). Only the open and read path is
+  runtime-verified. Create, products, hiring, transfer, and closure are not (Stage 43 document, section 1).
 - Housing has no arrears, eviction, or automatic rent collection. None were invented.
 - Shares are not enforced; the shared-account decision is in STAGE_40 section 2.2.
 - Station ownership (decision 10) and the other open decisions (9 and 11) are unchanged.
@@ -139,4 +142,4 @@ Server checks: `npm run build` and `npm run lint` passed after the server edits.
 ## 7. Next group
 
 See `docs/PHASE_1_FEATURE_INVENTORY.md`, "Next Phase 1 feature group". The recommendation is NPC simulation and social
-relationships (rows 23–24). Business lifecycle client and server checks are the smaller follow-on.
+relationships (rows 23–24). The business lifecycle was implemented in Stage 43.
