@@ -91,6 +91,14 @@ Re-run for this handoff (on `8e564f7`): `npm ci`, `npm run build`, and `npm run 
   Tests: `test/business-accounts-stage40.test.mjs` (13 service tests and 8 socket tests per backend; 21 on the file backend,
   29 with PostgreSQL), `test/businesses.test.mjs` (22 of 22), and `test/business-money-stage34.test.mjs` (8 of 8 on the file
   backend).
+- **Stage 41** (housing and business client): Godot housing and business screens, and `ServerRequestTracker` for
+  duplicate protection. Record: `docs/STAGE_41_HOUSING_BUSINESS_CLIENT.md`. Not runtime-verified.
+- **Stage 42** (NPC simulation and social relationships): six fixed neighbours with clock-derived activity, and
+  player-to-NPC relationships. Record: `docs/STAGE_42_NPC_SOCIAL.md`. Pushed in `3df94f7`; Godot not run.
+- **Stage 43** (business lifecycle, validation, and economic integration): create, listings, restock, purchases,
+  hire, pay, fire, branches, owner-only ownership transfer, closure, and the business panel's lifecycle screens.
+  Failed changes roll back through a snapshot. Record: `docs/STAGE_43_BUSINESS_LIFECYCLE.md`. Server tests pass on both
+  backends (file 1460/1514, PostgreSQL 1808/1812, 0 failures). Godot not run.
 
 ## 6. Feature status
 
@@ -100,7 +108,8 @@ business:
 - **COMPLETE:** sessions and persistence (row 1); calendar (2); cash ledger (3); bus fare and clinic routes (5);
   property money ledger rows (10); NPC housing counterparties (9); business payments on the server (12).
 - **PARTIAL:** salary credit (4); housing purchase, listing, transfer (6); rent start, termination, maintenance, furnishing
-  (7); rent payment (8, complete for the rules, no client UI); businesses (11, no client UI); education (21); authority model
+  (7); rent payment (8, complete for the rules, no client UI); businesses (11, server complete for the lifecycle, client
+  implemented in Stage 43 and not runtime-verified); education (21); authority model
   (28); and some areas not re-audited (16, 22, 27).
 - **SUSPENDED:** government writes (13); elections (14); police wanted requests and arrests (15); crime mutations (17);
   military mutations (18); justice judgments, appeals, and fines (19). Each is refused fail-closed with a `*_suspended` code.
@@ -120,7 +129,12 @@ business:
 - Stage 39 section 5 lists its remaining scope limits. Read it before any housing change.
 
 **Business (Stage 40 section 5 and 7.4):**
-- No client UI for any business action. The Stage 40 client contract is section 6 of that document.
+- The business panel (Stages 41 and 43) is not runtime-verified in Godot. `produce` and `record_expense` have no client.
+  Co-owner add and remove are not implemented on the server.
+- Recipient consent for hiring and ownership transfer is not implemented. A co-owner-only business cannot be
+  transferred onward. The branch setup cost is undefined, and the service price ceiling is provisional.
+- NPC businesses are not created in the running world (`seedNpcBusinesses` has no production caller). NPCs cannot be
+  hired. The NPC seed-capital source is unresolved. See `docs/STAGE_43_BUSINESS_LIFECYCLE.md` section 7.
 - `share_percent` is recorded but not enforced. Co-owners withdraw without a split.
 - Operating costs, supplier stock, and setup fees are sinks. No supplier or landlord accounts exist.
 - NPC seed capital is issuance with no source (section 2.6). A world-issuance policy is needed.
@@ -133,20 +147,16 @@ work is not the current phase.
 
 **Lint:** the Godot static lint has known structural findings (see the README and `docs/DEVELOPMENT_STATUS.md`).
 
-## 8. Next task: Stage 41
+## 8. Next task: Godot runtime verification, then the open business decisions
 
-**Stage 41 — Housing and Business Gameplay Interfaces.** The full Stage 41 prompt will be provided in the new chat. Do not
-begin Stage 41 from this document alone. Its scope, as given by the owner, is:
+The next work is **Godot runtime verification** of the Stage 41 housing and business screens, the Stage 42 People panel,
+and the Stage 43 business panel. None of them is verified yet. Godot 4.7 is not installed, and its release asset host is
+blocked from the sandbox. If a Godot binary becomes available, run the project and record exactly what ran. Also resolve
+the `max-file-lines` finding in `game/scripts/ui/business_panel.gd` (1188 lines) during that pass.
 
-- Implement the housing and business interfaces in the existing Godot 4.7 client, using the existing authenticated session
-  and request format.
-- Do not create a sale from a client-supplied buyer identity. Preserve the buyer's own cash funding.
-- Do not invent rent arrears, eviction, or automatic rent collection.
-- Expose only the operations the server supports. Do not fake business creation, hiring, or product management. Record
-  missing operations as gaps.
-- Do not weaken tests, and do not change server behaviour to suit the UI.
-- If Godot 4.7 is installed, run the client and say so. If it is not, say the UI was not run.
-- Update `docs/PHASE_1_FEATURE_INVENTORY.md` and `docs/DEVELOPMENT_STATUS.md` with evidence.
+Before any further business change, the owner needs to decide the items in `docs/STAGE_43_BUSINESS_LIFECYCLE.md`
+section 8.2: recipient consent, the service price ceiling, the co-owner-only ownership state, the NPC seed-capital source,
+and the branch setup cost. Open decisions 9, 10, and 11 remain open.
 
 ## 9. Rules for the next chat
 

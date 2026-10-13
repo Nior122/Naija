@@ -2,6 +2,33 @@
 
 > **Future agents: read this file before changing the business system.** It documents the implemented bounded business simulation, its integration with Stage 6 (careers) and Stage 7 (economy), and the boundaries that later stages (property, government, etc.) must respect.
 
+## Current status (Stage 43) — read this first
+
+This document is the Stage 8 record. Later stages changed several rows, and where they conflict with the text below,
+the later record wins:
+
+- **Money and ledger:** `docs/STAGE_40_BUSINESS_ACCOUNTS.md`. Business money goes through the economy ledger
+  (`postBusinessMoney`). `sell_product` and `sell_service` were removed in Stage 40. Buyers pay with `buy_product` and
+  `buy_service`. The "Business financial accounts" and "Authority and integration" text below describes the Stage 8
+  internal ledger and is superseded.
+- **Lifecycle and client:** `docs/STAGE_43_BUSINESS_LIFECYCLE.md`. Stage 43 adds separate `add_product` and `add_service`
+  routes, `set_listing`, `update_price`, the hire and fire rules, the branch rules, owner-only ownership transfer, the
+  closure wind-down, and the Godot business panel (not runtime-verified).
+- **Branches:** the Stage 8 text says branches are "foundation, not yet wired". Stage 43 wires them. Opening a branch costs
+  nothing (no setup cost is defined), and its location must be in the template's `allowed_locations`.
+- **Ownership:** the Stage 8 text says "100% share" and "splitting shares among multiple co-owners is not yet wired".
+  Shares are recorded but not enforced (Stage 40 section 2.2). Only the current owner can transfer. A co_owner-only
+  business cannot be transferred onward (see the Stage 43 document, section 5.2).
+- **NPC businesses:** `seedNpcBusinesses` exists, and it is exercised by tests. Nothing calls it in the running world.
+  Its seed capital is issuance with no policy yet (`business_seed_capital`). The statement below that NPC seeding is a
+  working feature overstates it.
+- **Employment:** one full work commitment at a time across career and business employment (Stage 43).
+- **Reconciliation:** the Stage 8 "86 Node tests" and "Checks" text are historical. The current totals are in
+  `docs/DEVELOPMENT_STATUS.md`.
+
+Open blockers (not implemented; see the Stage 43 document, section 8.2): recipient consent for transfer and hiring; the
+service price ceiling; the co-owner-only state; the NPC seed-capital source; the branch setup cost.
+
 ## Scope
 
 Stage 8 adds a configurable business simulation where players can establish, own, operate, and grow businesses within the shared Nigerian world. Businesses connect to Stage 6 (employment) for hiring and Stage 7 (economy) for financial operations. It is implemented inside the same `nigeria-main` world and does not introduce a second business or payment system.

@@ -70,6 +70,23 @@ node --test services/world-api/test/economy.test.mjs   # focused Stage 7 suite
 
 **Stage 8 — Player Businesses.** Stage 7 must remain the economic authority before businesses add staffing, costs, stock, compliance, and customer demand.
 
+## Business money and employment (Stage 43)
+
+- Every business money movement is an `economyTransactions` row with one of these kinds: `business_setup_fee`,
+  `business_capital`, `business_withdrawal`, `business_sale`, `business_purchase`, `business_salary`, `business_expense`,
+  `business_transfer`, `business_seed_capital`, `business_legacy_import`. Each row carries an idempotency key derived from
+  its transaction ID. Business money is refused, with no change, if the authority, funds, or account checks fail.
+- **Salary** is paid from the business account to the employee's cash through `business_salary`. Only an owner or
+  co-owner can pay. A career salary is still issuance into the employee's cash, with no employer debit. That policy is
+  unchanged in Stage 43 and is recorded in `docs/STAGE_43_BUSINESS_LIFECYCLE.md` section 4.1.
+- **Seed capital** (`business_seed_capital`) is issuance with no source. It is used only by `seedNpcBusinesses`, which
+  nothing calls in the running world. A source policy is an open decision.
+- **Closure** requires a zero business balance. Stock is written off without money, and no money is recovered. Nothing
+  financial is deleted.
+- **Failed changes** leave no partial money or ledger change. Every changing business request is run under a snapshot of
+  the business maps, the economy accounts and ledger, and each player's cash.
+- The check that the saved world reconciles (`businessAccountMismatches`, Stage 40) still applies.
+
 ## Non-player cash accounts and property money (Stage 39)
 
 - A non-player holder that receives property money (an NPC landlord or seller) gets one cash account in `economyAccounts`, with `character_id` set to the NPC's ID and `bank_product_id` null. It is opened when first credited. The interest and fee loops skip it, because they only charge accounts with a bank product. No player route can act on it, because player routes act only on the session character's accounts.

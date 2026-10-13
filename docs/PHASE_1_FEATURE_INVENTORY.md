@@ -1,8 +1,8 @@
 # Phase 1 feature inventory
 
 Status of each planned system at the start of Phase 1 (Stage 39), with evidence from the repository. Rows 11 and 12 and the
-priority and dependency lists were updated in Stage 40, rows 6–8 and 11–12 and the next-group note in Stage 41, and rows
-23–24 and the next-group note in Stage 42. This is an
+priority and dependency lists were updated in Stage 40, rows 6–8 and 11–12 and the next-group note in Stage 41, rows
+23–24 and the next-group note in Stage 42, and rows 11–12 and the Stage 43 status in Stage 43. This is an
 audit, not a claim of completion. The game is not finished, and this inventory does not make it production-ready.
 
 Statuses:
@@ -37,8 +37,8 @@ Statuses:
 | 8 | Housing: rent payment (`pay_rent`) | COMPLETE for the rules; IMPLEMENTED, NOT RUNTIME-VERIFIED (Stage 41 client) | Stage 39: per-period due date, `property_rent_not_due`, per-period idempotency, counterparty checks, ledger rows; `test/housing-rent-stage39.test.mjs`; Stage 41: "Pay rent" on the rental list, shows the server's paid-through date from the property record | Rent is not collected automatically. No arrears, eviction, or late fees exist, and none are invented. Godot has not been run. |
 | 9 | Housing counterparties: NPC landlords and sellers | COMPLETE (Stage 39) | NPC cash account in `economyAccounts` with no bank product; refusal before debit for any other owner kind | Business and organisation owners are refused (row 11). |
 | 10 | Ledger rows for property money | COMPLETE (Stage 39) | `property_purchase`, `property_sale_proceeds`, `rent_payment`, `rent_receipt`, `property_furnishing`, `property_maintenance` | Before Stage 39, property money moves wrote no ledger row. |
-| 11 | Businesses: creation, products, stock, sales, capital, withdrawals, expenses, payroll, transfers, production, closure, branches, ownership, staff | PARTIAL (server COMPLETE for Stage 40 operations; Stage 41 client screen implemented, not runtime-verified) | `src/businesses/service.ts` with `postBusinessMoney`; 16 action cases in the engine; `test/business-accounts-stage40.test.mjs`, `businesses.test.mjs`, `business-money-stage34.test.mjs`; both backends. Stage 41 client: `game/scripts/ui/business_panel.gd` (discover, view, buy product, buy service, restock, pay salary, transfer funds, contribute capital, withdraw, close); contract test `client-housing-business-stage41.test.mjs` | No client for: create, add product, hire, fire, add branch, transfer ownership, produce, record expense (the server supports them; they are recorded as gaps, not faked). Restock needs a product the business already has. Godot has not been run. Shares are not enforced (co-owners share the account). Operating costs and supplier stock are sinks. NPC seed capital is unexplained issuance (`business_seed_capital`). Legacy revenue cannot be verified. Single writer only. See `docs/STAGE_40_BUSINESS_ACCOUNTS.md` section 7.4. |
-| 12 | Business payments: revenue, wages, capital, and any transfer to or from a business | COMPLETE on the server (Stage 40); client screen IMPLEMENTED, NOT RUNTIME-VERIFIED (Stage 41); PARTIAL overall | Shared business account (economy account, `kind: current`, holder = business id) in the same ledger; buyer-paid sales from the buyer's own cash; owner capital and withdrawal; salaries to active employees; transfers between businesses the caller owns; every movement is an economy ledger row; the saved world is refused at load if a business does not reconcile (`businessAccountMismatches`); seller-initiated sales are refused; Stage 41: a sale kind must match its product (`business_sale_not_service`, `business_sale_is_service`), with a stock-bypass fix on `buy_service` | No client for the operations listed in row 11. Owner decision on the shared account is recorded in STAGE_40 section 2.2 (every owner or co-owner is equally authorised; withdrawals go to the caller). Revenue, tax, fines, borrowing, and minting remain closed. |
+| 11 | Businesses: creation, products, services, stock, sales, capital, withdrawals, expenses, payroll, transfers, production, closure, branches, ownership, staff | PARTIAL (server COMPLETE for the Stage 40 and Stage 43 operations; Godot panel implemented in Stages 41 and 43, NOT RUNTIME-VERIFIED) | `src/businesses/service.ts` (`postBusinessMoney`, `runBusinessChange`, `hireEmployee`, `transferOwnership`, `closeBusiness`, `addBranch`, `seedNpcBusinesses`); `src/careers/commitments.ts`; 19 `business.action` cases in the engine. Tests: `test/business-lifecycle-stage43.test.mjs` (51 file, 64 PostgreSQL), `business-accounts-stage40.test.mjs`, `businesses.test.mjs`, `business-money-stage34.test.mjs`, `client-housing-business-stage41.test.mjs`; both backends. Client: `game/scripts/ui/business_panel.gd` (create, listing, restock, buy, hire, fire, branch, transfer ownership, pay salary, transfer funds, capital, withdraw, close). See `docs/STAGE_43_BUSINESS_LIFECYCLE.md` section 2. | Not runtime-verified in Godot. Co-owner add and remove have no server operation. `produce` and `record_expense` are supported by the server and have no client. Recipient consent for hiring and ownership transfer is an open decision. A business held only by a co-owner cannot be transferred onward (blocker). Branch setup cost is undefined. The service price ceiling is provisional. No NPC business is created in the running world, and NPCs cannot be hired. Shares are not enforced. NPC seed-capital policy is unresolved. Operating costs and supplier stock are sinks. Single writer only. Each changing request copies every business record (scaling limit). See `docs/STAGE_40_BUSINESS_ACCOUNTS.md` section 7.4. |
+| 12 | Business payments: revenue, wages, capital, and any transfer to or from a business | COMPLETE on the server (Stage 40); client IMPLEMENTED in Stages 41 and 43, NOT RUNTIME-VERIFIED; PARTIAL overall | Shared business account (economy account, `kind: current`, holder = business id) in the same ledger; buyer-paid sales from the buyer's own cash; owner capital and withdrawal; salaries to active employees; transfers between businesses the caller owns; every movement is an economy ledger row; the saved world is refused at load if a business does not reconcile (`businessAccountMismatches`); seller-initiated sales are refused; Stage 41: a sale kind must match its product (`business_sale_not_service`, `business_sale_is_service`), with a stock-bypass fix on `buy_service` | Client gaps: `produce` and `record_expense` (server supports them; no client). Revenue, tax, fines, borrowing, and minting remain closed. Owner decision on the shared account is recorded in STAGE_40 section 2.2 (every owner or co-owner is equally authorised; withdrawals go to the caller). Stage 43: seed capital for NPC businesses has no policy (blocker). Legacy revenue cannot be verified. |
 | 13 | Government | SUSPENDED (writes) | `government_writes_suspended`; reads are open. 56 engine references | Not re-audited. |
 | 14 | Elections | SUSPENDED (writes) | `election_writes_suspended` | No elections are enabled. Not re-audited. |
 | 15 | Police: wanted requests and arrests | SUSPENDED | `request_wanted`, `execute_arrest` refused (`police_*_suspended`) | Prerequisite: station ownership and jurisdiction model (Stage 38, decision 10, open). |
@@ -83,17 +83,30 @@ Godot has not been run.
 | Missing | Interacting with a neighbour's avatar in the world. NPC movement. NPC-driven events, quests, jobs, or housing. Residents beyond the six. Distance-based rules. |
 | Suspended or blocked | No new suspension. Suspended systems remain fail-closed. Open decisions 9, 10, and 11 are unchanged. Godot runtime verification is blocked in the sandbox (no Godot binary can be downloaded). |
 
+## Stage 43 status (business lifecycle, validation, and economic integration)
+
+Stage 43 extended the business server and the existing business panel to the lifecycle operations. Its record is
+`docs/STAGE_43_BUSINESS_LIFECYCLE.md`. Godot was not run, so no screen counts as verified.
+
+| Category | Items |
+|---|---|
+| Implemented and tested | Creation with setup fee and capital from the founder's cash. Separate goods and service routes, one listing per definition, listing on and off, price changes within limits. Restock (goods only), purchases from the buyer's own cash, stock never negative. Contributions, withdrawals, transfers between the caller's own businesses. Hire, pay, and fire with career conflict rules. Branch opening. Ownership transfer to a verified recipient. Operating and rent expenses, production, insolvency and recovery. Closure with a zero-balance rule and a defined wind-down. Snapshot rollback for failed changes. Duplicate, concurrency, persistence, and restart tests. NPC seeding and NPC purchases at service level. |
+| Implemented, not runtime-verified | Godot business panel: create, goods and service listing, restock, buy, hire, fire, branch, ownership transfer, and the Stage 41 money actions. Confirmation for financial and destructive actions. Checked by `gdparse`, `gdlint` (one finding: file length), and the Node contract test only. |
+| Partial | Employment: hire and fire are tested, but there is no recipient consent. Ownership: only the owner can transfer. NPC integration: a foundation at service level only. |
+| Missing | Co-owner add and remove. Branch setup cost. Supplier, landlord, and tax accounts. A stock-count view and a price-history view. Client for `produce` and `record_expense`. |
+| Blocked (owner decision) | Recipient consent. Service price ceiling. Co-owner-only ownership state. NPC seed-capital policy. Open decisions 9, 10, and 11 are unchanged. |
+| Suspended | Unchanged: government writes, elections, police, crime, military, justice (fail-closed). |
+
 ## Missing and partial systems that matter most
 
-1. **Business client UI (rows 11–12).** Stage 41 added a business screen covering the operations in row 11 that the
-   server supports for a player. It has not been run in Godot. Lifecycle operations remain without a client.
+1. **Business client UI (rows 11–12).** Stages 41 and 43 added the business panel, covering the lifecycle operations
+   except `produce`, `record_expense`, and co-owner add and remove. It has not been run in Godot.
 2. **Station and jurisdiction model (rows 15–17, BLOCKED).** Police and crime mutations stay suspended until an
    assignment model exists that the server can check.
 3. **Authority for military and justice mutations (rows 18–19, SUSPENDED).** Needs judge assignment and the
    authority model.
-4. **Client UI for housing and businesses (rows 6–8, 11–12).** Implemented in Stage 41 but not run in Godot. Business
-   lifecycle operations (create, add product, hire, fire, branches, ownership transfer, production, expenses) have no
-   client yet.
+4. **Client UI for housing and businesses (rows 6–8, 11–12).** Implemented (Stages 41 and 43) but not run in Godot.
+   `produce` and `record_expense` have no client yet.
 5. **World events and transportation (rows 25–26, MISSING), and NPC movement and effects (row 24, PARTIAL).** Stage 42
    gives six fixed neighbours with activity and player relationships. They do not move and have no economy effect.
 6. **Rent collection, arrears, and eviction (row 8).** Not implemented, and not invented on the client. Rent is paid only
@@ -101,23 +114,19 @@ Godot has not been run.
 
 ## Next Phase 1 feature group
 
-The client surfaces for housing and businesses were the previous recommendation. Stage 41 implemented them, and they
-need a Godot run before they count as verified. Two verification items remain before the next group should start
-(see `docs/STAGE_41_HOUSING_BUSINESS_CLIENT.md`).
+Stage 41 implemented the housing and business screens. Stage 42 implemented NPC simulation and social relationships
+(rows 23–24, PARTIAL). Stage 43 implemented the business lifecycle client and server checks (row 11). Their records are
+`docs/STAGE_41_HOUSING_BUSINESS_CLIENT.md`, `docs/STAGE_42_NPC_SOCIAL.md`, and `docs/STAGE_43_BUSINESS_LIFECYCLE.md`.
 
-Stage 42 implemented NPC simulation and social relationships (rows 23–24, PARTIAL). Its record is
-`docs/STAGE_42_NPC_SOCIAL.md`.
+Next Phase 1 priority: **Godot runtime verification** of the Stage 41 housing and business screens, the Stage 42 People
+panel, and the Stage 43 business panel. None of them can count as verified until a Godot 4.7 binary runs them. It is
+blocked in the sandbox and needs a network route to the release asset host. The Stage 43 panel also has one lint finding
+(file length), which should be resolved in the same pass.
 
-Next Phase 1 priority: **Godot runtime verification** of the Stage 41 housing and business screens and the Stage 42 People
-panel. Neither can count as verified until a Godot 4.7 binary runs them. It is blocked in the sandbox and needs a
-network route to the release asset host. The next feature group after that is the **business lifecycle client and server
-checks** (row 11), which are well defined. World events (row 25) can now read the NPC activity state, but they are not
-designed yet and need a plan first.
-
-Smaller follow-on, which can be done first if the owner prefers: **business lifecycle client and server checks** (create,
-add product, hire and fire, branches, ownership transfer, production, expenses). The server supports these; the client
-does not. This is not a new design. Its own decisions are: share-based withdrawals (STAGE_40 section 2.2 says shares are
-not enforced), the source policy for NPC seed capital, and reconciliation of legacy revenue.
+Then the owner decisions that block further business work need answers (`docs/STAGE_43_BUSINESS_LIFECYCLE.md` section 8.2):
+recipient consent for hiring and ownership transfer, the service price ceiling, the co-owner-only ownership state, the
+NPC seed-capital source, and the branch setup cost. World events (row 25) can read the NPC activity state, but they are
+not designed yet and need a plan first.
 
 Not to be started without an owner decision: the station and jurisdiction model (rows 15–17) is blocked on open owner
 decision 10 in row 28. Housing arrears and eviction are not designed (the user has not asked for them).
@@ -131,6 +140,8 @@ decision 10 in row 28. Housing arrears and eviction are not designed (the user h
 4. Client UI for housing and businesses (rows 6–8, 11–12). Implemented in Stage 41; Godot run pending.
 5. NPC simulation and social relationships (rows 23–24). Implemented in Stage 42 (PARTIAL; Godot run pending). World
    events and transportation (rows 25–26) remain MISSING.
+5a. Business lifecycle (row 11). Implemented in Stage 43 (server tested on both backends; Godot run pending). NPC
+   employment and NPC-owned businesses in the running world remain open.
 6. Remaining authority and suspended mechanisms, as the owner decides.
 
 Revenue, taxation, fines, borrowing, minting, and organisation payments are outside this order, by the user's

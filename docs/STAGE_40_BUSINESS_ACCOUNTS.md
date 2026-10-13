@@ -177,6 +177,9 @@ logged step, `migrateLegacyBusinessAccounts`, which runs when a world is loaded 
 - **Single writer.** No multi-host guarantee for business money.
 - **Taxes, fines, borrowing, minting, and revenue** remain suspended. Stage 40 does not activate any of them.
 
+> **Stage 43 update.** The client for these actions is now implemented in the business panel (not runtime-verified
+> in Godot). See `docs/STAGE_43_BUSINESS_LIFECYCLE.md` section 2. The text below is the Stage 40 record of what was needed.
+
 ## 6. Client integration still needed
 
 The Godot client needs a business screen. It must call `business.action`, with these actions and payloads:

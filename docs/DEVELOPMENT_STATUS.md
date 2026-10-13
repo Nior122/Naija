@@ -4,13 +4,15 @@
 
 ## Current state (handoff)
 
-**Latest work: Stage 42 (NPC simulation and social relationships) on `arena/00cdea0e-naija`.** Adds six fixed neighbours (`npc-nb-*`) with stable identities that survive a restart, clock-derived activity (asleep, at school, socialising, relaxing) synced in the existing minute tick, and persisted player-to-NPC relationships. The server validates five social actions (greet, talk, acquaint, argue, apologise) and a read-only view, each idempotent by request ID, with cooldowns, refusals, bounded history, and `npc_profiles` in the snapshot. The Godot People panel reuses the Stage 41 `ServerRequestTracker`. Neighbours are excluded from careers. There is no schema bump. CI run `38334472218` passed on the tested commit `c7da0c1` (both jobs: build, lint, and tests; live PostgreSQL). Server tests on the final code: file backend 1404 of 1458 pass (54 PostgreSQL-only skipped); PostgreSQL 1739 of 1743 pass (4 TLS skipped); 0 failures on either. The Godot panel is statically checked only. Details: `docs/STAGE_42_NPC_SOCIAL.md`.
+**Latest work: Stage 43 (business lifecycle, validation, and economic integration) on `arena/00cdea0e-naija`.** The business server now covers creation with a setup fee and capital, separate goods and service routes, listings and price changes within limits, restocking, buyer-paid purchases, hiring, pay, and firing with the career conflict rules, branch opening, owner-only ownership transfer to a verified recipient, operating expenses, production, insolvency and recovery, and closure that keeps history. Every changing action runs under a snapshot, so a failure leaves no partial change. The business panel (`game/scripts/ui/business_panel.gd`) exposes the lifecycle operations with confirmation for financial and destructive ones. Server tests pass on both backends: file backend 1460 of 1514 pass (54 PostgreSQL-only skipped); PostgreSQL 1808 of 1812 pass (4 TLS skipped); 0 failures on either. Godot has not been run, and the panel is checked by `gdparse`, the Node contract test, and one `gdlint` finding (file length). Recipient consent, the service price ceiling, the co-owner-only ownership state, NPC seed capital, and the branch setup cost are open decisions. Details: `docs/STAGE_43_BUSINESS_LIFECYCLE.md`.
 
-**Previous:** Stage 41 (housing and business client) added the Godot housing and business screens, a request tracker that prevents duplicate submissions and reports unconfirmed requests, and the server fixes for sale kinds and the owner/co-owner filter. Details: `docs/STAGE_41_HOUSING_BUSINESS_CLIENT.md`. Stage 40 (business accounts) is complete at `8e564f7`, with CI run `38243775351` passing on that SHA.
+**Previous: Stage 42 (NPC simulation and social relationships).**  Adds six fixed neighbours (`npc-nb-*`) with stable identities that survive a restart, clock-derived activity (asleep, at school, socialising, relaxing) synced in the existing minute tick, and persisted player-to-NPC relationships. The server validates five social actions (greet, talk, acquaint, argue, apologise) and a read-only view, each idempotent by request ID, with cooldowns, refusals, bounded history, and `npc_profiles` in the snapshot. The Godot People panel reuses the Stage 41 `ServerRequestTracker`. Neighbours are excluded from careers. There is no schema bump. CI run `38334472218` passed on the tested commit `c7da0c1` (both jobs: build, lint, and tests; live PostgreSQL). Server tests on the final code: file backend 1404 of 1458 pass (54 PostgreSQL-only skipped); PostgreSQL 1739 of 1743 pass (4 TLS skipped); 0 failures on either. The Godot panel is statically checked only. Details: `docs/STAGE_42_NPC_SOCIAL.md`.
 
-**Next:** Godot runtime verification of the Stage 41 and Stage 42 screens. This is blocked: no Godot binary can be installed in the sandbox. Then the business lifecycle client and server checks (inventory row 11). World events (row 25) are not designed yet. See `docs/PHASE_1_FEATURE_INVENTORY.md`.
+**Earlier:** Stage 41 (housing and business client) added the Godot housing and business screens, a request tracker that prevents duplicate submissions and reports unconfirmed requests, and the server fixes for sale kinds and the owner/co-owner filter. Details: `docs/STAGE_41_HOUSING_BUSINESS_CLIENT.md`. Stage 40 (business accounts) is complete at `8e564f7`, with CI run `38243775351` passing on that SHA.
 
-Godot 4.7 is not installed in the sandbox, so no Godot runtime check has been run for Stages 34–42. The Stage 41 and Stage 42 screens were written and statically checked (`gdparse`, `gdlint`) and are covered by Node contract tests, but they have not been loaded or clicked in an engine. The Stage 21 section below was last updated at Stage 21. Stages 22–41 are recorded in their own `docs/STAGE_NN_*.md` documents and the handoff.
+**Next:** Godot runtime verification of the Stage 41, Stage 42, and Stage 43 screens. This is blocked: no Godot binary can be installed in the sandbox. Then the owner decisions listed in `docs/STAGE_43_BUSINESS_LIFECYCLE.md` section 8.2, and the file-length finding in `business_panel.gd`. World events (row 25) are not designed yet. See `docs/PHASE_1_FEATURE_INVENTORY.md`.
+
+Godot 4.7 is not installed in the sandbox, so no Godot runtime check has been run for Stages 34–43. The Stage 41 and Stage 42 screens were written and statically checked (`gdparse`, `gdlint`) and are covered by Node contract tests, but they have not been loaded or clicked in an engine. The Stage 21 section below was last updated at Stage 21. Stages 22–41 are recorded in their own `docs/STAGE_NN_*.md` documents and the handoff.
 
 ## Current stage and verification gate (historical, Stage 21)
 
@@ -612,6 +614,36 @@ Schema version advanced to 14 with 11 new persistent maps. `services/world-api/s
 | Private career profile versus public presence/world snapshots | Two-client WebSocket test | **Passed (Node)** |
 | Godot project import, engine typing, client panel actions/rendering and Godot reconnect/save | Godot unavailable | **Blocked / not run** |
 
+## Stage 43 implementation and verification (business lifecycle)
+
+Full record: `docs/STAGE_43_BUSINESS_LIFECYCLE.md`. Summary:
+
+- **Server:** `services/world-api/src/businesses/service.ts` (creation, listings, restock, purchases, hire, pay, fire,
+  branch, ownership transfer, closure, insolvency, `runBusinessChange` snapshot rollback), `src/careers/commitments.ts`
+  (one full work commitment at a time), and `src/multiplayer/world-engine.ts` (19 `business.action` cases; changing
+  actions run under the snapshot).
+- **Catalogue:** `game/data/businesses/catalog.json` adds `minimum_employee_age_years` (18), validated in
+  `catalog.ts` (16–65).
+- **Client:** `game/scripts/ui/business_panel.gd` and `game/scripts/domain/property_business_contract.gd`. Not run in
+  Godot.
+- **Tests:** `test/business-lifecycle-stage43.test.mjs` (new; 38 service-level tests on both backends, and 13 socket
+  tests per backend), `test/support/business-socket.mjs` (new), and extended contract checks in
+  `test/client-housing-business-stage41.test.mjs`. Two fixtures changed with the invariant kept: see the Stage 43
+  document, section 9.
+
+| Check | Result |
+|---|---|
+| `npm run build` (root; includes `tsc`) | Passed (exit 0) |
+| `npm run lint` (ESLint on `services/world-api/src`) | Passed (exit 0) |
+| Full suite, file backend | **1514 total, 1460 pass, 0 fail, 54 skipped** (PostgreSQL-only), exit 0 |
+| Full suite, PostgreSQL (`DATABASE_URL`, `NAIJA_ALLOW_DB_TESTS=true`, `DB_SSL=false`) | **1812 total, 1808 pass, 0 fail, 4 skipped**, exit 0 |
+| Stage 43 lifecycle test | File 51 of 51; PostgreSQL 64 of 64 |
+| Client contract tests (Stage 41, Stage 42, business) | 77 of 77 pass |
+| `gdparse` on all 28 tracked `game/scripts/*.gd` | All parse; three known-bad samples are rejected |
+| `gdlint` on the two edited GDScript files | One finding: `business_panel.gd` is 1188 lines (`max-file-lines`, limit 1000). It was clean before Stage 43. Not split, because the split cannot be checked without Godot. |
+| Godot 4.7 | **Not run** (not installed; the release asset host is blocked) |
+| CI | Not recorded here. A run ID and tested SHA will be recorded only once a run is identified after the push. |
+
 ## Checks run (2026-10-09)
 
 | Check | Result |
@@ -641,6 +673,7 @@ npm run check
 npm run geography:check
 node --test services/world-api/test/careers.test.mjs  # after build, focused Stage 6 suite
 node --test services/world-api/test/economy.test.mjs  # after build, focused Stage 7 suite
+node --test services/world-api/test/business-lifecycle-stage43.test.mjs  # after build, focused Stage 43 suite (file backend; add DATABASE_URL, NAIJA_ALLOW_DB_TESTS=true, DB_SSL=false for PostgreSQL)
 node --test services/world-api/test/life.test.mjs     # after build, focused Stage 5 suite
 # If gdtoolkit is installed:
 gdformat --check $(find game -name '*.gd' -print)
@@ -660,3 +693,4 @@ When Godot 4.7.2 is available, run the import check and retained client tests in
 7. Preserve Stage 5 life status and age as the sole authority for death and retirement; do not enable work or future wages for deceased characters.
 8. (Historical, from Stage 9.) "Next planned stage: Stage 10 — Government System." Superseded; see the current state above.
 9. Stage 42 NPCs are six fixed fictional residents. They do not move, have no economy, job, housing, or quest effect, and are reached only from the People menu. Their relationships are server state, but the Godot panel is not runtime-verified.
+10. Stage 43 businesses: the Godot panel is not runtime-verified. Co-owner add and remove are not implemented on the server. `produce` and `record_expense` have no client. Recipient consent for hiring and ownership transfer is not implemented (open decision). A co-owner-only business cannot be transferred onward. The branch setup cost is undefined and the service price ceiling is provisional. NPC businesses are not created in the running world, NPCs cannot be hired, and the NPC seed-capital source is unresolved. Each changing business request copies every business record, which limits scale.
