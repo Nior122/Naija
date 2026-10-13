@@ -685,6 +685,18 @@ func request_timed_out(request_id: String) -> void:
 		_tell_npc(TIMEOUT_NOTICE)
 
 
+## A generic error that carries a request ID (Stage 44). It answers whichever screen is waiting for
+## that ID, so the request leaves the waiting state at once and the server's message is shown.
+func show_request_error(message: Dictionary) -> void:
+	var text := str(message.get("message", "The server rejected the request."))
+	if _housing_tracker.apply_reply(message):
+		_tell_housing(text)
+	if _business_tracker.apply_reply(message):
+		_tell_business(text)
+	if _npc_tracker.apply_reply(message):
+		_tell_npc(text)
+
+
 ## The request never reached the socket, so the server did not receive it and nothing changed.
 func show_send_failure(request_id: String, message: String) -> void:
 	if _housing_tracker.apply_send_failure(request_id):

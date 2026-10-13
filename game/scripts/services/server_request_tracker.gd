@@ -86,14 +86,16 @@ func matches(reply_request_id: String) -> bool:
 	return has_pending() and not reply_request_id.is_empty() and reply_request_id == _request_id
 
 
-## Applies a typed reply (property.result, property.error, business.result, business.error). Returns
-## true when the reply answered the pending request. An unconfirmed error keeps the request for a
-## retry; any other reply resolves it.
+## Applies a typed reply (property.result, property.error, business.result, business.error), or a
+## generic error that carries this request's ID (Stage 44: for example rate_limited, sent when a
+## command is refused before it is applied). Returns true when the reply answered the pending
+## request. An unconfirmed error keeps the request for a retry; any other reply resolves it.
 func apply_reply(message: Dictionary) -> bool:
 	if not matches(str(message.get("requestId", ""))):
 		return false
 	var reply_type := str(message.get("type", ""))
-	if reply_type.ends_with(".error") and is_unconfirmed_code(str(message.get("code", ""))):
+	var is_error := reply_type.ends_with(".error") or reply_type == "error"
+	if is_error and is_unconfirmed_code(str(message.get("code", ""))):
 		mark_unconfirmed()
 	else:
 		resolve()
@@ -136,7 +138,9 @@ func apply_send_failure(reply_request_id: String) -> bool:
 ## A refusal code that means the change is not confirmed. The server uses these for "not saved" and
 ## "outcome unknown".
 static func is_unconfirmed_code(code: String) -> bool:
-	return code.ends_with("_not_saved") or code.ends_with("_outcome_unknown")
+	# internal_error is sent by a failure handler after the request may already have been applied.
+	return code.ends_with("_not_saved") or code.ends_with("_outcome_unknown") \
+		or code == "internal_error"
 
 
 func mark_unconfirmed() -> void:

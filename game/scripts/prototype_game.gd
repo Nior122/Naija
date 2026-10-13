@@ -353,6 +353,11 @@ func _on_online_message(message: Dictionary) -> void:
 			ui.show_business_response(message)
 		"npc.result", "npc.error", "npc.view":
 			ui.show_npc_response(message)
+		"error":
+			# Stage 44: a generic error with a request ID answers the pending housing, business or NPC
+			# request. Without this, the request waited for its timeout, then showed as unconfirmed.
+			if not str(message.get("requestId", "")).is_empty():
+				ui.show_request_error(message)
 		"command.duplicate":
 			ui.show_command_duplicate(str(message.get("requestId", "")))
 			ui.notify("That action was already processed by the server.")
@@ -372,7 +377,9 @@ func _on_online_status_changed(status: String) -> void:
 func _on_online_error(code: String, description: String) -> void:
 	if code.begins_with("geography_") and world.geography_preview_enabled:
 		world.set_geographic_preview(false)
-	if code in ["character_deceased", "rate_limited"]:
+	# Stage 44: rate_limited refuses one request, so it is not a career transport error. The
+	# refused request gets the refusal through the "error" branch (ui.show_request_error).
+	if code == "character_deceased":
 		ui.show_career_transport_error(description)
 	if playing:
 		ui.notify("%s: %s" % [code.replace("_", " ").capitalize(), description])
