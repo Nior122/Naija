@@ -28,7 +28,7 @@ state was then read back. Section 3 gives the level of evidence for each operati
 | Goods price change, out-of-range price refusal, deactivate and reactivate, five branches and a sixth refused, transfer refusals to self and to an unknown character, closure refused with a balance, withdrawal, closure, and "Open branch" on a closed business | **Verified in the Godot panel (U)**, 67 checks, `remaining` phase, with server readback (section 3, items 4, 10a, 11b, 12, 13, 13b). |
 | Career conflict, goods price ceiling and service price bounds, transfer refusals other than self and unknown, branch location rules | Backend and socket tests only. Not driven through the UI. |
 | Shutdown save window (Stage 43 section 8.3) | **Partly fixed.** A released file-backend store could still write and replace another writer's world (reproduced, then fixed). It is now fenced and refuses with `world_file_lock_lost`, with a regression test (section 5.4). The production shutdown paths tested all saved before exit. The bounded wait in `shutdown()` is not made (section 6.2). |
-| WebSocket session handling and the command limit | Finding recorded. `rate_limited` is no longer routed to the career panel (decided: notify only, section 6.1). The Godot side of that change has not been re-run (section 7.2). |
+| WebSocket session handling and the command limit | Finding recorded. `rate_limited` is notify-only (decided, section 6.1). A career action refused by the limit now reaches the career panel by its own request ID, so the panel is not left busy (section 6.1). Neither change has been run in Godot (section 7.3). |
 
 ## 2. Environment
 
@@ -235,8 +235,25 @@ correctly.
 - **Decided (user, Stage 44): notify only.** `_on_online_error` no longer sends `rate_limited` to the career transport
   panel. The refused request still gets its refusal through the `error` branch (`ui.show_request_error`), and the
   notice (`ui.notify`) still shows. `character_deceased` keeps the career route. The change is in `prototype_game.gd`.
-  The wiring is covered by a source-contract test (`client-business-errors-stage44.test.mjs`, which failed before the
-  change). It has **not been run in Godot** since the change (section 7.2).
+  The wiring is covered by a source-contract test (`client-business-errors-stage44.test.mjs`). It has **not been run
+  in Godot** since the change (section 7.2).
+- **Defect found in that change and fixed (this pass): the career panel stayed busy.** The career panel sets `_busy`
+  when it sends `career.action`, and clears it only on `career.result`, `career.error` or a transport error. A refused
+  `career.action` is answered with a generic `error` carrying the request ID, not `career.error`. With notify-only
+  routing, nothing cleared `_busy`, so the panel stayed busy, and `update_profile` (server profile updates) was
+  suppressed until the panel was reopened. Server behaviour was checked against `world-engine.ts`: a refused changing
+  career action gets `error` with `rate_limited` and the same request ID. The fix is client-side only:
+  - `prototype_game.gd` keeps the request ID of the one in-flight career action (`_career_request_id`), sent through
+    `multiplayer_client.new_request_id()` and `send_command(..., request_id)`.
+  - A generic `error` whose request ID matches goes to the career panel (`show_career_transport_error`). The panel
+    clears `_busy` and shows the server's message. The toast still shows. A refusal with any other ID goes only to the
+    trackers, as before, so the rule stays notify-only for every other family.
+  - `career.result` and `career.error` clear the stored ID only when it is theirs.
+  - Tests: `services/world-api/test/career-errors-stage44.test.mjs` (socket, file and PostgreSQL: a career action
+    refused by the command limit gets `error`, `rate_limited`, and its ID, and no `career.error`), and
+    `services/world-api/test/client-career-routing-stage44.test.mjs` (source contract: matched-ID routing, clearing,
+    the notify-only `rate_limited` rule, and the busy flag). The Godot panel behaviour is **not** verified here: no
+    Godot run was possible (section 7.3).
 
 ### 6.2 Shutdown save window (Stage 43 section 8.3): partly fixed, decision open
 
@@ -331,6 +348,27 @@ Godot checks must be re-run before this change is described as tested in Godot.
 Each UI run used its own copy of the fixture, so no run depended on the previous one. The fixture file was not written
 (MD5 prefix `56e29da3a522`, checked before the restart).
 
+### 7.3 This pass (career routing fix; backend and contract only)
+
+Run after the career-panel fix. The Godot checks were **not** run in this pass. The sandbox has no Godot binary, and a
+Godot build from source needs X11, GL, ALSA and scons, which are not installed. apt is not reachable. The Godot
+release download host is also blocked from this sandbox. Nothing in this table is a Godot result.
+
+| Command | Result |
+|---|---|
+| `npm ci --include=dev` (repository root, which holds the lockfile) | exit 0 |
+| `npm run lint` (repository root) | exit 0 |
+| `npm run build` (`services/world-api`) | exit 0 |
+| `NAIJA_ENV=test node --test test/*.test.mjs` (file backend) | exit 0: **1537 tests, 1483 pass, 0 fail, 54 skipped** (PostgreSQL-only) |
+| `DATABASE_URL=postgres://naija@127.0.0.1:5432/naija_test?sslmode=disable DB_SSL=false NAIJA_ALLOW_DB_TESTS=true npm test` (`services/world-api`, PostgreSQL 18.4 from `@embedded-postgres/linux-x64@18.4.0-beta.17`, installed outside the repository in `/tmp/pgrun`) | exit 0: **1838 tests, 1834 pass, 0 fail, 4 skipped** (the four are the TLS live tests, which need a TLS-enabled server) |
+| `node --test test/client-career-routing-stage44.test.mjs test/client-business-errors-stage44.test.mjs` | 13 tests, 13 pass, 0 fail |
+| `node --test test/career-errors-stage44.test.mjs` (file backend) | 1 test, 1 pass |
+| `gdparse` on the changed GDScript files | exit 0 |
+| `gdlint` on `prototype_game.gd` and `multiplayer_client.gd` | 14 and 25 findings, the same as `HEAD`. The new lines add none. |
+| `gdformat --check` on the same files | reports both files as differing, as `HEAD` does. Not reformatted, to avoid churn in unrelated lines. |
+
+The four skipped TLS tests and the Godot checks in section 7.2 remain unverified in this pass.
+
 ## 8. Decisions that remain open (not made here)
 
 - Recipient consent for hiring and ownership transfer.
@@ -340,7 +378,8 @@ Each UI run used its own copy of the fixture, so no run depended on the previous
 - Branch setup cost.
 - Whether an **insolvent** business may be transferred (section 6.4). The docs do not say.
 - Whether an **employee** should see the business under "My businesses" (section 6.4).
-- Routing of `rate_limited`: decided as notify only (section 6.1). Godot re-run pending.
+- Routing of `rate_limited`: decided as notify only (section 6.1). The career-panel fix for its own refused request is
+  in place. Godot re-run pending.
 - Shutdown semantics for section 8.3: a bounded wait in `shutdown()` (section 6.2). The released-store case is fixed.
 - Open decisions 9, 10, and 11.
 
@@ -352,7 +391,8 @@ NPC business creation, NPC hiring, and autonomous NPC business activity are not 
    employment made through the server's domain functions, because the review happens on a future date), the goods price
    ceiling and service bounds at their boundary values, transfers to a manager, an employee, a child, a deceased, or an
    unbanked recipient, a stranger's refused changing action, and restart with UI readback.
-2. Re-run the Godot checks after the `rate_limited` routing change (section 6.1). No Godot binary is available here.
+2. Re-run the Godot checks after the `rate_limited` routing change and the career-panel fix (sections 6.1 and 7.3). No
+   Godot binary is available here, and a headless server-platform build is not practical on this 2-core, 3 GB sandbox.
 3. Decide the shutdown semantics for section 8.3 (section 6.2). Probe the PostgreSQL released-store path.
 4. Decide the insolvent-transfer and employee-visibility questions (section 8).
 5. Decide whether the panel hides owner actions on a closed business (section 6.4). The cosmetic "Actions for your role"
