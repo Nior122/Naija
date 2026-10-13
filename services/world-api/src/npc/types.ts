@@ -243,3 +243,89 @@ export interface PersistentNPCMaps {
   npcEventReactions: Record<string, NPCEventReaction>;
   npcSimulationState: NPCSimulationState | null;
 }
+
+// ─── Stage 42: NPC activity and player-to-NPC social bonds ─────────────────────────────────────────
+// These records live on the existing life/ person records (`people[npcId]`), so there is one NPC identity
+// store. The dormant NPCProfile and PersistentNPCMaps above are not used by Stage 42.
+
+/** The four activity states the runtime derives from the in-game clock (a subset of NPCActivityType). */
+export type NPCSocialActivity = "sleeping" | "studying" | "socializing" | "relaxing";
+
+/** The current activity of an NPC. Recorded at each transition (since_*), not on every minute. */
+export interface NPCSocialActivityRecord {
+  activity: NPCSocialActivity;
+  location_id: string;
+  since_day: number;
+  since_minute_of_day: number;
+}
+
+/** A social action a player can take toward an NPC. Validated and applied by the server only. */
+export type NPCSocialAction = "greet" | "talk" | "acquaint" | "argue" | "apologise";
+
+/** A notable event in one player-to-NPC relationship. Bounded by history_limit. */
+export interface NPCSocialEvent {
+  event_id: string;
+  seq: number;
+  kind: "first_met" | "acquainted" | "argued" | "apologised" | "became_hostile" | "no_longer_hostile" | "became_friend";
+  summary: string;
+  affinity_after: number;
+  world_day: number;
+  minute_of_day: number;
+}
+
+/** The server-owned relationship between one character and one NPC. Stored on the NPC's person record. */
+export interface NPCSocialBondRecord {
+  character_id: string;
+  npc_id: string;
+  affinity: number;
+  acquainted: boolean;
+  greeting_count: number;
+  talk_count: number;
+  /** Successful social actions of any kind. Selects dialogue lines deterministically. */
+  interaction_count: number;
+  /** Absolute game minute of the last successful use of each action (cooldowns). */
+  cooldowns: Partial<Record<NPCSocialAction, number>>;
+  last_interaction_day: number | null;
+  last_interaction_minute: number | null;
+  history: NPCSocialEvent[];
+  next_event_seq: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Summary of one NPC as seen by one character. Built only for NPCs that character can see. */
+export interface NPCSocialProfile {
+  npc_id: string;
+  name: string;
+  age: number;
+  family_role: string;
+  relation_label: string;
+  household_member: boolean;
+  activity: NPCSocialActivity;
+  activity_label: string;
+  location_id: string;
+  location_label: string;
+  here: boolean;
+  asleep: boolean;
+  bond: {
+    tier: "hostile" | "stranger" | "acquaintance" | "friend";
+    tier_label: string;
+    affinity: number;
+    acquainted: boolean;
+    greeting_count: number;
+    talk_count: number;
+    recognised: boolean;
+    last_interaction_day: number | null;
+    last_interaction_minute: number | null;
+  };
+  actions: {
+    action: NPCSocialAction;
+    label: string;
+    available: boolean;
+    reason_code: string | null;
+    /** The server's own sentence for why the action is unavailable; null when it is available. */
+    reason_message: string | null;
+    /** Minutes until a cooling-down action is available again; 0 when it is not cooling down. */
+    cooldown_minutes_left: number;
+  }[];
+}

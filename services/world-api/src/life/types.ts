@@ -1,3 +1,5 @@
+import type { NPCSocialActivityRecord, NPCSocialBondRecord } from "../npc/types.js";
+
 export interface CalendarDate {
   year: number;
   month: number;
@@ -113,12 +115,17 @@ export interface FamilyPersonRecord extends CharacterLifeFields {
   person_id: string;
   name: string;
   age: number;
-  family_role: "parent" | "guardian" | "sibling" | "child" | "relative";
+  /** "neighbour" (Stage 42): a resident seeded from the NPC social catalog, not a family member. */
+  family_role: "parent" | "guardian" | "sibling" | "child" | "relative" | "neighbour";
   home_id: string;
   current_location: string;
   education_level: string;
   created_at: string;
   updated_at: string;
+  /** Stage 42: derived activity state, written at each transition. Absent on records made before Stage 42. */
+  npc_activity?: NPCSocialActivityRecord;
+  /** Stage 42: server-owned bonds with characters, keyed by character_id. Absent until the first interaction. */
+  npc_social?: { bonds: Record<string, NPCSocialBondRecord> };
 }
 
 export interface HouseholdRecord {
