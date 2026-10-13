@@ -217,8 +217,8 @@ func _add_owned() -> void:
 	_add_create_form()
 	if _owned.is_empty():
 		_add_text(
-			"You do not own or co-own a business yet. Discover businesses to buy from, or ask the "
-			+ "server's creation flow once it is available here.",
+			"You do not own or co-own a business yet. Start one with the form above, or discover "
+			+ "businesses to buy from.",
 			12,
 			TEXT_MUTED,
 		)
