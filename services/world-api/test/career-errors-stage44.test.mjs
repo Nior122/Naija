@@ -51,6 +51,17 @@ for (const backendName of backendNames) {
         assert.equal(refused.type, "error", JSON.stringify(refused));
         assert.equal(refused.code, "rate_limited");
         assert.equal(refused.requestId, requestId);
+
+        // Recovery: once the 10-second window has reset, the next career action is answered normally, so the
+        // career panel can be used again after a refusal (the panel clears its busy state on this reply).
+        await new Promise((resolve) => setTimeout(resolve, 10500));
+        const recoveryId = `search-${randomUUID()}`;
+        peer.send({ type: "career.action", action: "search_jobs", requestId: recoveryId, payload: { text: "" } });
+        const recovered = await settle(peer, recoveryId);
+        assert.equal(recovered.type, "career.result", JSON.stringify(recovered));
+        assert.equal(recovered.requestId, recoveryId);
+        assert.equal(recovered.ok, true);
+        assert.equal(recovered.action, "search_jobs");
       } finally {
         peer.socket.close();
         await started.stop();
