@@ -192,8 +192,15 @@ func _add_remote_player(player_id: String, data: Dictionary) -> void:
 	mesh_instance.material_override = material
 	remote_player.add_child(mesh_instance)
 	
-	# Add to scene
-	$"/root/World3D/Characters".add_child(remote_player)
+	# Add to scene. The manager is a child of the World3D root, so the Characters node is resolved
+	# relative to it. An absolute /root path does not match this scene tree (World3D is instanced
+	# under Main/Mode3D), so it would fail whenever another player is present in 3D mode.
+	var characters := get_parent().get_node_or_null("Characters") as Node3D
+	if characters == null:
+		remote_player.queue_free()
+		push_warning("[Multiplayer3D] Characters node not found; remote player %s not shown" % player_id)
+		return
+	characters.add_child(remote_player)
 	remote_players[player_id] = remote_player
 	
 	print("[Multiplayer3D] Added remote player: %s" % player_id)

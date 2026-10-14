@@ -547,7 +547,7 @@ The runner does the following, in order:
 - parses every `game/**/*.gd` file on disk (`gdparse`, parse only, not lint);
 - **backs up the local `naija-*` saves** before any Godot test runs (section 6.3). It prints the folder that holds the
   backup. The originals are not moved or deleted;
-- runs the 13 headless scripts that need no server, plus `save_restart` as two processes (write, then read);
+- runs the 14 headless scripts that need no server (the 13 from Stage 44, plus `new_game_confirmation_headless`, added with the new-life save confirmation), plus `save_restart` as two processes (write, then read);
 - runs the server-backed UI phases on a fresh copy of the fixture for each optional phase: the default six-phase
   chain, `career_rate_limit`, `lifecycle`, `rate_limit`, and `remaining`;
 - checks again that the backed-up saves are unchanged, and reports `FAIL` if any changed.

@@ -106,7 +106,7 @@ may_start() {
 HEADLESS_TESTS=(
   domain_smoke player_movement persistence_notice ui_flow_headless input_bindings_headless
   load_confirmation_headless performance_metrics regional_handoff regional_visual_profiles return_path
-  save_guard_headless session_policy business_request_errors_headless
+  save_guard_headless session_policy business_request_errors_headless new_game_confirmation_headless
 )
 REQUIRED_FILES=(
   "game/project.godot"

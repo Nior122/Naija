@@ -146,11 +146,12 @@ describe("Stage 41 contract parsers find real content", () => {
   test("the tables, server cases and panel calls are non-empty, so the comparisons below are not vacuous", () => {
     assert.ok(clientPropertyActions.size === 14, `14 housing actions parsed (got ${clientPropertyActions.size})`);
     // Stage 43: 19 business actions (10 from Stage 41, plus create, add_product, add_service, set_listing, update_price,
-    // hire_employee, fire_employee, add_branch, transfer_ownership). produce and record_expense are not in the client.
-    assert.ok(clientBusinessActions.size === 19, `19 business actions parsed (got ${clientBusinessActions.size})`);
+    // hire_employee, fire_employee, add_branch, transfer_ownership). Stage 45 added produce (20). record_expense is not in the client.
+    assert.ok(clientBusinessActions.size === 20, `20 business actions parsed (got ${clientBusinessActions.size})`);
     assert.ok(clientPropertyChanging.size === 10, `10 housing changing actions (got ${clientPropertyChanging.size})`);
     // Stage 43: 17 changing actions (the 8 from Stage 41, plus the 9 new changing actions; discover and view are the reads).
-    assert.ok(clientBusinessChanging.size === 17, `17 business changing actions (got ${clientBusinessChanging.size})`);
+    // Stage 45: produce is a changing action, so 18.
+    assert.ok(clientBusinessChanging.size === 18, `18 business changing actions (got ${clientBusinessChanging.size})`);
     assert.ok(serverPropertyChanging.size === 10, `server has 10 housing changing actions (got ${serverPropertyChanging.size})`);
     assert.ok(propertyCases.size >= 13 && businessCases.size >= 10, "server switch cases were found");
     assert.ok(panelCalls(housingPanel, "_read").length >= 3, "housing panel reads were found");
@@ -254,6 +255,7 @@ describe("Stage 41 client action tables match the server", () => {
     roleMap.set("fire_employee", "fireEmployee");
     roleMap.set("add_branch", "addBranch");
     roleMap.set("transfer_ownership", "transferOwnership");
+    roleMap.set("produce", "runProduction");
     const clientRoles = gdLiteral(contract, "BUSINESS_ROLES");
     for (const [action, serverFunction] of roleMap) {
       const body = tsFunctionBody(businessService, `export function ${serverFunction}(`);

@@ -93,3 +93,42 @@ node --test services/world-api/test/economy.test.mjs   # focused Stage 7 suite
 - A non-player holder that receives property money (an NPC landlord or seller) gets one cash account in `economyAccounts`, with `character_id` set to the NPC's ID and `bank_product_id` null. It is opened when first credited. The interest and fee loops skip it, because they only charge accounts with a bank product. No player route can act on it, because player routes act only on the session character's accounts.
 - Property money moves write `economyTransactions` rows with the kinds `rent_payment`, `rent_receipt`, `property_purchase`, `property_sale_proceeds`, `property_furnishing`, and `property_maintenance`. Each row is written in the same mutation as its balance change.
 - Business, government, and other organisation holders are not credited. Their property payments are refused before any debit. The shared business-account model is still outstanding (Stage 34).
+
+## Market stall holder and market sales (Stage 46)
+
+- The economy catalogue lists `market_sellers`. Stage 46 adds one, `market-seller:idera-market` ("Market stalls"), at the
+  `market` location. It is a non-player holder, like the Stage 39 landlords and sellers: it has one cash account in the
+  ledger and no character record. No NPC decides its prices, stock, or spending.
+- Nine market goods name that seller with `seller_id`. Every other good has no seller. Paracetamol is sold at the market
+  and at the clinic, and the clinic has no seller, so it has none. The two bus fares at the town are not stall goods.
+- A purchase of a seller's good (`economy.action` `purchase`) debits the buyer and credits the seller by the same amount.
+  The buyer's row names the seller account as its counterparty. The seller's row has the kind `market_sale`, and the
+  buyer's account as its counterparty. No money is created or destroyed by a sale.
+- The seller's balance limit is checked before any debit. A sale that would take the seller over
+  `maximum_account_balance_ngn` is refused with `economy_seller_balance_limit`, and nothing changes.
+- The seller account is outside player reach. A withdrawal or a transfer from a player's own accounts to it is refused
+  with `economy_account_not_found`. Interest and fee processing skip it, because it has no bank product.
+- Goods without a seller still leave the economy, as before. This is a documented gap for the owner to decide, not a new
+  rule. The same applies to the bus fares and paracetamol.
+- The market shelf (`shop.purchase`) was a defect before Stage 46. The price was taken from `character.money` only, with
+  no ledger row. The cash account, which the ledger uses, stayed unchanged, so the two balances disagreed. Any later sync
+  from the ledger (`syncCharacterCashFromEconomy`) overwrites `character.money` with the account balance. It now debits the cash
+  account with a `market_purchase` row and pays the market seller. Stage 47 moved the item list and prices into the
+  catalogue (`shelf_items`, values unchanged). Bottled water is 100 on the shelf and 200 as a market good. Those are
+  different goods, and the difference is an open decision.
+- Revenue is the full price, with no supplier cost, no tax, and no stock limit for stall goods. Those are unresolved
+  economy policies. Stage 46 does not decide them.
+
+## Fixed fees, the shelf catalogue, and buyer location (Stage 47)
+
+- **Fixed fees are ledger rows.** The town bus stop fare (₦150) and basic clinic care (₦300) are catalogue entries in
+  `fixed_charges`, with kinds `bus_fare` and `clinic_payment`. Each charge debits the cash account and posts one ledger
+  row with no receiving account. No operator is decided. Before Stage 47 these were debited from `character.money` only,
+  and any later ledger sync reversed them.
+- **Shelf items are catalogue entries.** `shelf_items` holds meat pie (₦350) and bottled water (₦100), with their hunger
+  restore. The shelf route reads them. The values are unchanged.
+- **Buyer location.** A market purchase requires the buyer's current location to be the market they buy from. This is a
+  location-equality check, not a distance rule.
+- **Hunger.** A market purchase restores hunger for each unit bought, capped at 100. Goods are eaten on purchase.
+- **Open:** whether the bus stop fare and the market's town bus good (₦300) should be one price; who receives fees;
+  whether market goods need stock. Education and careers money writes still bypass the ledger.

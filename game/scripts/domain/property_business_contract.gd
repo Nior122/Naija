@@ -41,9 +41,10 @@ const PROPERTY_CHANGING_ACTIONS: Array[String] = [
 ## businessAction in world-engine.ts). Stage 43 added create, add_product, add_service,
 ## set_listing (deactivate and reactivate), update_price, hire_employee, fire_employee, add_branch,
 ## and transfer_ownership. Not sent by this screen, and recorded as gaps in
-## docs/STAGE_43_BUSINESS_LIFECYCLE.md: produce and record_expense (not in the Stage 43 scope),
-## and co-owner add or remove (not implemented on the server). A client that does not name an
-## action here cannot send it.
+## docs/STAGE_43_BUSINESS_LIFECYCLE.md: record_expense (no client yet), and co-owner add or remove
+## (not implemented on the server). Stage 45 added produce
+## (docs/STAGE_45_BUSINESS_PRODUCTION.md). A client that does not name an action here cannot
+## send it.
 const BUSINESS_ACTIONS: Dictionary = {
 	"discover": [],
 	"view": ["business_id"],
@@ -55,6 +56,7 @@ const BUSINESS_ACTIONS: Dictionary = {
 	"buy_product": ["business_id", "product_record_id", "quantity"],
 	"buy_service": ["business_id", "product_record_id"],
 	"restock": ["business_id", "product_definition_id", "quantity", "unit_cost_ngn"],
+	"produce": ["business_id", "recipe_id"],
 	"pay_salary": ["business_id", "employee_character_id", "amount_ngn"],
 	"hire_employee": ["business_id", "employee_character_id"],
 	"fire_employee": ["business_id", "employee_character_id", "reason"],
@@ -67,7 +69,8 @@ const BUSINESS_ACTIONS: Dictionary = {
 }
 const BUSINESS_CHANGING_ACTIONS: Array[String] = [
 	"create", "add_product", "add_service", "set_listing", "update_price", "buy_product",
-	"buy_service", "restock", "pay_salary", "hire_employee", "fire_employee", "transfer_funds",
+	"buy_service", "restock", "produce", "pay_salary", "hire_employee", "fire_employee",
+	"transfer_funds",
 	"contribute_capital", "withdraw", "add_branch", "transfer_ownership", "close",
 ]
 
@@ -80,6 +83,7 @@ const BUSINESS_ROLES: Dictionary = {
 	"set_listing": ["owner", "co_owner", "manager"],
 	"update_price": ["owner", "co_owner", "manager"],
 	"restock": ["owner", "co_owner", "manager", "inventory_manager"],
+	"produce": ["owner", "co_owner", "manager"],
 	"pay_salary": ["owner", "co_owner"],
 	"hire_employee": ["owner", "co_owner", "manager"],
 	"fire_employee": ["owner", "co_owner", "manager"],
@@ -192,6 +196,43 @@ static func product_definition(definition_id: String) -> Dictionary:
 ## (business_sale_not_service, business_sale_is_service).
 static func is_service_product(definition_id: String) -> bool:
 	return str(product_definition(definition_id).get("category", "")) == SERVICE_CATEGORY
+
+
+## The production recipes this business's template can run, in catalogue order, for the owner's
+## production panel. Each row has the recipe ID, its label, its inputs (label and quantity), its
+## output (label and quantity), and the operating cost. The server decides every run. The
+## catalogue's duration is not used: a run completes when the server accepts it.
+static func production_recipes_for(template_id: String) -> Array:
+	var rows: Array = []
+	var template := template_definition(template_id)
+	var template_recipes: Variant = template.get("production_recipes", [])
+	if not bool(template.get("requires_production", false)) or not template_recipes is Array:
+		return rows
+	var catalogue: Variant = business_catalog().get("production_recipes", [])
+	if not catalogue is Array:
+		return rows
+	for recipe in catalogue:
+		if not recipe is Dictionary or not bool(recipe.get("active", false)):
+			continue
+		if not template_recipes.has(str(recipe.get("id", ""))):
+			continue
+		var inputs: Array = []
+		for input in recipe.get("inputs", []):
+			var product := product_definition(str(input.get("product_id", "")))
+			inputs.append({
+				"label": str(product.get("label", input.get("product_id", ""))),
+				"quantity": int(input.get("quantity", 0)),
+			})
+		var output := product_definition(str(recipe.get("output_product_id", "")))
+		rows.append({
+			"id": str(recipe.get("id", "")),
+			"label": str(recipe.get("label", "")),
+			"inputs": inputs,
+			"output_label": str(output.get("label", recipe.get("output_product_id", ""))),
+			"output_quantity": int(recipe.get("output_quantity", 0)),
+			"operating_cost_ngn": int(recipe.get("operating_cost_ngn", 0)),
+		})
+	return rows
 
 
 ## The active owner records of a business profile, optionally only one role set.

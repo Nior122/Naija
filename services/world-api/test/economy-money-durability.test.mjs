@@ -441,6 +441,10 @@ for (const backendName of backendNames) {
     character.current_location = "market";
     character.position = { x: 1190, y: 440 };
     character.money = 1_000;
+    // Stage 46: the shelf is paid from the cash account (the ledger), so the fixture sets that balance as well.
+    for (const account of Object.values(entry.backend.store.state.economyAccounts)) {
+      if (account.character_id === character.character_id && account.kind === "cash") account.balance_ngn = 1_000;
+    }
     await entry.backend.store.flush();
     const shop = (requestId) => ({ type: "shop.purchase", itemId: "bottled_water", requestId });
 

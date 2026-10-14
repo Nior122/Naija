@@ -160,8 +160,8 @@ describe("Godot check runner: a run without Godot never reports a pass", () => {
     assert.match(out, /^FAIL\s+save_restart_read/m);
     assert.match(out, /^SKIP\s+gdparse: /m, "a missing gdparse is a skip");
     assert.match(out, /^SKIP\s+server-backed UI phases: /m, "missing fixture inputs are a skip");
-    // 13 headless scripts + 2 save_restart runs fail. The save protection and save check pass.
-    assert.match(out, /SUMMARY: 2 passed, 15 failed, 2 skipped/);
+    // 14 headless scripts + 2 save_restart runs fail. The save protection and save check pass.
+    assert.match(out, /SUMMARY: 2 passed, 16 failed, 2 skipped/);
     assert.match(out, /^PASS\s+save protection: backup written/m);
     assert.match(out, /^PASS\s+save check: the local naija-\* saves are unchanged/m);
     // The save-directory warning names the real directory, including its colon and space.
@@ -201,7 +201,7 @@ describe("Godot check runner: a run without Godot never reports a pass", () => {
   test("a run that passed everything it ran, but skipped checks, exits 2 and never 0", () => {
     const { out, result } = runCase("clean-mode", "clean");
     assert.equal(result.status, 2, out);
-    assert.match(out, /SUMMARY: 17 passed, 0 failed, 2 skipped/);
+    assert.match(out, /SUMMARY: 18 passed, 0 failed, 2 skipped/);
     assert.match(out, /Incomplete: 2 check\(s\) were skipped/);
   });
 
@@ -302,7 +302,7 @@ describe("Godot check runner: signals, directories, and the save check (review f
     assert.equal(result.status, 2, out);
     assert.match(out, /NOTE: no naija-\* files existed before the run, so the save check had nothing to compare/);
     assert.doesNotMatch(out, /^(PASS|FAIL)\s+save check/m);
-    assert.match(out, /SUMMARY: 16 passed, 0 failed, 2 skipped/);
+    assert.match(out, /SUMMARY: 17 passed, 0 failed, 2 skipped/);
   });
 
   test("a naija-* file that a run leaves behind is reported in a note, with its name", () => {
@@ -365,7 +365,7 @@ describe("Business UI runner: contract (static, plus dynamic input checks)", () 
     const block = source.match(/HEADLESS_TESTS=\(([\s\S]*?)\n\)/);
     assert.ok(block, "the HEADLESS_TESTS list is present");
     const names = block[1].split(/\s+/).filter(Boolean);
-    assert.equal(names.length, 13, `found ${names.length} names`);
+    assert.equal(names.length, 14, `found ${names.length} names`);
     for (const name of names) {
       assert.ok(existsSync(join(root, "game/tests", `${name}.gd`)), `${name}.gd exists`);
     }

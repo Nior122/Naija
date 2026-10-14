@@ -138,6 +138,8 @@ Open `game/project.godot` with Godot 4.7.2, or start the local/offline prototype
 godot --path game
 ```
 
+On Windows, follow the install and launch steps in [`docs/WINDOWS_LAUNCH_RUNBOOK.md`](docs/WINDOWS_LAUNCH_RUNBOOK.md). That runbook has not been run on a real Godot install.
+
 For desktop online play, run the server first. The default native URL is `ws://127.0.0.1:3000/ws`; override it when needed:
 
 ```sh

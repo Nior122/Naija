@@ -43,8 +43,11 @@ import {
 } from "../careers/service.js";
 import type { CareerCatalog } from "../careers/types.js";
 import { loadEconomyCatalog } from "../economy/catalog.js";
+import type { EconomyFixedCharge } from "../economy/types.js";
 import {
   buildEconomyProfile,
+  cashBalanceForCharacter,
+  chargeFixedFee,
   depositToAccount,
   economyAccountPort,
   economyErrorMessage,
@@ -53,6 +56,7 @@ import {
   openEconomyAccount,
   processEconomyWorldDate,
   purchaseMarketGood,
+  purchaseShopItem,
   repayLoan,
   requestLoan,
   syncCharacterCashFromEconomy,
@@ -453,6 +457,9 @@ const ECONOMY_MONEY_ACTIONS: ReadonlySet<string> = new Set([
   "request_loan",
   "repay_loan",
 ]);
+/** Stage 47: the fixed fees in the economy catalogue that the town bus stop and the clinic charge through the ledger. */
+const BUS_FARE_CHARGE_ID = "fixed:town-bus-stop-fare";
+const CLINIC_CARE_CHARGE_ID = "fixed:clinic-basic-care";
 /** Replay records kept in memory (not saved) for unconfirmed or recently confirmed money requests. */
 const MAX_PENDING_MONEY_REPLIES = 256;
 
@@ -1928,8 +1935,9 @@ export class MultiplayerWorld {
       this.sendError(context, "interaction_out_of_range", "Move to the bus stop first.", requestId);
       return;
     }
-    if (player.character.money < 150) {
-      this.sendError(context, "insufficient_funds", "The bus fare is ₦150.", requestId);
+    const fare = this.fixedCharge(BUS_FARE_CHARGE_ID);
+    if ((cashBalanceForCharacter(this.store.state, player.character.character_id) ?? 0) < fare.amount_ngn) {
+      this.sendError(context, "insufficient_funds", `The bus fare is ₦${fare.amount_ngn}.`, requestId);
       return;
     }
     if (requestId === undefined) {
@@ -1942,8 +1950,13 @@ export class MultiplayerWorld {
       this.sendError(context, "bus_persistence_unavailable", moneyPausedMessage("bus"), requestId);
       return;
     }
+    // Stage 47: the fare is posted to the cash ledger before the request is recorded. A refused charge changes nothing.
+    const chargeError = this.postFixedCharge(fare, player);
+    if (chargeError !== undefined) {
+      this.sendError(context, chargeError, economyErrorMessage(chargeError), requestId);
+      return;
+    }
     this.markRequestProcessed(player, requestId);
-    player.character.money -= 150;
     player.character.current_location = "schoolyard";
     player.character.position = { x: 240, y: 650 };
     player.character.geographic_location = null;
@@ -1995,24 +2008,43 @@ export class MultiplayerWorld {
     await this.flushDirty();
   }
 
+  /** Stage 47: a fixed fee from the economy catalogue. The catalogue is validated at load, so a missing charge is a defect. */
+  private fixedCharge(id: string): EconomyFixedCharge {
+    const charge = this.economyCatalog.fixed_charges.find((entry) => entry.id === id);
+    if (!charge) throw new Error(`Economy fixed charge ${id} is missing.`);
+    return charge;
+  }
+
+  /** Stage 47: posts a fixed fee to the cash ledger. Returns the refusal code, or undefined when the fee was posted. */
+  private postFixedCharge(charge: EconomyFixedCharge, player: PersistentPlayer): string | undefined {
+    try {
+      chargeFixedFee(this.store.state, player.character.character_id, charge,
+        this.store.state.worldClock.world_date, this.store.state.worldClock.minute_of_day, this.now(), this.economyCatalog);
+      return undefined;
+    } catch (error) {
+      return this.errorCode(error);
+    }
+  }
+
   private async purchaseItem(context: ConnectionContext, player: PersistentPlayer, message: Record<string, unknown>, requestId?: string): Promise<void> {
     if (player.character.current_location !== "market" ||
       distance(player.character.position, { x: 1190, y: 440 }) > ENTITY_INTERACTION_RADIUS) {
       this.sendError(context, "interaction_out_of_range", "Visit the market shelf before buying.", requestId);
       return;
     }
-    const definitions: Record<string, InventoryItem> = {
-      meat_pie: { id: "meat_pie", name: "Meat pie", quantity: 1, category: "food", hunger_restore: 24 },
-      bottled_water: { id: "bottled_water", name: "Bottled water", quantity: 1, category: "food", hunger_restore: 8 },
-    };
-    const prices: Record<string, number> = { meat_pie: 350, bottled_water: 100 };
+    // Stage 47: the shelf's items and prices come from the economy catalogue (values unchanged).
     const itemId = message.itemId;
-    if (typeof itemId !== "string" || !definitions[itemId]) {
+    const shelfItem = typeof itemId === "string" ? this.economyCatalog.shelf_items.find((entry) => entry.id === itemId) : undefined;
+    if (!shelfItem) {
       this.sendError(context, "item_unavailable", "That item is not available.", requestId);
       return;
     }
-    const price = prices[itemId] ?? 0;
-    if (player.character.money < price) {
+    const definition: InventoryItem = {
+      id: shelfItem.id, name: shelfItem.label, quantity: 1, category: shelfItem.category, hunger_restore: shelfItem.hunger_restore,
+    };
+    const price = shelfItem.price_ngn;
+    // Stage 46: the cash account is the balance that is checked and debited (character.money follows it).
+    if ((cashBalanceForCharacter(this.store.state, player.character.character_id) ?? 0) < price) {
       this.sendError(context, "insufficient_funds", `You need ₦${price}.`, requestId);
       return;
     }
@@ -2026,9 +2058,16 @@ export class MultiplayerWorld {
       this.sendError(context, "shop_persistence_unavailable", moneyPausedMessage("shop"), requestId);
       return;
     }
+    try {
+      purchaseShopItem(this.store.state, player.character.character_id, shelfItem.id, price,
+        this.store.state.worldClock.world_date, this.store.state.worldClock.minute_of_day, this.now(), this.economyCatalog);
+    } catch (error) {
+      const code = this.errorCode(error);
+      this.sendError(context, code, economyErrorMessage(code), requestId);
+      return;
+    }
     this.markRequestProcessed(player, requestId);
-    player.character.money -= price;
-    this.addInventoryItem(player.character.inventory, definitions[itemId]);
+    this.addInventoryItem(player.character.inventory, definition);
     this.touchPlayer(player);
     if (requestId === undefined) {
       // Unreachable through dispatch (shop.purchase is in IDEMPOTENT_COMMANDS). Kept to narrow the type, with the right code.
@@ -2069,8 +2108,9 @@ export class MultiplayerWorld {
       this.sendError(context, "care_not_needed", "You are already feeling well.", requestId);
       return;
     }
-    if (player.character.money < 300) {
-      this.sendError(context, "insufficient_funds", "Basic care costs ₦300.", requestId);
+    const fee = this.fixedCharge(CLINIC_CARE_CHARGE_ID);
+    if ((cashBalanceForCharacter(this.store.state, player.character.character_id) ?? 0) < fee.amount_ngn) {
+      this.sendError(context, "insufficient_funds", `Basic care costs ₦${fee.amount_ngn}.`, requestId);
       return;
     }
     if (requestId === undefined) {
@@ -2083,8 +2123,13 @@ export class MultiplayerWorld {
       this.sendError(context, "clinic_persistence_unavailable", moneyPausedMessage("clinic"), requestId);
       return;
     }
+    // Stage 47: the fee is posted to the cash ledger before the request is recorded. A refused charge changes nothing.
+    const chargeError = this.postFixedCharge(fee, player);
+    if (chargeError !== undefined) {
+      this.sendError(context, chargeError, economyErrorMessage(chargeError), requestId);
+      return;
+    }
     this.markRequestProcessed(player, requestId);
-    player.character.money -= 300;
     player.character.health = clamp(player.character.health + 35, 0, 100);
     this.touchPlayer(player);
     // Stage 34: the charge is confirmed (by the character snapshot carrying the request ID) only once it is saved.
@@ -2638,12 +2683,16 @@ export class MultiplayerWorld {
           const goodId = requiredString("good_id");
           const quantity = requiredInteger("quantity", 1, 100);
           const locationId = typeof payload.location_id === "string" ? payload.location_id : player.character.current_location;
+          // Stage 47: the buyer must be standing at the market they buy from (the shelf route checks the same).
+          if (locationId !== player.character.current_location) throw new Error("economy_buyer_not_at_location");
           const result = purchaseMarketGood(state, characterId, goodId, quantity, locationId, date, minuteOfDay, now, this.economyCatalog);
           data.transaction = result.transaction;
           data.good = result.good;
           data.total_cost_ngn = result.total_cost_ngn;
-          if (result.good.hunger_restore > 0 && quantity === 1) {
-            player.character.hunger = Math.min(100, player.character.hunger + result.good.hunger_restore);
+          data.seller = result.seller;
+          // Stage 47: market goods are eaten on purchase (there is no carried stock), so every unit bought is eaten.
+          if (result.good.hunger_restore > 0) {
+            player.character.hunger = Math.min(100, player.character.hunger + result.good.hunger_restore * quantity);
           }
           messageText = `Purchased ${quantity} × ${result.good.label} for ₦${result.total_cost_ngn.toLocaleString("en-NG")}.`;
           break;

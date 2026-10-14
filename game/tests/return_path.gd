@@ -128,7 +128,9 @@ func _run() -> void:
 	_check(_label_contains(proto.ui, CREATION_TEXT), "First start shows character creation")
 
 	# ---- New game through the real path (Test 10, new game) ----
-	proto._start_new_game({"name": PROBE_NAME, "age": 15, "character_type": "androgynous", "appearance": {}})
+	# replace_existing_save models the player confirming "Replace saved life" (see new_game_confirmation_headless.gd).
+	# Without it the new-life path refuses when a save file exists. This run restores the original save at the end.
+	proto._start_new_game({"name": PROBE_NAME, "age": 15, "character_type": "androgynous", "appearance": {}, "replace_existing_save": true})
 	proto.ui._close_modal()
 	_check(proto.playing and proto.character != null and proto.clock != null,
 		"New game starts a character and a clock")

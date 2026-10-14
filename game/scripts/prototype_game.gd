@@ -206,6 +206,16 @@ func _notification(what: int) -> void:
 
 
 func _start_new_game(profile: Dictionary) -> void:
+	# A new life overwrites the local save. The creation screen asks the player first and marks the
+	# request with replace_existing_save. Without that mark, refuse before any state changes, so a
+	# request that bypasses the confirmation cannot replace the saved life.
+	if SaveServiceScript.has_save() and not bool(profile.get("replace_existing_save", false)):
+		ui.show_notice(
+			"Saved life kept",
+			"A saved life already exists on this device. Choose Continue saved life, or confirm "
+			+ "replacing it. Nothing was changed."
+		)
+		return
 	multiplayer_client.disconnect_from_world()
 	_online_mode = false
 	player.server_controlled = false

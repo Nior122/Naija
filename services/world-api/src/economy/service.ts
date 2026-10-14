@@ -13,7 +13,9 @@ import type {
   EconomyLoanProduct,
   EconomyLoanRecord,
   EconomyLoanSnapshot,
+  EconomyFixedCharge,
   EconomyMarketGood,
+  EconomyMarketSeller,
   EconomyProfileSnapshot,
   EconomyTransactionRecord,
 } from "./types.js";
@@ -673,6 +675,74 @@ export function transferBetweenAccounts(
   return fromTx;
 }
 
+/** Stage 46: the cash account key of a market seller (a non-player holder), the same key openNonPlayerCashAccount uses. */
+function marketSellerAccountId(sellerId: string): string {
+  return accountKey(sellerId, "cash", "default");
+}
+
+/** Stage 46: the market seller paid for a sale of this good at this location, or undefined when none is registered there. */
+export function marketSellerForSale(catalog: EconomyCatalog, good: EconomyMarketGood, locationId: string): EconomyMarketSeller | undefined {
+  if (good.seller_id === undefined) return undefined;
+  const seller = catalog.market_sellers.find((entry) => entry.id === good.seller_id);
+  return seller && seller.location_ids.includes(locationId) ? seller : undefined;
+}
+
+/** Stage 46: refuses a sale before any debit when the seller's account would pass the balance limit. */
+function assertSellerCanReceive(state: PersistentWorldState, sellerId: string, amountNgn: number, catalog: EconomyCatalog): void {
+  const existing = state.economyAccounts[marketSellerAccountId(sellerId)];
+  if ((existing?.balance_ngn ?? 0) + amountNgn > catalog.rules.maximum_account_balance_ngn) {
+    throw new Error("economy_seller_balance_limit");
+  }
+}
+
+/**
+ * Stage 46: credits a market seller's cash account with the price of a sale and writes the seller's ledger row. The
+ * buyer's row is written by the caller with the same amount, so money moves between the two accounts and none is made.
+ */
+function recordMarketSale(
+  state: PersistentWorldState,
+  seller: EconomyMarketSeller,
+  buyerAccount: EconomyAccountRecord,
+  amountNgn: number,
+  description: string,
+  referenceId: string,
+  date: CalendarDate,
+  minuteOfDay: number,
+  now: number,
+): { readonly account_id: string; readonly id: string; readonly label: string } {
+  const account = openNonPlayerCashAccount(state, seller.id, date, now);
+  const timestamp = new Date(now).toISOString();
+  const balanceBefore = account.balance_ngn;
+  account.balance_ngn += amountNgn;
+  account.total_deposited_ngn += amountNgn;
+  account.updated_at = timestamp;
+  const txId = `economy-tx-${randomUUID()}`;
+  state.economyTransactions[txId] = {
+    transaction_id: txId,
+    account_id: account.account_id,
+    character_id: seller.id,
+    kind: "market_sale",
+    amount_ngn: amountNgn,
+    balance_before_ngn: balanceBefore,
+    balance_after_ngn: account.balance_ngn,
+    fee_ngn: 0,
+    description: `Sold ${description} to a buyer.`,
+    world_date: cloneDate(date),
+    minute_of_day: minuteOfDay,
+    posted_at: timestamp,
+    reference_id: referenceId,
+    counterparty_account_id: buyerAccount.account_id,
+    idempotency_key: createHash("sha256").update(`sale:${txId}`).digest("hex"),
+  };
+  return { account_id: account.account_id, id: seller.id, label: seller.label };
+}
+
+/** The cash balance of a character's cash account, or null when the character has none. */
+export function cashBalanceForCharacter(state: PersistentWorldState, characterId: string): number | null {
+  const cashAccount = accountsForCharacter(state, characterId).find((account) => account.kind === "cash");
+  return cashAccount ? cashAccount.balance_ngn : null;
+}
+
 export function purchaseMarketGood(
   state: PersistentWorldState,
   characterId: string,
@@ -683,7 +753,12 @@ export function purchaseMarketGood(
   minuteOfDay: number,
   now: number,
   catalog: EconomyCatalog = loadEconomyCatalog(),
-): { transaction: EconomyTransactionRecord; good: EconomyMarketGood; total_cost_ngn: number } {
+): {
+  transaction: EconomyTransactionRecord;
+  good: EconomyMarketGood;
+  total_cost_ngn: number;
+  seller: { readonly id: string; readonly label: string; readonly account_id: string } | null;
+} {
   const player = characterForId(state, characterId);
   if (!player) throw new Error("economy_character_not_found");
   if (player.character.life_status === "deceased") throw new Error("economy_character_deceased");
@@ -697,6 +772,9 @@ export function purchaseMarketGood(
   const cashAccount = cashAccounts[0];
   if (!cashAccount) throw new Error("economy_no_cash_account");
   if (cashAccount.balance_ngn < totalCost) throw new Error("economy_insufficient_funds");
+  // Stage 46: a sale is refused before any debit if the seller cannot receive it.
+  const seller = marketSellerForSale(catalog, good, locationId);
+  if (seller) assertSellerCanReceive(state, seller.id, totalCost, catalog);
   const timestamp = new Date(now).toISOString();
   const balanceBefore = cashAccount.balance_ngn;
   cashAccount.balance_ngn -= totalCost;
@@ -717,15 +795,124 @@ export function purchaseMarketGood(
     minute_of_day: minuteOfDay,
     posted_at: timestamp,
     reference_id: goodId,
-    counterparty_account_id: null,
+    counterparty_account_id: seller ? marketSellerAccountId(seller.id) : null,
     idempotency_key: createHash("sha256").update(`purchase:${goodId}:${quantity}:${timestamp}`).digest("hex"),
   };
   state.economyTransactions[txId] = tx;
+  const sale = seller
+    ? recordMarketSale(state, seller, cashAccount, totalCost, `${quantity} × ${good.label} at ${locationId}`, goodId,
+      date, minuteOfDay, now)
+    : null;
   player.character.money = cashAccount.balance_ngn;
   appendEconomyEvent(state, characterId, "market_purchase", `Bought ${quantity} × ${good.label} for ₦${totalCost}.`, date, minuteOfDay, now, {
     good_id: goodId, quantity, total_cost_ngn: totalCost, location_id: locationId,
   }, { transaction_id: txId });
-  return { transaction: tx, good, total_cost_ngn: totalCost };
+  return { transaction: tx, good, total_cost_ngn: totalCost, seller: sale ? { id: sale.id, label: sale.label, account_id: sale.account_id } : null };
+}
+
+/**
+ * Stage 46: the market shelf (shop.purchase). The price is debited from the buyer's cash account in the ledger, the
+ * same account every other money route uses, and paid to the market seller. Before this, the shelf lowered the
+ * character's money field without a ledger row, and the next ledger sync restored the balance.
+ */
+export function purchaseShopItem(
+  state: PersistentWorldState,
+  characterId: string,
+  itemId: string,
+  priceNgn: number,
+  date: CalendarDate,
+  minuteOfDay: number,
+  now: number,
+  catalog: EconomyCatalog = loadEconomyCatalog(),
+): { readonly transaction_id: string; readonly seller: { readonly id: string; readonly label: string; readonly account_id: string } } {
+  const player = characterForId(state, characterId);
+  if (!player) throw new Error("economy_character_not_found");
+  if (!Number.isSafeInteger(priceNgn) || priceNgn < 1 || priceNgn > catalog.rules.maximum_transaction_amount_ngn) {
+    throw new Error("economy_purchase_amount_invalid");
+  }
+  const cashAccount = accountsForCharacter(state, characterId).find((account) => account.kind === "cash");
+  if (!cashAccount) throw new Error("economy_no_cash_account");
+  if (cashAccount.balance_ngn < priceNgn) throw new Error("economy_insufficient_funds");
+  const seller = catalog.market_sellers.find((entry) => entry.location_ids.includes("market"));
+  if (!seller) throw new Error("economy_good_not_available_here");
+  assertSellerCanReceive(state, seller.id, priceNgn, catalog);
+  const timestamp = new Date(now).toISOString();
+  const balanceBefore = cashAccount.balance_ngn;
+  cashAccount.balance_ngn -= priceNgn;
+  cashAccount.total_withdrawn_ngn += priceNgn;
+  cashAccount.updated_at = timestamp;
+  const txId = `economy-tx-${randomUUID()}`;
+  state.economyTransactions[txId] = {
+    transaction_id: txId,
+    account_id: cashAccount.account_id,
+    character_id: characterId,
+    kind: "market_purchase",
+    amount_ngn: priceNgn,
+    balance_before_ngn: balanceBefore,
+    balance_after_ngn: cashAccount.balance_ngn,
+    fee_ngn: 0,
+    description: "Bought an item at the market shelf.",
+    world_date: cloneDate(date),
+    minute_of_day: minuteOfDay,
+    posted_at: timestamp,
+    reference_id: `shop:${itemId}`,
+    counterparty_account_id: marketSellerAccountId(seller.id),
+    idempotency_key: createHash("sha256").update(`shop:${txId}`).digest("hex"),
+  };
+  const sale = recordMarketSale(state, seller, cashAccount, priceNgn, `${itemId} from the market shelf`, `shop:${itemId}`,
+    date, minuteOfDay, now);
+  player.character.money = cashAccount.balance_ngn;
+  return { transaction_id: txId, seller: { id: sale.id, label: sale.label, account_id: sale.account_id } };
+}
+
+/**
+ * Stage 47: charges a fixed fee (the town bus fare, basic clinic care) to the cash account, as a ledger row of the
+ * charge's kind with no receiving account (no operator is decided). The debit is checked and posted before anything
+ * else changes, and `character.money` follows the cash account. A refused charge changes nothing.
+ */
+export function chargeFixedFee(
+  state: PersistentWorldState,
+  characterId: string,
+  charge: EconomyFixedCharge,
+  date: CalendarDate,
+  minuteOfDay: number,
+  now: number,
+  catalog: EconomyCatalog = loadEconomyCatalog(),
+): EconomyTransactionRecord {
+  const player = characterForId(state, characterId);
+  if (!player) throw new Error("economy_character_not_found");
+  if (!Number.isSafeInteger(charge.amount_ngn) || charge.amount_ngn < 1 || charge.amount_ngn > catalog.rules.maximum_transaction_amount_ngn) {
+    throw new Error("economy_purchase_amount_invalid");
+  }
+  const cashAccount = accountsForCharacter(state, characterId).find((account) => account.kind === "cash");
+  if (!cashAccount) throw new Error("economy_no_cash_account");
+  if (cashAccount.balance_ngn < charge.amount_ngn) throw new Error("economy_insufficient_funds");
+  const timestamp = new Date(now).toISOString();
+  const balanceBefore = cashAccount.balance_ngn;
+  cashAccount.balance_ngn -= charge.amount_ngn;
+  cashAccount.total_withdrawn_ngn += charge.amount_ngn;
+  cashAccount.updated_at = timestamp;
+  const txId = `economy-tx-${randomUUID()}`;
+  const tx: EconomyTransactionRecord = {
+    transaction_id: txId,
+    account_id: cashAccount.account_id,
+    character_id: characterId,
+    kind: charge.kind,
+    amount_ngn: charge.amount_ngn,
+    balance_before_ngn: balanceBefore,
+    balance_after_ngn: cashAccount.balance_ngn,
+    fee_ngn: 0,
+    description: `${charge.label}.`,
+    world_date: cloneDate(date),
+    minute_of_day: minuteOfDay,
+    posted_at: timestamp,
+    reference_id: charge.id,
+    counterparty_account_id: null,
+    idempotency_key: createHash("sha256").update(`fixed:${txId}`).digest("hex"),
+  };
+  state.economyTransactions[txId] = tx;
+  player.character.money = cashAccount.balance_ngn;
+  return tx;
 }
 
 export function requestLoan(
@@ -1223,8 +1410,10 @@ export function economyErrorMessage(code: string): string {
     economy_minimum_balance_not_met: "The deposit does not meet the account minimum balance.",
     economy_good_not_found: "That market good is not available in the catalogue.",
     economy_good_not_available_here: "That good is not sold at this location.",
+    economy_buyer_not_at_location: "Go to that market to buy its goods.",
     economy_purchase_quantity_invalid: "The purchase quantity is invalid.",
     economy_purchase_amount_invalid: "The total purchase amount exceeds the allowed limit.",
+    economy_seller_balance_limit: "The market seller cannot receive this payment right now. Nothing was charged.",
     economy_loan_product_not_found: "That loan product is not available.",
     economy_loan_amount_invalid: "The loan amount is outside the allowed range.",
     economy_loan_term_invalid: "The loan term is outside the allowed range.",

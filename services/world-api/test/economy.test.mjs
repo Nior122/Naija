@@ -273,7 +273,7 @@ test("economy catalog loads, validates and exposes NGN goods, banking, tax and l
     assert.ok(good.base_price_ngn >= 1);
     assert.ok(good.location_ids.includes("market"));
   }
-  assert.throws(() => validateEconomyCatalogForTest({ schema_version: 1, world_id: "nigeria-main", notice: "x".repeat(30), rules: {}, tax_bands: [], bank_products: [], loan_products: [], market_goods: [] }),
+  assert.throws(() => validateEconomyCatalogForTest({ schema_version: 1, world_id: "nigeria-main", notice: "x".repeat(30), rules: {}, tax_bands: [], bank_products: [], loan_products: [], market_goods: [], market_sellers: [], shelf_items: [], fixed_charges: [] }),
     /Economy rules/);
 });
 
@@ -487,18 +487,21 @@ test("online economy profile and list goods actions work through WebSocket", asy
   await peer.close();
 });
 
-test("online economy purchase action deducts cash through WebSocket", async () => {
+test("online economy purchase away from the market is refused over WebSocket and changes no cash", async () => {
+  // Stage 47: a new character starts at home, and a market purchase needs the buyer at that market. The paid purchase
+  // over the socket, from the market, is tested with the market buyer fixture in npc-market-sellers-stage46.test.mjs.
   const { serverPort } = await startServer();
   const { peer, ready } = await createOnlinePeer(serverPort);
   await delay(500);
   peer.messages.length = 0;
+  const cashBefore = ready.character.economy_profile.cash_balance_ngn;
 
   peer.send({ type: "economy.action", action: "purchase", payload: { good_id: "goods:bread", quantity: 1, location_id: "market" }, requestId: "req-purchase-1" });
-  const purchaseResult = await peer.waitFor(
-    (msg) => msg.type === "economy.result" && msg.requestId === "req-purchase-1", 5000,
+  const refusal = await peer.waitFor(
+    (msg) => msg.type === "economy.error" && msg.requestId === "req-purchase-1", 5000,
   );
-  assert.equal(purchaseResult.ok, true);
-  assert.equal(purchaseResult.data.total_cost_ngn, 1500);
+  assert.equal(refusal.code, "economy_buyer_not_at_location");
+  assert.equal(refusal.economy_profile.cash_balance_ngn, cashBefore, "the refused purchase changes no cash");
 
   await peer.close();
 });

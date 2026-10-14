@@ -3,6 +3,8 @@ import type { CalendarDate } from "../life/types.js";
 export type EconomyTransactionKind =
   | "salary_credit"
   | "market_purchase"
+  // Stage 46: the receiving side of a market sale, on the stall holder's own cash account.
+  | "market_sale"
   | "bank_deposit"
   | "bank_withdrawal"
   | "bank_transfer"
@@ -73,6 +75,23 @@ export interface EconomyLoanProduct {
   readonly requires_employment: boolean;
 }
 
+/** Stage 47: a shelf item bought from the market shelf. Its sale is posted like any other shop sale. */
+export interface EconomyShelfItem {
+  readonly id: string;
+  readonly label: string;
+  readonly category: string;
+  readonly hunger_restore: number;
+  readonly price_ngn: number;
+}
+
+/** Stage 47: a fixed fee. `kind` is the ledger kind it posts under. It has no receiving account (no operator is decided). */
+export interface EconomyFixedCharge {
+  readonly id: string;
+  readonly kind: "bus_fare" | "clinic_payment";
+  readonly label: string;
+  readonly amount_ngn: number;
+}
+
 export interface EconomyMarketGood {
   readonly id: string;
   readonly category: string;
@@ -81,6 +100,19 @@ export interface EconomyMarketGood {
   readonly unit: string;
   readonly hunger_restore: number;
   readonly location_ids: readonly string[];
+  /** Stage 46: the market seller paid for a sale of this good. Absent means the good has no seller (documented gap). */
+  readonly seller_id?: string;
+}
+
+/**
+ * Stage 46: a non-player holder that receives the price of goods sold at its locations. It is not a character: it has
+ * a cash account in the same ledger, opened when it is first paid, and no player route can act on that account.
+ */
+export interface EconomyMarketSeller {
+  readonly id: string;
+  readonly label: string;
+  readonly location_ids: readonly string[];
+  readonly description: string;
 }
 
 export interface EconomyRules {
@@ -111,6 +143,11 @@ export interface EconomyCatalog {
   readonly bank_products: readonly EconomyBankProduct[];
   readonly loan_products: readonly EconomyLoanProduct[];
   readonly market_goods: readonly EconomyMarketGood[];
+  readonly market_sellers: readonly EconomyMarketSeller[];
+  /** Stage 47: the goods sold from the market shelf in the player's own menu (prices were hardcoded in the engine). */
+  readonly shelf_items: readonly EconomyShelfItem[];
+  /** Stage 47: fixed fees charged to the cash account. Each one posts a ledger row of its kind. */
+  readonly fixed_charges: readonly EconomyFixedCharge[];
 }
 
 export interface EconomyAccountRecord {

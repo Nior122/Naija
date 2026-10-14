@@ -72,6 +72,17 @@ const ROUTES = [
   },
 ];
 
+/**
+ * Stage 47: a bus fare and clinic care are debited from the cash account, and character.money follows it. A fixture that
+ * sets the money therefore sets the cash account too.
+ */
+function fundCash(backend, character) {
+  const account = Object.values(backend.store.state.economyAccounts)
+    .find((entry) => entry.character_id === character.character_id && entry.kind === "cash");
+  assert.ok(account, "the citizen has a cash account");
+  account.balance_ngn = character.money;
+}
+
 /** Creates a player, puts it where the route is used, and saves that baseline. */
 async function setUp(backend, started, route) {
   const peer = await openPeerFrom(started.websocketUrl, "127.0.0.1");
@@ -79,6 +90,7 @@ async function setUp(backend, started, route) {
   assert.equal((await resumeSession(peer, session.sessionToken)).type, "session.ready");
   const character = backend.store.state.players[session.playerId].character;
   route.place(character);
+  fundCash(backend, character);
   await backend.store.flush();
   return { peer, session };
 }
@@ -148,7 +160,9 @@ for (const backendName of backendNames) {
 
           // Not enough money: refused before any change. Put the character back in place, then set the money as setup.
           route.place(character());
+          fundCash(backend, character());
           route.poor(character());
+          fundCash(backend, character());
           await backend.store.flush();
           const livePoor = JSON.stringify(character());
           const savedPoor = JSON.stringify(await savedCharacter(backend, playerId));

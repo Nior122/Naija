@@ -12,6 +12,7 @@ const VALID_GOOD_LOCATION_IDS = new Set([
   "police_station", "community_hall",
 ]);
 const BANK_PRODUCT_KINDS = new Set(["savings", "current", "fixed_deposit"]);
+const FIXED_CHARGE_KINDS = new Set(["bus_fare", "clinic_payment"]);
 const LOAN_PRODUCT_KINDS = new Set(["personal", "student", "business"]);
 
 function repositoryRoot(): string {
@@ -41,7 +42,8 @@ function validateCatalog(value: unknown): EconomyCatalog {
   if (!isRecord(value) || value.schema_version !== 1 || value.world_id !== "nigeria-main" ||
     typeof value.notice !== "string" || value.notice.length < 30 || !isRecord(value.rules) ||
     !Array.isArray(value.tax_bands) || !Array.isArray(value.bank_products) ||
-    !Array.isArray(value.loan_products) || !Array.isArray(value.market_goods)) {
+    !Array.isArray(value.loan_products) || !Array.isArray(value.market_goods) || !Array.isArray(value.market_sellers) ||
+    !Array.isArray(value.shelf_items) || !Array.isArray(value.fixed_charges)) {
     throw new Error("Economy catalog is incomplete or has an unsupported schema/world.");
   }
   const catalog = value as unknown as EconomyCatalog;
@@ -49,6 +51,29 @@ function validateCatalog(value: unknown): EconomyCatalog {
   uniqueIds(catalog.bank_products, "Economy bank products");
   uniqueIds(catalog.loan_products, "Economy loan products");
   uniqueIds(catalog.market_goods, "Economy market goods");
+  uniqueIds(catalog.market_sellers, "Economy market sellers");
+  uniqueIds(catalog.shelf_items, "Economy shelf items");
+  uniqueIds(catalog.fixed_charges, "Economy fixed charges");
+  for (const item of catalog.shelf_items) {
+    if (!item.label || typeof item.label !== "string" || !VALID_CATEGORIES.has(item.category) ||
+      !Number.isSafeInteger(item.price_ngn) || item.price_ngn < 1 || item.price_ngn > catalog.rules.maximum_transaction_amount_ngn ||
+      !Number.isSafeInteger(item.hunger_restore) || item.hunger_restore < 0 || item.hunger_restore > 100) {
+      throw new Error(`Economy shelf item ${item.id} has invalid configuration.`);
+    }
+  }
+  for (const charge of catalog.fixed_charges) {
+    if (!FIXED_CHARGE_KINDS.has(charge.kind) || !charge.label || typeof charge.label !== "string" ||
+      !Number.isSafeInteger(charge.amount_ngn) || charge.amount_ngn < 1 || charge.amount_ngn > catalog.rules.maximum_transaction_amount_ngn) {
+      throw new Error(`Economy fixed charge ${charge.id} has invalid configuration.`);
+    }
+  }
+  for (const seller of catalog.market_sellers) {
+    if (!seller.label || typeof seller.label !== "string" || !seller.description || typeof seller.description !== "string" ||
+      !Array.isArray(seller.location_ids) || seller.location_ids.length === 0 ||
+      seller.location_ids.some((locationId) => !VALID_GOOD_LOCATION_IDS.has(locationId))) {
+      throw new Error(`Economy market seller ${seller.id} has invalid configuration.`);
+    }
+  }
 
   const rules = catalog.rules;
   if (rules.currency !== "NGN" || typeof rules.currency_label !== "string" || typeof rules.currency_symbol !== "string" ||
@@ -127,6 +152,13 @@ function validateCatalog(value: unknown): EconomyCatalog {
       !Array.isArray(good.location_ids) || good.location_ids.length === 0 ||
       good.location_ids.some((locationId) => !VALID_GOOD_LOCATION_IDS.has(locationId))) {
       throw new Error(`Economy market good ${good.id} has invalid configuration.`);
+    }
+    if (good.seller_id !== undefined) {
+      const seller = catalog.market_sellers.find((entry) => entry.id === good.seller_id);
+      if (!seller) throw new Error(`Economy market good ${good.id} names an unknown market seller.`);
+      if (!good.location_ids.every((locationId) => seller.location_ids.includes(locationId))) {
+        throw new Error(`Economy market good ${good.id} is sold where its market seller has no stall.`);
+      }
     }
   }
 

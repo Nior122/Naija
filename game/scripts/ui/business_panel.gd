@@ -505,6 +505,8 @@ func _add_owner_actions(card: VBoxContainer, profile: Dictionary, role: String) 
 		_add_goods_listing_form(card, profile)
 	if PropertyBusinessContract.can_perform("add_service", role):
 		_add_service_listing_form(card, profile)
+	if PropertyBusinessContract.can_perform("produce", role):
+		_add_production_form(card, profile)
 	if PropertyBusinessContract.can_perform("restock", role):
 		_add_restock_form(card, profile)
 	if PropertyBusinessContract.can_perform("pay_salary", role):
@@ -527,6 +529,43 @@ func _add_owner_actions(card: VBoxContainer, profile: Dictionary, role: String) 
 		_add_transfer_ownership_form(card, profile)
 	if PropertyBusinessContract.can_perform("close", role):
 		_add_close_form(card, profile)
+
+
+## Production for a template that makes goods or food. Each recipe row says what it uses, what it
+## makes, and its operating cost. The server checks the inputs, the funds, and the stock limit, and
+## it refuses a run without changing anything.
+func _add_production_form(card: VBoxContainer, profile: Dictionary) -> void:
+	var recipes := PropertyBusinessContract.production_recipes_for(str(profile.get("template_id", "")))
+	if recipes.is_empty():
+		return
+	var business_id := str(profile.get("business_id", ""))
+	_add_text("Production (uses your business stock and balance)", 13, TEXT_DARK, card)
+	for recipe in recipes:
+		var recipe_id := str(recipe.get("id", ""))
+		var label := str(recipe.get("label", ""))
+		var output_quantity := int(recipe.get("output_quantity", 0))
+		var output_label := str(recipe.get("output_label", ""))
+		var cost := int(recipe.get("operating_cost_ngn", 0))
+		var inputs: Array = []
+		for input in recipe.get("inputs", []):
+			inputs.append("%d × %s" % [int(input.get("quantity", 0)), str(input.get("label", ""))])
+		var needs := "no stock inputs"
+		if not inputs.is_empty():
+			needs = ", ".join(PackedStringArray(inputs))
+		var row := HBoxContainer.new()
+		card.add_child(row)
+		_add_text("%s: needs %s; makes %d × %s; operating cost %s" % [
+			label, needs, output_quantity, output_label, PropertyBusinessContract.naira(cost),
+		], 12, TEXT_DARK, row)
+		var produce := _button("Produce")
+		produce.disabled = _tracker.has_pending()
+		produce.pressed.connect(func():
+			_confirm_change("produce", {"business_id": business_id, "recipe_id": recipe_id},
+				("Produce %s? It uses inputs from your business stock, takes %s from the business balance, "
+					+ "and adds %d × %s to stock.") % [
+					label, PropertyBusinessContract.naira(cost), output_quantity, output_label,
+				]))
+		row.add_child(produce)
 
 
 func _add_restock_form(card: VBoxContainer, profile: Dictionary) -> void:

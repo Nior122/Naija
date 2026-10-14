@@ -28,6 +28,7 @@ const CareerPanelScript = preload("res://scripts/ui/career_panel.gd")
 const HousingPanelScript = preload("res://scripts/ui/housing_panel.gd")
 const BusinessPanelScript = preload("res://scripts/ui/business_panel.gd")
 const NpcPanelScript = preload("res://scripts/ui/npc_panel.gd")
+const SaveServiceScript = preload("res://scripts/services/save_service.gd")
 const TIMEOUT_NOTICE := "No answer came from the server in time. Its records show the current " \
 	+ "state. Retry sends the same request ID, which the server applies at most once."
 const DUPLICATE_NOTICE := "The server had already processed this request. " \
@@ -1365,8 +1366,42 @@ func is_modal_open() -> bool:
 
 func _on_create_pressed() -> void:
 	var profile := _profile_from_form()
-	if not profile.is_empty():
-		create_requested.emit(profile)
+	if profile.is_empty():
+		return
+	# Beginning a new life writes over the local save. Ask first when one exists. The file is
+	# checked at the press, not when the screen was drawn, so a save made in the meantime is still
+	# protected.
+	if SaveServiceScript.has_save():
+		show_replace_save_confirmation(profile)
+		return
+	create_requested.emit(profile)
+
+
+# Replace confirmation for a new life, shown only when a local save exists. The modal sits over
+# the creation card, so Cancel closes it and returns to the same card with the typed name and
+# options kept. Replace emits create_requested with replace_existing_save set;
+# prototype_game.gd refuses any new life that does not carry that flag. Cancel emits nothing and
+# changes no file.
+func show_replace_save_confirmation(profile: Dictionary) -> void:
+	var card := _open_modal(
+		"Replace your saved life?",
+		(
+			"This device already has a saved life. Beginning a new life replaces the saved game: "
+			+ "its character, money, school progress, location, and world time are overwritten, "
+			+ "and the saved game cannot be recovered."
+		)
+	)
+	var replace_button := _button("Replace saved life", Vector2(240.0, 42.0))
+	replace_button.pressed.connect(_on_replace_save_confirmed.bind(profile))
+	card.add_child(replace_button)
+	_add_modal_close(card, "Cancel")
+
+
+func _on_replace_save_confirmed(profile: Dictionary) -> void:
+	_close_modal()
+	var confirmed_profile := profile.duplicate(true)
+	confirmed_profile["replace_existing_save"] = true
+	create_requested.emit(confirmed_profile)
 
 
 func _on_online_pressed() -> void:

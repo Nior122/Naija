@@ -137,6 +137,14 @@
       "requires_employment": true
     }
   ],
+  "market_sellers": [
+    {
+      "id": "market-seller:idera-market",
+      "label": "Market stalls",
+      "location_ids": ["market"],
+      "description": "Non-player stall holder for the Idera market. It holds an ordinary cash account in the economy ledger that receives the price of stall goods. No NPC decides its prices, stock, or spending."
+    }
+  ],
   "market_goods": [
     {
       "id": "goods:rice-5kg",
@@ -145,7 +153,8 @@
       "base_price_ngn": 8500,
       "unit": "bag",
       "hunger_restore": 40,
-      "location_ids": ["market"]
+      "location_ids": ["market"],
+      "seller_id": "market-seller:idera-market"
     },
     {
       "id": "goods:beans-2kg",
@@ -154,7 +163,8 @@
       "base_price_ngn": 3500,
       "unit": "bag",
       "hunger_restore": 30,
-      "location_ids": ["market"]
+      "location_ids": ["market"],
+      "seller_id": "market-seller:idera-market"
     },
     {
       "id": "goods:garri-5kg",
@@ -163,7 +173,8 @@
       "base_price_ngn": 4000,
       "unit": "bag",
       "hunger_restore": 25,
-      "location_ids": ["market"]
+      "location_ids": ["market"],
+      "seller_id": "market-seller:idera-market"
     },
     {
       "id": "goods:palm-oil-1l",
@@ -172,7 +183,8 @@
       "base_price_ngn": 2500,
       "unit": "bottle",
       "hunger_restore": 0,
-      "location_ids": ["market"]
+      "location_ids": ["market"],
+      "seller_id": "market-seller:idera-market"
     },
     {
       "id": "goods:bread",
@@ -181,7 +193,8 @@
       "base_price_ngn": 1500,
       "unit": "loaf",
       "hunger_restore": 20,
-      "location_ids": ["market"]
+      "location_ids": ["market"],
+      "seller_id": "market-seller:idera-market"
     },
     {
       "id": "goods:water-50cl",
@@ -190,7 +203,8 @@
       "base_price_ngn": 200,
       "unit": "bottle",
       "hunger_restore": 5,
-      "location_ids": ["market"]
+      "location_ids": ["market"],
+      "seller_id": "market-seller:idera-market"
     },
     {
       "id": "goods:suya",
@@ -199,7 +213,8 @@
       "base_price_ngn": 1000,
       "unit": "wrap",
       "hunger_restore": 30,
-      "location_ids": ["market"]
+      "location_ids": ["market"],
+      "seller_id": "market-seller:idera-market"
     },
     {
       "id": "goods:paracetamol",
@@ -235,7 +250,8 @@
       "base_price_ngn": 500,
       "unit": "unit",
       "hunger_restore": 0,
-      "location_ids": ["market"]
+      "location_ids": ["market"],
+      "seller_id": "market-seller:idera-market"
     },
     {
       "id": "goods:school-uniform",
@@ -244,7 +260,38 @@
       "base_price_ngn": 5000,
       "unit": "piece",
       "hunger_restore": 0,
-      "location_ids": ["market"]
+      "location_ids": ["market"],
+      "seller_id": "market-seller:idera-market"
+    }
+  ],
+  "shelf_items": [
+    {
+      "id": "meat_pie",
+      "label": "Meat pie",
+      "category": "food",
+      "hunger_restore": 24,
+      "price_ngn": 350
+    },
+    {
+      "id": "bottled_water",
+      "label": "Bottled water",
+      "category": "food",
+      "hunger_restore": 8,
+      "price_ngn": 100
+    }
+  ],
+  "fixed_charges": [
+    {
+      "id": "fixed:town-bus-stop-fare",
+      "kind": "bus_fare",
+      "label": "Town bus fare at the stop",
+      "amount_ngn": 150
+    },
+    {
+      "id": "fixed:clinic-basic-care",
+      "kind": "clinic_payment",
+      "label": "Basic care at the clinic",
+      "amount_ngn": 300
     }
   ]
 }
