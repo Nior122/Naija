@@ -283,12 +283,15 @@ correctly.
 - **Runner.** `tools/business-fixture/run-business-ui.sh` replaces the `/tmp` scripts. It refuses to start if the port
   is busy, and it validates `PORT`. It copies the fixture to `WORK_DIR` and never writes the source file. It writes the
   role configs with mode 0600 and never prints tokens. It stops only a server that it started (a server that was already
-  running is left alone), on EXIT, INT, and TERM. Each optional phase (`lifecycle`, `rate_limit`, `remaining`,
+  running is left alone), on EXIT, INT, and TERM. Both runners create `WORK_DIR` with mode 700 only when it does not
+  exist, and they make their files private with `umask 077`. An existing directory keeps its permissions. The Godot
+  runner stops starting new checks on INT or TERM (section 7.5, Step 4). Each optional phase (`lifecycle`, `rate_limit`, `remaining`,
   `career_rate_limit`) needs a fresh owner balance, so each one gets its own copy. `tools/godot/run-godot-checks.sh`
   runs every phase in that way.
 - **Local saves (new in this pass).** The headless tests use the developer's real save slot. `ui_flow_headless.gd`
-  removes `user://naija-stage1-save.json` at line 185 if it exists, and `load_confirmation_headless.gd`, `return_path.gd`,
-  and `domain_smoke.gd` also use Stage 1 save paths. The game's own `save_service.gd` uses the same file. The guard in
+  removes `user://naija-stage1-save.json` at line 185 if it exists. `load_confirmation_headless.gd` and `return_path.gd`
+  also use that real file. `domain_smoke.gd` writes its own file, `user://naija-stage1-test-save.json`, not the real
+  save. The game's own `save_service.gd` uses the real file. The guard in
   `game/tests/support/save_slot_guard.gd` backs up and restores the slot, but only within one run. The runner now
   copies every `naija-*` file in Godot's user data directory into `WORK_DIR` before any Godot test runs, records
   SHA-256 values, and reports `FAIL` if a file changed or disappeared. It does not restore a file itself. The
@@ -550,8 +553,14 @@ The runner does the following, in order:
 - checks again that the backed-up saves are unchanged, and reports `FAIL` if any changed.
 
 Expected for a complete pass: exit 0, with `SUMMARY: 23 passed, 0 failed, 0 skipped`. That is one gdparse, one save
-protection, 15 headless, five UI runs, and one save check. Exit 2 means the run is incomplete (some checks were
-skipped). Exit 1 means at least one check failed. Exit 3 means the run did not start.
+protection, 15 headless, five UI runs, and one save check. The save check needs at least one `naija-*` file to exist
+before the run. On a machine where none exists yet, the runner prints a `NOTE` in place of the save check and the
+expected count is 22, with exit 0 (the NOTE is not a skip). Exit 2 means the run is incomplete (some checks were skipped). Exit 1 means at least one check
+failed. Exit 3 means the run did not start. Exit 130 means it was interrupted: a check that had not started is not
+run, the check that was running is counted as a `FAIL`, and the save check still runs.
+
+The runner also prints a `NOTE` for any `naija-*` file that exists after the run but did not exist before it. A note
+is not counted. Check the log that wrote the file, because the tests normally remove their own files.
 
 Each `PASS` means the process exited 0 and its log had no `SCRIPT ERROR`, `Parse Error`, or `Compile Error`. Some
 headless scripts print no `PASS` line, so read the log for the detail. Each UI phase prints its own `PASS:` lines
@@ -559,10 +568,13 @@ in `WORK_DIR/ui-<phase>/phase_<name>.log`. Count those lines from the logs and r
 what each check asserts.
 
 **Step 5. The online smoke test (not in the runner).** `online_businesses_headless.gd` needs a server at the client's
-default URL, `ws://127.0.0.1:3000/ws`, and it creates a new character. Give it a fresh world and its own session path:
+default URL, `ws://127.0.0.1:3000/ws`, and it creates a new character. It keeps its session in its own file,
+`user://naija-online-businesses-test.cfg`, in Godot's user data directory. It deletes that file before it starts, and it
+does not read or change the developer's `naija-multiplayer.cfg`. It sets `NAIJA_MULTIPLAYER_SESSION_PATH` itself, so
+setting that variable in the command has no effect. Give it a fresh world:
 
 1. Start a server on port 3000 with a new `DATA_FILE` under `WORK_DIR`, as in Step 3.1.
-2. `NAIJA_MULTIPLAYER_SESSION_PATH=$WORK_DIR/online-smoke.cfg "$GODOT_BIN" --headless --path game --script res://tests/online_businesses_headless.gd`
+2. `"$GODOT_BIN" --headless --path game --script res://tests/online_businesses_headless.gd`
 3. Stop the server. Record the exit code and the PASS count.
 
 The earlier count (section 7.2, not re-run) was 11 PASS.
@@ -581,6 +593,9 @@ edit an expected count to match a result. If the save check fails, restore each 
 - `character_deceased` routing in the career panel. A source-contract test covers the wiring only.
 - The bounded wait in `shutdown()` (section 6.2), and the PostgreSQL released-store path.
 - Anything that needs a deceased or a manager character, or a second live client.
+- Engine `ERROR:` lines. The log scan fails a run only on `SCRIPT ERROR`, `Parse Error`, and `Compile Error`. Two
+  tests print expected engine errors (`Parse JSON failed`, section 6.4), so an `ERROR:` line alone is not a failure.
+  Read the logs for those.
 
 ### 7.6 Final pass, 2026-10-14 (runner rewrite and backend re-run; no Godot run)
 
@@ -633,6 +648,74 @@ rewritten, so the final runs above supersede them.
 
 **Not verified in this pass:** every Godot check, including `user_data_dir_headless.gd` (never run, so the save
 protection has not been run against a real Godot user data directory). Section 7.5 gives the steps.
+
+### 7.7 Review of the pushed changes (`115edfb`, `641a2b0`), 2026-10-14; no Godot run
+
+**Provenance:** a review of the two commits pushed after `79932db`, followed by fixes for confirmed defects. Godot was
+**not** run. Every result below is CI, backend, contract, parse, lint, or stub-harness output. The stub harness runs
+shell scripts with a fake Godot that sleeps or exits. It shows the runner's own behaviour, not the game's.
+
+**CI.** Run `38490105054` (event `push`, head `641a2b0`, workflow "Foundation checks") completed with conclusion
+`success`. Its jobs: "World API build, lint, and tests" = `success`, and "World API live PostgreSQL tests (disposable
+service)" = `success`. The job logs could not be downloaded from the sandbox (the log host returned EOF), so the test
+counts inside CI are not known from CI. No CI run was found for `115edfb` as its own head. The run for `641a2b0` is the
+one that covers both commits.
+
+**Findings and fixes** (each has a regression test in `services/world-api/test/godot-checks-runner-stage44.test.mjs`):
+
+| # | Finding | How it was shown | Fix |
+|---|---|---|---|
+| 1 | Ctrl-C to the Godot runner did not stop it. Every check still started, and a check that was interrupted but exited 0 was recorded as `PASS`. | Stub harness: SIGINT to the run's process group. Before the fix: all 15 headless checks started and the run exited 2. | The runner traps INT and TERM and sets a flag. No new check starts, the interrupted check is a `FAIL`, the save check still runs, and the exit code is 130. Test: "Ctrl-C to the run's process group". |
+| 2 | Both runners ran `chmod 700` on any `WORK_DIR`, including one that already existed. `WORK_DIR=$HOME` would make the home directory private. | Stub run with an existing 755 directory: 700 afterwards. | Only a directory the runner creates is set to 700. Both runners use `umask 077` for the files they write. Tests: "a WORK_DIR that already exists keeps its permissions" and the static check for both runners. |
+| 3 | On a machine with no `naija-*` files yet, the save check was silently missing. The count was 16 with no save-check line. A `naija-*` file a test left behind was not reported. | Stub run on an empty user-data directory. | An explicit note replaces the missing line (not counted). Any `naija-*` file that exists after the run and not before it is listed in a note. Tests: "no naija-* files before the run" and "a naija-* file that a run leaves behind". |
+| 4 | Runbook step 5 told the reader to set `NAIJA_MULTIPLAYER_SESSION_PATH` to isolate the online test. `online_businesses_headless.gd` sets that variable itself, to `user://naija-online-businesses-test.cfg`, and deletes that file before it starts. The instruction did nothing. | Read `game/tests/online_businesses_headless.gd` (lines 22, 104–107). | The runbook now names the file the test uses and says the variable is overridden. Test: the runbook does not contain the inert command. |
+| 5 | Section 6.3 said `domain_smoke.gd` used the real Stage 1 save. It uses `user://naija-stage1-test-save.json`. | Grep of the test files. | Wording corrected. The file is still a `naija-*` file, so the runner backs it up. |
+| 6 | The runner header said it checks "every required script", but the business UI scripts it runs were not in the required list. A missing one was found only as a phase failure. | Read the required list. | The seven `business_*_ui_headless.gd` files and `save_slot_guard.gd` are in the list. |
+| 7 | (Checked, no change.) `push_error` in the tests is not in the log scan, so a test that used it and still exited 0 would pass. | Read each call and the lines after it. Each one is followed by a non-zero `quit` or a failing return. | None needed. The exit code catches these. |
+| 8 | (Checked, no change.) shellcheck (`shellcheck-py` 0.11.0, from PyPI, in `/tmp`) reports SC2155 on three `export VAR="$(node ...)"` lines in `run-business-ui.sh`. | shellcheck output. | Not changed. The role-config step earlier in the same script reads the same sessions file and exits 4 on failure. A missing `characterId` would reach Godot as the string `undefined`, and that fails the phase. The Godot runner has no shellcheck warnings. |
+
+**Checked and found correct:**
+
+- The business runner's Ctrl-C path: with a valid world, the server it started was stopped, the port was free afterwards,
+  the run exited 130, and only one Godot call started.
+- The fresh-copy rule: each optional UI phase gets its own copy (`ui_run`), and the default run shares one copy for its
+  six chained phases, as designed.
+- Port and work-directory validation: `PORT` must be 1024–65535; the business runner refuses a bad `PORT` before it
+  starts anything.
+- Exit codes: 0 only when nothing failed or was skipped; 2 for skips; 1 for failures; 3 when nothing ran; 130 for an
+  interrupt.
+- Godot user-data discovery and the save backup, including a directory name with a colon and a space
+  (`Naija: One World`).
+- Every identifier that `career_rate_limit_ui_headless.gd` uses exists in the source (`_on_online_message`,
+  `_career_request_id`, `_busy`, `_notice`, `_hud`, `_career_panel`, `mode_2d_instance`, `playing`, `notify`). The scenario
+  itself has not run.
+- `game/scripts` is unchanged since `79932db`, so the two commits change tests, tools, and docs only.
+
+**Commands and results (final working tree, after the fixes above):**
+
+| Command | Result |
+|---|---|
+| `bash -n tools/godot/run-godot-checks.sh`, `bash -n tools/business-fixture/run-business-ui.sh` | exit 0, exit 0 |
+| `shellcheck -S warning` on both runners (shellcheck-py 0.11.0) | Godot runner: no findings. Business runner: 3 SC2155 warnings (finding 8), exit 1 |
+| `NAIJA_ENV=test node --test test/godot-checks-runner-stage44.test.mjs` | 23 tests, 23 pass, 0 fail (17 before this review; 6 added) |
+| File backend suite: `env -u DATABASE_URL NAIJA_ENV=test node --test test/*.test.mjs` (`services/world-api`) | exit 0: **1560 tests, 1506 pass, 0 fail, 54 skipped** (PostgreSQL-only) |
+| PostgreSQL suite: `DATABASE_URL=postgres://naija@127.0.0.1:5432/naija_test?sslmode=disable DB_SSL=false NAIJA_ENV=test NAIJA_ALLOW_DB_TESTS=true node --test test/*.test.mjs` (PostgreSQL 18.4, `/tmp/pgrun`) | exit 0: **1861 tests, 1857 pass, 0 fail, 4 skipped** (TLS live tests) |
+| Client, business, runner, and career contract tests: `node --test test/client-*.test.mjs test/business*.test.mjs test/godot-checks-runner-stage44.test.mjs test/career-errors-stage44.test.mjs` | **220 tests, 220 pass, 0 fail, 0 skipped** |
+| `npm run lint` (repository root) | exit 0 |
+| `gdparse` on all 63 `game/**/*.gd` files on disk | exit 0 |
+| `gdlint` on `career_rate_limit_ui_headless.gd` and `user_data_dir_headless.gd` | no problems |
+| Stub harness: Ctrl-C to the Godot runner (before the fix: 15 checks started; after: 1) | exit 130, one check started, the rest skipped |
+| Stub harness: Ctrl-C to the business runner with a valid world | exit 130, server stopped, port free, no leftover server |
+| Stub harness: fresh user-data directory | exit 2; `NOTE` in place of the save check; 16 passed |
+| Stub harness: existing `WORK_DIR` at mode 755 | still 755 after the run; exit 2 |
+| Stub harness, full path: `GODOT_BIN` = a stub that exits 0 for every call, `GDPARSE` = a stub that exits 0, a valid world, the business fixture server, and a pre-existing `naija-stage1-save.json`. The stub is not Godot. | exit 0, `SUMMARY: 23 passed, 0 failed, 0 skipped`, the save check passes, port 3297 closed afterwards. This shows the runner's count and exit path only. |
+| Final tree re-run after the last edits (one blank line in the runner, the exact exit-2 assertion, this section and the status paragraph) | Every row above gives the same result. The runner test was re-run: 23 of 23. |
+
+**Limit of the interrupt handling.** The runner does not kill a child process. If a Godot process ignores SIGINT, the runner waits for it to end (its timeout is 900 s for a headless script and 600 s for a UI phase). A second Ctrl-C does not stop it. Stop such a process by hand, then the runner will exit 130 at its next check.
+
+**Not verified:** every Godot check. The fixes to the runner and the signal behaviour were tested with stub binaries
+only. The real Godot path, including `user_data_dir_headless.gd`, `career_rate_limit_ui_headless.gd`, and the save
+protection against a real Godot user-data directory, has not run.
 
 ## 8. Decisions that remain open (not made here)
 

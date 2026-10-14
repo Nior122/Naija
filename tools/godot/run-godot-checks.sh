@@ -47,12 +47,14 @@
 #
 # Exit status: 0 only when every check ran and passed. 1 when any check failed. 2 when nothing failed but some
 # checks were skipped (the run is incomplete, and it is never reported as success). 3 when the run did not start
-# because an input is wrong (nothing was run).
+# because an input is wrong (nothing was run). 130 when interrupted (Ctrl-C, or TERM to this script): a check that
+# had not started is not run, a check that was running is counted as a FAIL, and the save check still runs.
 #
 # Not run by this script (run by hand, see the Stage 44 record, section 7.5): online_businesses_headless.gd,
 # which needs its own running server.
 
 set -u
+umask 077
 
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 PORT="${PORT:-3200}"
@@ -82,9 +84,24 @@ esac
 if [ "$PORT" -lt 1024 ] || [ "$PORT" -gt 65535 ]; then
   input_error "PORT must be from 1024 to 65535 (got $PORT)."
 fi
-mkdir -p "$WORK_DIR" || input_error "WORK_DIR cannot be created: $WORK_DIR"
-chmod 700 "$WORK_DIR"
+# An existing directory is used as it is. Only a directory this run creates gets mode 700.
+if [ ! -d "$WORK_DIR" ]; then
+  mkdir -p "$WORK_DIR" || input_error "WORK_DIR cannot be created: $WORK_DIR"
+  chmod 700 "$WORK_DIR"
+fi
 WORK_DIR="$(cd "$WORK_DIR" && pwd)"
+
+# Ctrl-C (INT) or TERM: no further check starts. See may_start below.
+INTERRUPTED=0
+trap 'INTERRUPTED=1' INT TERM
+# A check starts only when the run has not been interrupted.
+may_start() {
+  if [ "$INTERRUPTED" -eq 1 ]; then
+    result_skip "$1" "not started: the run was interrupted"
+    return 1
+  fi
+  return 0
+}
 
 HEADLESS_TESTS=(
   domain_smoke player_movement persistence_notice ui_flow_headless input_bindings_headless
@@ -96,8 +113,15 @@ REQUIRED_FILES=(
   "game/tests/user_data_dir_headless.gd"
   "game/tests/save_restart.gd"
   "game/tests/career_rate_limit_ui_headless.gd"
+  "game/tests/support/save_slot_guard.gd"
   "tools/business-fixture/run-business-ui.sh"
 )
+# The scripts that the server-backed UI phases run. A missing one is refused here, not found later as a phase failure.
+for test in business_owner_ops_ui_headless business_buyer_ui_headless business_view_ui_headless \
+  business_owner_finish_ui_headless business_lifecycle_ui_headless business_rate_limit_ui_headless \
+  business_remaining_ui_headless; do
+  REQUIRED_FILES+=("game/tests/$test.gd")
+done
 for test in "${HEADLESS_TESTS[@]}"; do REQUIRED_FILES+=("game/tests/$test.gd"); done
 MISSING=()
 for rel in "${REQUIRED_FILES[@]}"; do
@@ -115,15 +139,17 @@ case "$VERSION" in
 esac
 
 # ---- 2. Parse ----
-if command -v "$GDPARSE" >/dev/null 2>&1; then
-  mapfile -t GD_FILES < <(cd "$REPO" && find game -name '*.gd' -not -path '*/.godot/*' | sort)
-  if (cd "$REPO" && "$GDPARSE" "${GD_FILES[@]}") > "$WORK_DIR/gdparse.log" 2>&1; then
-    result_pass "gdparse (${#GD_FILES[@]} GDScript files on disk)"
+if may_start gdparse; then
+  if command -v "$GDPARSE" >/dev/null 2>&1; then
+    mapfile -t GD_FILES < <(cd "$REPO" && find game -name '*.gd' -not -path '*/.godot/*' | sort)
+    if (cd "$REPO" && "$GDPARSE" "${GD_FILES[@]}") > "$WORK_DIR/gdparse.log" 2>&1; then
+      result_pass "gdparse (${#GD_FILES[@]} GDScript files on disk)"
+    else
+      result_fail "gdparse" "$WORK_DIR/gdparse.log"
+    fi
   else
-    result_fail "gdparse" "$WORK_DIR/gdparse.log"
+    result_skip "gdparse" "'$GDPARSE' is not on PATH (gdtoolkit 4.x)"
   fi
-else
-  result_skip "gdparse" "'$GDPARSE' is not on PATH (gdtoolkit 4.x)"
 fi
 
 # ---- 3. Save protection ----
@@ -143,6 +169,7 @@ protect_saves() {
   if [ -e "$BACKUP_DIR" ]; then BACKUP_DIR="$BACKUP_DIR-$$"; fi
   mkdir -p "$BACKUP_DIR" || return 1
   : > "$BACKUP_DIR/manifest.sha256"
+  : > "$BACKUP_DIR/files.txt"
   note ""
   note "LOCAL SAVE WARNING"
   note "  Godot's user data directory for this project: $SAVE_DIR"
@@ -159,6 +186,7 @@ protect_saves() {
   local rel_list=()
   mapfile -t rel_list < <(cd "$SAVE_DIR" && find . -type f \( -name 'naija-*' -o -path './naija-*/*' \) \
     -print | sed 's|^\./||' | sort)
+  printf '%s\n' "${rel_list[@]}" > "$BACKUP_DIR/files.txt"
   if [ "${#rel_list[@]}" -eq 0 ]; then
     note "  No naija-* files exist yet, so there is nothing to back up."
     return 0
@@ -187,21 +215,39 @@ else
 fi
 
 verify_saves() {
-  [ -s "$BACKUP_DIR/manifest.sha256" ] || return 0
-  if (cd "$SAVE_DIR" && sha256sum -c --quiet "$BACKUP_DIR/manifest.sha256") > "$WORK_DIR/save-check.log" 2>&1; then
-    result_pass "save check: the local naija-* saves are unchanged after the run"
+  if [ -s "$BACKUP_DIR/manifest.sha256" ]; then
+    if (cd "$SAVE_DIR" && sha256sum -c --quiet "$BACKUP_DIR/manifest.sha256") > "$WORK_DIR/save-check.log" 2>&1; then
+      result_pass "save check: the local naija-* saves are unchanged after the run"
+    else
+      result_fail "save check: a local naija-* save changed or disappeared during the run. Restore it from $BACKUP_DIR (details in $WORK_DIR/save-check.log)"
+    fi
   else
-    result_fail "save check: a local naija-* save changed or disappeared during the run. Restore it from $BACKUP_DIR (details in $WORK_DIR/save-check.log)"
+    note "NOTE: no naija-* files existed before the run, so the save check had nothing to compare (not counted)."
+  fi
+  # naija-* files that exist now and did not exist before the run. Reported as a note, not counted.
+  if [ -n "$SAVE_DIR" ] && [ -d "$SAVE_DIR" ]; then
+    local now=() rel new=()
+    mapfile -t now < <(cd "$SAVE_DIR" && find . -type f \( -name 'naija-*' -o -path './naija-*/*' \) -print | sed 's|^\./||' | sort)
+    for rel in "${now[@]}"; do
+      grep -qxF -- "$rel" "$BACKUP_DIR/files.txt" || new+=("$rel")
+    done
+    if [ "${#new[@]}" -gt 0 ]; then
+      note "NOTE: these naija-* files exist after the run but did not exist before it: ${new[*]}"
+      note "  The tests normally remove their own files. Check the logs before you rely on the save slot."
+    fi
   fi
 }
 
 # ---- 4. Headless scripts that need no server ----
 run_headless() {
   local name="$1"; shift
+  may_start "$name" || return 0
   local log="$WORK_DIR/$name.log"
   (cd "$REPO" && timeout 900 "$GODOT_BIN" --headless --path game "$@") > "$log" 2>&1
   local rc=$?
-  if [ "$rc" -ne 0 ]; then
+  if [ "$INTERRUPTED" -eq 1 ]; then
+    result_fail "$name (interrupted; not counted as a pass)" "$log"
+  elif [ "$rc" -ne 0 ]; then
     result_fail "$name (exit $rc)" "$log"
   elif grep -qE 'SCRIPT ERROR|Parse Error|Compile Error' "$log"; then
     result_fail "$name (exit 0, but its log has a script error)" "$log"
@@ -227,12 +273,19 @@ else
   SESSIONS="$(readlink -f "$SESSIONS")"
   ui_run() {
     local name="$1"; shift
+    may_start "UI phases: $name" || return 0
     local dir="$WORK_DIR/ui-$name"
     local log="$WORK_DIR/ui-$name.log"
     mkdir -p "$dir"
     if GODOT_BIN="$GODOT_BIN" FIXTURE_WORLD="$FIXTURE_WORLD" SESSIONS="$SESSIONS" PORT="$PORT" \
       WORK_DIR="$dir" bash "$REPO/tools/business-fixture/run-business-ui.sh" "$@" > "$log" 2>&1; then
-      result_pass "UI phases: $name"
+      if [ "$INTERRUPTED" -eq 1 ]; then
+        result_fail "UI phases: $name (interrupted; not counted as a pass)" "$log"
+      else
+        result_pass "UI phases: $name"
+      fi
+    elif [ "$INTERRUPTED" -eq 1 ]; then
+      result_fail "UI phases: $name (interrupted)" "$log"
     else
       result_fail "UI phases: $name" "$log"
     fi
@@ -249,6 +302,10 @@ verify_saves
 
 note ""
 note "SUMMARY: $PASS passed, $FAIL failed, $SKIP skipped (logs in $WORK_DIR)"
+if [ "$INTERRUPTED" -eq 1 ]; then
+  note "Interrupted (Ctrl-C or TERM). Checks that had not started were skipped, and the one that was running was not counted as a pass. This is not a full pass."
+  exit 130
+fi
 if [ "$FAIL" -gt 0 ]; then
   note "Failed: ${FAILED_NAMES[*]}"
   exit 1

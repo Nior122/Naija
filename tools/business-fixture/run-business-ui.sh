@@ -31,6 +31,7 @@
 # Each phase is one Godot process under the session of the role it plays. A failing phase does not
 # stop the later ones, but the exit code is non-zero if any phase fails.
 set -u
+umask 077
 
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 PORT="${PORT:-3200}"
@@ -44,8 +45,10 @@ if [ -z "${GODOT_BIN:-}" ] || [ ! -x "$GODOT_BIN" ]; then echo "GODOT_BIN is not
 if [ -z "${FIXTURE_WORLD:-}" ] || [ ! -f "$FIXTURE_WORLD" ]; then echo "FIXTURE_WORLD is not a file"; exit 3; fi
 if [ -z "${SESSIONS:-}" ] || [ ! -f "$SESSIONS" ]; then echo "SESSIONS is not a file"; exit 3; fi
 
-mkdir -p "$WORK_DIR"
-chmod 700 "$WORK_DIR"
+# An existing directory is used as it is. Only a directory this run creates gets mode 700.
+if [ ! -d "$WORK_DIR" ]; then
+  mkdir -p "$WORK_DIR" && chmod 700 "$WORK_DIR" || { echo "WORK_DIR cannot be created: $WORK_DIR"; exit 3; }
+fi
 # The server runs from the repository root, so every path it receives must be absolute.
 WORK_DIR="$(cd "$WORK_DIR" && pwd)"
 FIXTURE_WORLD="$(readlink -f "$FIXTURE_WORLD")"

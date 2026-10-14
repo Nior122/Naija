@@ -7,7 +7,7 @@
 // here shows only that the runner's own logic works. It says nothing about the Godot scripts. Those are run on a
 // machine with Godot 4.7.2 (docs/STAGE_44_BUSINESS_VERIFICATION.md section 7.5).
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import {
   chmodSync,
   copyFileSync,
@@ -17,6 +17,7 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -40,6 +41,8 @@ esac
 echo "stub: not Godot ($*)"
 case "$STUB_MODE" in
   clean) exit 0 ;;
+  sleep) echo "$*" >> "$STUB_CALLS"; sleep 3; exit 0 ;;
+  leave) printf 'left behind\\n' > "$STUB_USER_DIR/naija-leftover.json"; exit 1 ;;
   scripterror) echo "SCRIPT ERROR: stub error line"; exit 0 ;;
   savewrite) printf 'changed by a test\\n' > "$STUB_USER_DIR/naija-stage1-save.json"; exit 1 ;;
   *) exit 1 ;;
@@ -231,6 +234,96 @@ describe("Godot check runner: a run without Godot never reports a pass", () => {
     });
     const out = `${result.stdout}${result.stderr}`;
     assert.match(out, new RegExp(`directory for this project: ${escapeRe(c.saveDir)}`));
+  });
+});
+
+describe("Godot check runner: signals, directories, and the save check (review fixes)", () => {
+  test("Ctrl-C to the run's process group: no further check starts, the running one is not a pass, exit 130", async () => {
+    const c = freshCase("ctrl-c");
+    const calls = join(scratch, "ctrl-c", "calls.log");
+    const child = spawn("bash", [runner], {
+      detached: true, // its own process group, so the signal below reaches it and its children, as Ctrl-C does
+      env: {
+        PATH: process.env.PATH,
+        GODOT_BIN: RIGHT,
+        STUB_MODE: "sleep",
+        STUB_USER_DIR: c.saveDir,
+        STUB_CALLS: calls,
+        GDPARSE: join(scratch, "no-such-gdparse"),
+        WORK_DIR: c.work,
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let out = "";
+    child.stdout.on("data", (d) => (out += d));
+    child.stderr.on("data", (d) => (out += d));
+    const exited = new Promise((resolve) => child.on("exit", (code) => resolve(code)));
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    process.kill(-child.pid, "SIGINT");
+    const code = await exited;
+    assert.equal(code, 130, out);
+    const started = existsSync(calls) ? readFileSync(calls, "utf8").trim().split("\n").length : 0;
+    assert.equal(started, 1, "only the check that was already running started");
+    assert.match(out, /^FAIL\s+domain_smoke \(interrupted; not counted as a pass\)/m);
+    assert.match(out, /^SKIP\s+player_movement: not started: the run was interrupted/m);
+    assert.doesNotMatch(out, /^PASS\s+(domain_smoke|player_movement)/m);
+    assert.match(out, /Interrupted \(Ctrl-C or TERM\)/);
+    assert.match(out, /^PASS\s+save check: the local naija-\* saves are unchanged/m, "the save check still runs");
+  });
+
+  test("a WORK_DIR that already exists keeps its permissions (the runner does not chmod it)", () => {
+    const existing = join(scratch, "existing-shared");
+    mkdirSync(existing);
+    chmodSync(existing, 0o755);
+    const c = freshCase("existing-dir");
+    const result = runRunner({
+      GODOT_BIN: RIGHT,
+      STUB_MODE: "clean",
+      STUB_USER_DIR: c.saveDir,
+      GDPARSE: join(scratch, "no-such-gdparse"),
+      WORK_DIR: existing,
+    });
+    assert.equal(result.status, 2, `${result.stdout}${result.stderr}`);
+    assert.equal(statSync(existing).mode & 0o777, 0o755);
+  });
+
+  test("with no naija-* files before the run, the save check is an explicit note and is not counted", () => {
+    const base = join(scratch, "fresh-empty");
+    const saveDir = join(base, "user-data", "Naija: One World");
+    mkdirSync(saveDir, { recursive: true });
+    const result = runRunner({
+      GODOT_BIN: RIGHT,
+      STUB_MODE: "clean",
+      STUB_USER_DIR: saveDir,
+      GDPARSE: join(scratch, "no-such-gdparse"),
+      WORK_DIR: join(base, "work"),
+    });
+    const out = `${result.stdout}${result.stderr}`;
+    assert.equal(result.status, 2, out);
+    assert.match(out, /NOTE: no naija-\* files existed before the run, so the save check had nothing to compare/);
+    assert.doesNotMatch(out, /^(PASS|FAIL)\s+save check/m);
+    assert.match(out, /SUMMARY: 16 passed, 0 failed, 2 skipped/);
+  });
+
+  test("a naija-* file that a run leaves behind is reported in a note, with its name", () => {
+    const { out, result } = runCase("leftover", "leave");
+    assert.equal(result.status, 1, out);
+    assert.match(out, /NOTE: these naija-\* files exist after the run but did not exist before it: naija-leftover\.json/);
+    assert.match(out, /^PASS\s+save check: the local naija-\* saves are unchanged/m, "a new file does not fail the check on the pre-run files");
+  });
+
+  test("both runners create WORK_DIR with mode 700 only when it does not exist", () => {
+    for (const path of [runner, businessRunner]) {
+      const source = readFileSync(path, "utf8");
+      assert.match(source, /if \[ ! -d "\$WORK_DIR" \]; then/, `${path} creates WORK_DIR only when missing`);
+      assert.match(source, /^umask 077$/m, `${path} makes files private`);
+    }
+  });
+
+  test("the runbook does not tell the reader to isolate the online test with a variable the test overrides", () => {
+    const doc = readFileSync(join(root, "docs/STAGE_44_BUSINESS_VERIFICATION.md"), "utf8");
+    assert.doesNotMatch(doc, /NAIJA_MULTIPLAYER_SESSION_PATH=\$WORK_DIR\/online-smoke\.cfg/);
+    assert.match(doc, /naija-online-businesses-test\.cfg/, "the runbook names the file the online test actually uses");
   });
 });
 
