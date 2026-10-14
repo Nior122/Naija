@@ -16,16 +16,28 @@ state was then read back. Section 3 gives the level of evidence for each operati
 
 ## 1. Status summary
 
+**Provenance.** Each result below is labelled by where it came from:
+- **Verification pass (2026-10-14, sections 7.4 and 7.6):** backend, PostgreSQL, contract, lint, and parse checks, and
+  stub runs of the Godot runner, at `79932db` plus the files this pass committed. No Godot was run. Section 7.5 is the
+  runbook for a machine with Godot.
+- **Inherited, pre-restart (2026-10-13, section 7.2):** Godot 4.7.2 runs, built from source in an earlier sandbox. They
+  have **not** been re-run. Rows marked (U) come from those runs. They predate the career-panel change in `79932db`.
+- **Inherited, backend only:** socket and unit tests that are part of the suites in section 7.4. They show server
+  behaviour, not client behaviour.
+
 | Area | Result |
 |---|---|
+| Godot check runner (`tools/godot/run-godot-checks.sh`) and the save backup | **Written and tested with stubs only** (17 contract and stub tests, section 7.6). It has **not** been run with Godot. Its path through Godot is unverified. |
+| Career-panel recovery after a refused `career.action` (new in `79932db`) | **Server side verified in this run** (socket tests on the file and PostgreSQL backends): the refusal is a generic `error` with `rate_limited` and the same request ID, and the next career action after the window resets is answered with `career.result`. **Client side not verified in Godot.** The source-contract test passes; the scenario `career_rate_limit_ui_headless.gd` is written and not executed (section 7.4). |
+| Stage 44 business UI phases re-run (2026-10-14) | **Not re-run.** No Godot binary (section 7.4). The (U) rows below are inherited from 2026-10-13. |
 | Shutdown lock loss (`WorldFileLockLostError`) | Confirmed and fixed. Regression tests fail before the fix and pass after it. The holder's exit behaviour is now tested (section 5.1). |
 | Business error wording | Confirmed and fixed (section 5.2). |
 | Generic `error` replies not reaching the business panel | Confirmed and fixed. The UI test fails before the fix (section 5.3). |
-| Business creation, goods and service listing, restock, buyer purchases (goods and service), refusals of over-stock and over-funds purchases, hiring, salary, dismissal, branch opening, ownership transfer, closure refused with a balance, withdrawal, closure | **Verified in the Godot panel (U)**, with server readback, on the isolated fixture (section 3). |
-| Command-limit refusal through the panel | Verified (U). Fails before the fix, passes after it. |
-| Stranger and employee see no owner controls | Verified (U) for the controls that the panel shows. The server's refusal of a stranger's changing action is backend-only (socket tests), because the panel offers no such control to a stranger. |
+| Business creation, goods and service listing, restock, buyer purchases (goods and service), refusals of over-stock and over-funds purchases, hiring, salary, dismissal, branch opening, ownership transfer, closure refused with a balance, withdrawal, closure | **Verified in the Godot panel (U), inherited from 2026-10-13**, with server readback, on the isolated fixture (section 3; not re-run). |
+| Command-limit refusal through the panel (business) | Verified (U), inherited from 2026-10-13. Fails before the fix, passes after it. Not re-run; it predates the career change. |
+| Stranger and employee see no owner controls | Verified (U, inherited from 2026-10-13) for the controls that the panel shows. The server's refusal of a stranger's changing action is backend-only (socket tests), because the panel offers no such control to a stranger. |
 | Restart keeps balance, stock, employment, ownership | Backend socket read-back only. Not driven through the UI. |
-| Goods price change, out-of-range price refusal, deactivate and reactivate, five branches and a sixth refused, transfer refusals to self and to an unknown character, closure refused with a balance, withdrawal, closure, and "Open branch" on a closed business | **Verified in the Godot panel (U)**, 67 checks, `remaining` phase, with server readback (section 3, items 4, 10a, 11b, 12, 13, 13b). |
+| Goods price change, out-of-range price refusal, deactivate and reactivate, five branches and a sixth refused, transfer refusals to self and to an unknown character, closure refused with a balance, withdrawal, closure, and "Open branch" on a closed business | **Verified in the Godot panel (U), inherited from 2026-10-13**, 67 checks, `remaining` phase, with server readback (section 3, items 4, 10a, 11b, 12, 13, 13b). |
 | Career conflict, goods price ceiling and service price bounds, transfer refusals other than self and unknown, branch location rules | Backend and socket tests only. Not driven through the UI. |
 | Shutdown save window (Stage 43 section 8.3) | **Partly fixed.** A released file-backend store could still write and replace another writer's world (reproduced, then fixed). It is now fenced and refuses with `world_file_lock_lost`, with a regression test (section 5.4). The production shutdown paths tested all saved before exit. The bounded wait in `shutdown()` is not made (section 6.2). |
 | WebSocket session handling and the command limit | Finding recorded. `rate_limited` is notify-only (decided, section 6.1). A career action refused by the limit now reaches the career panel by its own request ID, so the panel is not left busy (section 6.1). Neither change has been run in Godot (section 7.3). |
@@ -268,10 +280,22 @@ correctly.
 
 ### 6.3 Fixture startup, cleanup, and data isolation
 
-- **Runner.** `tools/business-fixture/run-business-ui.sh` (in the repository, untracked) replaces the `/tmp` scripts. It
-  refuses to start if the port is busy. It copies the fixture to `WORK_DIR` and never writes the source file. It writes
-  the role configs with mode 0600 and never prints tokens. It stops the server it started (EXIT trap). The optional
-  phases `lifecycle` and `rate_limit` are run separately because each expects a fresh owner balance.
+- **Runner.** `tools/business-fixture/run-business-ui.sh` replaces the `/tmp` scripts. It refuses to start if the port
+  is busy, and it validates `PORT`. It copies the fixture to `WORK_DIR` and never writes the source file. It writes the
+  role configs with mode 0600 and never prints tokens. It stops only a server that it started (a server that was already
+  running is left alone), on EXIT, INT, and TERM. Each optional phase (`lifecycle`, `rate_limit`, `remaining`,
+  `career_rate_limit`) needs a fresh owner balance, so each one gets its own copy. `tools/godot/run-godot-checks.sh`
+  runs every phase in that way.
+- **Local saves (new in this pass).** The headless tests use the developer's real save slot. `ui_flow_headless.gd`
+  removes `user://naija-stage1-save.json` at line 185 if it exists, and `load_confirmation_headless.gd`, `return_path.gd`,
+  and `domain_smoke.gd` also use Stage 1 save paths. The game's own `save_service.gd` uses the same file. The guard in
+  `game/tests/support/save_slot_guard.gd` backs up and restores the slot, but only within one run. The runner now
+  copies every `naija-*` file in Godot's user data directory into `WORK_DIR` before any Godot test runs, records
+  SHA-256 values, and reports `FAIL` if a file changed or disappeared. It does not restore a file itself. The
+  directory is found by asking Godot (the project name is `Naija: One World`), or by `GODOT_USER_DIR`. Online UI phases
+  do not write the local save (`_save_game` returns early online), and the online tests set
+  `NAIJA_MULTIPLAYER_SESSION_PATH`, so they leave the developer's session file alone. Headless runs do not set it, so
+  the runner backs up `naija-multiplayer.cfg` (the session file, a `naija-*` name) with the same pattern as the saves.
 - **Fixture baseline.** `provision.mjs fund` sets each role's cash directly in the world file (no ledger row). It refuses
   to run while a server is listening on the probe URL. The owner's N400,000 baseline is therefore not in the ledger. Only
   movements after it are. This is a test-fixture shortcut, not a game path, and it is stated here so that nobody reads
@@ -321,7 +345,11 @@ repository. They will not survive another sandbox restart.
 | `node --test` on `client-business-errors-stage44.test.mjs`, `business-errors-stage44.test.mjs`, `file-writer-lock-races.test.mjs` | 24 tests, 24 pass, 0 fail |
 | `/tmp/gdvenv/bin/gdlint game/scripts/prototype_game.gd` (gdtoolkit 4.5.0) | 14 findings, all already present at HEAD; none in the lines changed for the routing change |
 
-### 7.2 Before the restart (Godot and UI results)
+### 7.2 Before the restart (Godot and UI results) — inherited, not re-run
+
+**Provenance:** these runs were made on 2026-10-13 (UTC) with a Godot 4.7.2 build from source in an earlier sandbox, which
+no longer exists. They were **not re-run** on 2026-10-14 and are not evidence about the current code. The career-panel
+change in `79932db` is not covered by them.
 
 Run on 2026-10-13 (UTC) after the fence fix and before the routing change. The logs for these runs were under
 `/tmp/s44/final5/` and `/tmp/s44/ui-*` and are **no longer available**. The counts below were read from those logs before
@@ -369,6 +397,243 @@ release download host is also blocked from this sandbox. Nothing in this table i
 
 The four skipped TLS tests and the Godot checks in section 7.2 remain unverified in this pass.
 
+### 7.4 Verification run, 2026-10-14 (repository at `79932db`; no Godot run)
+
+**Provenance:** this run. No Godot binary was available, so **no Godot check was run in this pass**. Every row below is
+a backend, contract, parse, or lint result. None of them shows that the Godot client works.
+
+#### Godot: how it was looked for, and why it is still missing
+
+| Option | Result |
+|---|---|
+| A Godot executable already on the system | None. `which godot`, `godot4`, and a filesystem search outside the repository found none. |
+| Official Linux 4.7.2 build | The asset is `Godot_v4.7.2-stable_linux.x86_64.zip` (77,860,424 bytes). `github.com` answers, then redirects to `objects.githubusercontent.com`, which gets no response from this sandbox (curl 000). That host is not on the sandbox's allowed-host list. **This is the exact access limitation.** GitHub's API gives the asset's digest as `sha256:cadd3204e728a35d3f13adb7fd0d7902636b79f6b95c40c265eb73b6c35329e4`. The file could not be downloaded, so nothing was verified against it. |
+| Other trustworthy distribution | `downloads.godotengine.org`: no response (000). npm: `@ringozz/godot` ships Node-API bindings, with optional packages only for Windows, macOS, and web, so no Linux executable. PyPI: no Godot executable package found (`godot-bin`, `godot-engine`, `godot4`, `godot-linux`, `godotengine`). No unknown binary was run. |
+| Another installed environment that can run the project | None. Docker is not installed. |
+| Source build | Not attempted. This is a 2-core, 3 GB machine, and X11, GL, ALSA, and scons are missing (section 7.2). apt is not reachable. |
+| Existing CI runner | `.github/workflows/ci.yml` has no Godot job. A Godot job needs a workflow change, which needs a push. None was made. |
+
+**Prepared for a machine that has Godot 4.7.2 (not run here):**
+- `tools/godot/run-godot-checks.sh` checks the binary's version (it must be `4.7.2.stable`), parses the GDScript,
+  runs the headless scripts, and runs the server-backed UI phases on fresh isolated copies of the fixture. Its guard
+  paths are tested (below). Its Godot paths are **not** tested.
+- `game/tests/career_rate_limit_ui_headless.gd` is the career-panel scenario. It has been **parse-checked only**.
+- `tools/business-fixture/run-business-ui.sh` has a new phase, `career_rate_limit`.
+- Steps for that machine: download the official zip from the 4.7.2-stable release page, confirm its SHA-256 against the
+  API digest above, extract it, set `GODOT_BIN` to the binary, set `FIXTURE_WORLD` and `SESSIONS` (made by
+  `tools/business-fixture/provision.mjs`), and run `tools/godot/run-godot-checks.sh`. Logs go to `WORK_DIR`.
+- The save-slot tests (`ui_flow_headless`, `load_confirmation_headless`) use the local save slot. They back it up and
+  restore it through `game/tests/support/save_slot_guard.gd`. Back up the Godot user data directory first anyway.
+
+#### Commands and results (this run)
+
+| Command | Result |
+|---|---|
+| `git` baseline before any change | branch `arena/00cdea0e-naija`, HEAD `79932db`, equal to `origin/arena/00cdea0e-naija`; no tracked changes; 53 untracked `.gd.uid` files |
+| `npm run lint` (repository root) | exit 0 |
+| `NAIJA_ENV=test node --test test/*.test.mjs` (`services/world-api`, file backend) | exit 0: **1543 tests, 1489 pass, 0 fail, 54 skipped** (PostgreSQL-only) |
+| `DATABASE_URL=postgres://naija@127.0.0.1:5432/naija_test?sslmode=disable DB_SSL=false NAIJA_ALLOW_DB_TESTS=true npm test` (`services/world-api`; PostgreSQL 18.4 from `@embedded-postgres/linux-x64@18.4.0-beta.17`, cluster in `/tmp/pgrun`) | exit 0: **1844 tests, 1840 pass, 0 fail, 4 skipped** (the four are TLS live tests) |
+| `node --test test/client-career-routing-stage44.test.mjs test/client-business-errors-stage44.test.mjs` | 13 pass, 0 fail |
+| `node --test test/career-errors-stage44.test.mjs` (file and PostgreSQL, including the new recovery step) | 2 pass, 0 fail (one per backend) |
+| `node --test test/godot-checks-runner-stage44.test.mjs` | 6 pass, 0 fail |
+| `gdparse` on all 62 GDScript files on disk | exit 0 |
+| `gdlint` on `career_rate_limit_ui_headless.gd` | no problems |
+| `gdlint` on `prototype_game.gd` and `multiplayer_client.gd`, compared with `HEAD` | same count of `Error:` lines as `HEAD` (14 and 11). No new findings. |
+| `bash -n` on `run-godot-checks.sh` and `run-business-ui.sh` | exit 0 |
+| `run-godot-checks.sh` with `GODOT_BIN` unset | exit 3, and it says where to get Godot. Tested. |
+| `run-godot-checks.sh` with a binary whose version is `4.6.0.stable` | exit 3, and no check runs. Tested with a stub that only prints a version line. |
+| `run-godot-checks.sh` with a stub that reports `4.7.2.stable` and fails everything else | exit 1: 0 passed, 15 failed, 2 skipped. No check is reported as passed. Tested. |
+| Any Godot headless script, the business UI phases, or the career scenario | **NOT RUN** (no Godot) |
+
+Fail count: 0 in every backend and contract run. Skip count: 54 (file) and 4 (PostgreSQL), as listed. The Godot checks
+are not counted, because they did not run.
+
+#### Career-panel recovery scenario (items 1–10), status by item
+
+| # | Item | Status in this run |
+|---|---|---|
+| 1 | Isolated session and test character | Scripted in `career_rate_limit_ui_headless.gd`. **Not run.** |
+| 2 | Open the career interface | Scripted (the Careers menu button). **Not run.** |
+| 3 | Submit a career action | Scripted (Search presses, each waiting for its answer). **Not run.** |
+| 4 | Cause the command to be refused | Server side: **verified** by `career-errors-stage44.test.mjs` on the file and PostgreSQL backends (the 21st command in the window is refused). Client side: **not run.** |
+| 5 | Refusal carries the original request ID | Server side: **verified** (the socket test compares `requestId`). Client side: the source-contract test checks the matching, and the scenario checks that the stored ID is cleared. **Not run in Godot.** |
+| 6 | Panel receives the matching refusal and clears busy | Source contract **passes**. The scenario checks it. **Not run.** |
+| 7 | Global toast remains visible | `ui.notify` is kept (source contract). The scenario checks the HUD message. **Not run.** |
+| 8 | Later profile updates and career interactions still work | Server side: **verified**. A career search after the 10-second window reset is answered with `career.result` (socket test, both backends). Client side (`update_profile` after clearing busy): **not run.** |
+| 9 | Unrelated business, housing, and NPC refusals do not reach the career panel | Source contract: the `error` branch routes only the matching ID to the career panel (**passes**). The scenario checks a synthetic refusal with another ID, which is not a socket refusal. **Not run.** A real business refusal is covered only by `business_rate_limit_ui_headless.gd`, which does not look at the career panel. Housing and NPC refusals are not covered. |
+| 10 | `character_deceased` keeps the career route | Source contract **passes** (`_on_online_error`). Not covered by any UI test: it needs a deceased character. **Not run.** |
+
+No Godot failure was observed, because no Godot run happened. No defect was confirmed in this pass.
+
+#### Stage 44 business UI reruns (the list in the task), status
+
+No business UI phase was re-run on 2026-10-14. The runner is ready (`tools/business-fixture/run-business-ui.sh`, and the
+wrapper `tools/godot/run-godot-checks.sh`). The existing (U) results are inherited from 2026-10-13 (sections 3 and 7.2),
+and the rows of section 1 say so. The items that have only backend or socket coverage are listed there.
+
+#### Not verified in this pass
+
+- Every Godot check: headless scripts, the business UI phases, `online_businesses_headless`, and the career scenario.
+- Rendered appearance and layout: no rendered window was used, and none would be used by the headless tests.
+- The PostgreSQL released-store path (section 6.2).
+- Shutdown semantics, fixture cleanup under failure, and the WebSocket burst behaviour in a live Godot session. They
+  were checked earlier (sections 5 and 6), and were not probed again here.
+
+### 7.5 Runbook: Godot checks on a machine with Godot 4.7.2
+
+**Status: not run.** No Godot binary was available in the Stage 44 sandbox, so nothing in this section has been
+executed. It is written so that a person with Godot can reproduce the checks, and record each result against the
+evidence category it belongs to.
+
+**Evidence categories.** Keep these apart in any record. A result in one category is not evidence for another.
+
+| Code | Category | What it shows | What it does not show |
+|---|---|---|---|
+| B | Backend tests (`node --test`, file and PostgreSQL) | Server rules, atomicity, ledger, authority | Anything the Godot client does |
+| H | Headless Godot logic and integration (`--headless --script`, direct calls) | Client logic: trackers, routing, parsing, the save guard | That a panel button works |
+| U | Headless UI with simulated input (real scenes; buttons activated by focus and `ui_accept`; server state read back from the world file) | The panel's controls drive the server and show its replies | Layout, rendering, anything a person sees |
+| P | Live server probe (a script sends commands to a running server) | The server's replies to a sequence of commands | The client |
+| R | Rendered, real UI, a person at a screen | (none recorded) | (none recorded) |
+
+Only U and R show that a business operation can be used from the game's panel. As of this record, no R check exists.
+
+**Step 1. Get Godot 4.7.2-stable (Linux x86_64).**
+
+- Release page: `https://github.com/godotengine/godot/releases/tag/4.7.2-stable`. Asset:
+  `Godot_v4.7.2-stable_linux.x86_64.zip` (77,860,424 bytes).
+- The GitHub API reported this digest in the sandbox (section 7.4): `sha256:cadd3204e728a35d3f13adb7fd0d7902636b79f6b95c40c265eb73b6c35329e4`.
+  That digest was read from the API, not from the file. Check it yourself against the release page, then run
+  `sha256sum Godot_v4.7.2-stable_linux.x86_64.zip`. Stop if they differ.
+- `unzip` the file, `chmod +x Godot_v4.7.2-stable_linux.x86_64`, and set
+  `GODOT_BIN=/path/to/Godot_v4.7.2-stable_linux.x86_64`.
+- `"$GODOT_BIN" --version` must start with `4.7.2.stable`. The runner refuses any other version and runs nothing.
+
+**Step 2. Tools.**
+
+- Node 22 (`engines`: `>=22.13.0 <23`). From the repository root: `npm ci`. Then
+  `(cd services/world-api && npm run build)`.
+- gdtoolkit 4.x, for the parse step: `python3 -m venv /tmp/gdvenv && /tmp/gdvenv/bin/pip install 'gdtoolkit==4.*'`.
+  The sandbox used gdtoolkit 4.5.0. Put `gdparse` on `PATH`, or set `GDPARSE=/tmp/gdvenv/bin/gdparse`. If it is not
+  found, the runner reports `SKIP gdparse`, and the run is not complete.
+
+**Step 3. Fixture world and sessions.** Use files outside the repository. Tokens in the sessions file are secrets.
+
+1. Start a server on a new world file, on port 3000:
+   `NAIJA_ENV=development PERSISTENCE_BACKEND=file DATA_FILE=/tmp/naija-fixture/world.json PORT=3000 node services/world-api/dist/index.js`
+2. With that server running, create the four roles over the socket:
+   `node tools/business-fixture/provision.mjs create --url ws://127.0.0.1:3000/ws --out /tmp/naija-fixture/sessions.json`
+3. Stop the server (Ctrl-C). Wait for `Multiplayer world state saved; API stopped.` in its output.
+4. Fund the roles. The server must be stopped, and the command refuses to run while a server is listening:
+   `node tools/business-fixture/provision.mjs fund --data /tmp/naija-fixture/world.json --sessions /tmp/naija-fixture/sessions.json`
+5. Keep `world.json` unchanged. The runner copies it for every phase and never writes the original.
+
+**Step 4. Run the checks.**
+
+```
+GODOT_BIN=/path/to/Godot_v4.7.2-stable_linux.x86_64 \
+FIXTURE_WORLD=/tmp/naija-fixture/world.json \
+SESSIONS=/tmp/naija-fixture/sessions.json \
+WORK_DIR=/tmp/naija-godot-checks PORT=3200 \
+tools/godot/run-godot-checks.sh
+```
+
+The runner does the following, in order:
+
+- checks that `GODOT_BIN`, `PORT`, `WORK_DIR`, and every required file are present (nothing runs if one is not);
+- checks the Godot version;
+- parses every `game/**/*.gd` file on disk (`gdparse`, parse only, not lint);
+- **backs up the local `naija-*` saves** before any Godot test runs (section 6.3). It prints the folder that holds the
+  backup. The originals are not moved or deleted;
+- runs the 13 headless scripts that need no server, plus `save_restart` as two processes (write, then read);
+- runs the server-backed UI phases on a fresh copy of the fixture for each optional phase: the default six-phase
+  chain, `career_rate_limit`, `lifecycle`, `rate_limit`, and `remaining`;
+- checks again that the backed-up saves are unchanged, and reports `FAIL` if any changed.
+
+Expected for a complete pass: exit 0, with `SUMMARY: 23 passed, 0 failed, 0 skipped`. That is one gdparse, one save
+protection, 15 headless, five UI runs, and one save check. Exit 2 means the run is incomplete (some checks were
+skipped). Exit 1 means at least one check failed. Exit 3 means the run did not start.
+
+Each `PASS` means the process exited 0 and its log had no `SCRIPT ERROR`, `Parse Error`, or `Compile Error`. Some
+headless scripts print no `PASS` line, so read the log for the detail. Each UI phase prints its own `PASS:` lines
+in `WORK_DIR/ui-<phase>/phase_<name>.log`. Count those lines from the logs and record the number. A count alone is not a business result: read
+what each check asserts.
+
+**Step 5. The online smoke test (not in the runner).** `online_businesses_headless.gd` needs a server at the client's
+default URL, `ws://127.0.0.1:3000/ws`, and it creates a new character. Give it a fresh world and its own session path:
+
+1. Start a server on port 3000 with a new `DATA_FILE` under `WORK_DIR`, as in Step 3.1.
+2. `NAIJA_MULTIPLAYER_SESSION_PATH=$WORK_DIR/online-smoke.cfg "$GODOT_BIN" --headless --path game --script res://tests/online_businesses_headless.gd`
+3. Stop the server. Record the exit code and the PASS count.
+
+The earlier count (section 7.2, not re-run) was 11 PASS.
+
+**Step 6. Record the result.** For each command, record: the exact command, the Godot version line, the SHA-256 of the
+binary, the exit code, the `SUMMARY` line, the PASS count for each UI phase, and the log folder. Keep the logs. Do not
+edit an expected count to match a result. If the save check fails, restore each changed file from the backup folder
+(`cp -p <backup>/<name> <save dir>/<name>`) before doing anything else. The script prints the exact paths.
+
+**What this runbook does not check, even when it passes:**
+
+- Rendered layout and appearance (R). No person has seen the panel on a screen.
+- The career-conflict refusal, the goods price ceiling and the service price bounds at their boundary values, transfer
+  refusals to a manager, an employee, a child, a deceased, or an unbanked recipient, a stranger's refused changing
+  action, and restart through the UI. Backend or socket tests cover some of these only (section 3).
+- `character_deceased` routing in the career panel. A source-contract test covers the wiring only.
+- The bounded wait in `shutdown()` (section 6.2), and the PostgreSQL released-store path.
+- Anything that needs a deceased or a manager character, or a second live client.
+
+### 7.6 Final pass, 2026-10-14 (runner rewrite and backend re-run; no Godot run)
+
+**Provenance:** this pass. Godot was **not** run. Every result below is a backend, contract, parse, lint, or stub result.
+The stub is a shell script that prints a version line and a fixed answer. It is not Godot, and it can never make a
+Godot check pass.
+
+| Command | Result |
+|---|---|
+| `npm run build` (`services/world-api`) | exit 0 |
+| `env -u DATABASE_URL NAIJA_ENV=test node --test test/*.test.mjs` (`services/world-api`, file backend) | exit 0: **1554 tests, 1500 pass, 0 fail, 54 skipped** (PostgreSQL-only) |
+| `DATABASE_URL=postgres://naija@127.0.0.1:5432/naija_test?sslmode=disable DB_SSL=false NAIJA_ENV=test NAIJA_ALLOW_DB_TESTS=true node --test test/*.test.mjs` (`services/world-api`; PostgreSQL 18.4 from `@embedded-postgres/linux-x64@18.4.0-beta.17`, cluster in `/tmp/pgrun`) | exit 0: **1855 tests, 1851 pass, 0 fail, 4 skipped** (the four are TLS live tests) |
+| `npm run lint` (repository root; `eslint services/world-api/src`) | exit 0 (note: `npm test` does not run lint) |
+| `node --test test/client-*.test.mjs test/business*.test.mjs test/godot-checks-runner-stage44.test.mjs` | 213 tests, 213 pass, 0 fail |
+| `node --test test/godot-checks-runner-stage44.test.mjs` | 17 tests, 17 pass, 0 fail |
+| `gdparse` on all 63 `game/**/*.gd` files on disk | exit 0 |
+| `gdlint` on `career_rate_limit_ui_headless.gd` and `user_data_dir_headless.gd` | no problems |
+| `bash -n` on `tools/godot/run-godot-checks.sh` and `tools/business-fixture/run-business-ui.sh` | exit 0 |
+| `tools/godot/run-godot-checks.sh` with a stub binary that reports `4.7.2.stable` and fails every Godot call (`STUB_MODE=fail`) | exit 1: 2 passed (save protection, save check), 15 failed, 2 skipped. The backup folder holds the `naija-*` files, byte-identical. |
+| Same runner, stub that writes to a save during a test (`savewrite`) | exit 1: `FAIL save check`, with the restore path printed. The runner does not restore by itself. |
+| Same runner, stub that prints `SCRIPT ERROR` and exits 0 (`scripterror`) | exit 1: `FAIL domain_smoke (exit 0, but its log has a script error)` |
+| Same runner, stub that passes everything it ran (`clean`) with no fixture | exit 2 (`Incomplete`), never 0 |
+| Runner with a missing required file, a bad `PORT`, a wrong version, `GODOT_BIN` unset | exit 3 each, nothing run |
+| Run of `tools/business-fixture/run-business-ui.sh` with a bad `PORT` | exit 3, nothing started |
+| Any Godot headless script, UI phase, `online_businesses_headless`, or the career scenario | **NOT RUN** (no Godot 4.7.2 binary) |
+
+Earlier logs, for the record. `/tmp/v3-backend-file.log` (file suite 1543 / 1489 / 0 / 54, exit 0) and
+`/tmp/v3-backend-pg.log` (PostgreSQL 1844 / 1840 / 0 / 4, exit 0) were read. They were made before the runner test was
+rewritten, so the final runs above supersede them.
+
+**What changed in this pass (found by auditing the runner before it was committed):**
+
+1. Optional business phases shared one copy of the world. `remaining` asserts a fresh-world cash balance, so it
+   failed after another phase had run. Each optional phase now gets its own copy (`ui_run`).
+2. The gdparse list came from `git ls-files`, which skips untracked files. It now uses `find` on disk.
+3. Missing required files were found only when a test failed. They are now checked before any test runs.
+4. A script that printed `SCRIPT ERROR` and exited 0 counted as a pass. The runner and the business runner now scan
+   each log for `SCRIPT ERROR`, `Parse Error`, and `Compile Error`.
+5. `PORT` was not checked. It must be a number from 1024 to 65535.
+6. A relative `WORK_DIR` broke the server (it runs from the repository root). Both runners make it absolute.
+7. The business runner trapped only EXIT. It now traps INT and TERM too, and the trap is set before the server starts.
+8. A run with skipped checks exited 0. It now exits 2. A run that did not start exits 3.
+9. The local saves were not protected. The runner now copies the `naija-*` files before any Godot test, and checks
+   their SHA-256 afterwards (section 6.3).
+10. Godot's user data directory was hard-coded in no place. It is found by asking Godot (`user_data_dir_headless.gd`),
+    or set by `GODOT_USER_DIR`.
+11. The business runner stopped any server on the port. It now stops only a server that was not running before this run
+    and that has `PORT` set to this run's port.
+12. The business runner's wrapper log was cut to 20 PASS lines. It now keeps every line.
+
+**Not verified in this pass:** every Godot check, including `user_data_dir_headless.gd` (never run, so the save
+protection has not been run against a real Godot user data directory). Section 7.5 gives the steps.
+
 ## 8. Decisions that remain open (not made here)
 
 - Recipient consent for hiring and ownership transfer.
@@ -379,7 +644,7 @@ The four skipped TLS tests and the Godot checks in section 7.2 remain unverified
 - Whether an **insolvent** business may be transferred (section 6.4). The docs do not say.
 - Whether an **employee** should see the business under "My businesses" (section 6.4).
 - Routing of `rate_limited`: decided as notify only (section 6.1). The career-panel fix for its own refused request is
-  in place. Godot re-run pending.
+  in place. Godot re-run pending (section 7.5).
 - Shutdown semantics for section 8.3: a bounded wait in `shutdown()` (section 6.2). The released-store case is fixed.
 - Open decisions 9, 10, and 11.
 
@@ -391,8 +656,9 @@ NPC business creation, NPC hiring, and autonomous NPC business activity are not 
    employment made through the server's domain functions, because the review happens on a future date), the goods price
    ceiling and service bounds at their boundary values, transfers to a manager, an employee, a child, a deceased, or an
    unbanked recipient, a stranger's refused changing action, and restart with UI readback.
-2. Re-run the Godot checks after the `rate_limited` routing change and the career-panel fix (sections 6.1 and 7.3). No
-   Godot binary is available here, and a headless server-platform build is not practical on this 2-core, 3 GB sandbox.
+2. Run the Godot checks on a machine with Godot 4.7.2: `tools/godot/run-godot-checks.sh` (runbook, section 7.5). It covers the
+   headless scripts, the business UI phases, and the new career-panel scenario, and `online_businesses_headless` on its own server. No Godot binary is available here, and a
+   headless server-platform build is not practical on this 2-core, 3 GB sandbox.
 3. Decide the shutdown semantics for section 8.3 (section 6.2). Probe the PostgreSQL released-store path.
 4. Decide the insolvent-transfer and employee-visibility questions (section 8).
 5. Decide whether the panel hides owner actions on a closed business (section 6.4). The cosmetic "Actions for your role"
@@ -413,6 +679,12 @@ NPC business creation, NPC hiring, and autonomous NPC business activity are not 
   - This section was corrected in a later commit on the same branch.
 - Working tree: clean, apart from the 53 generated `game/**/*.gd.uid` files, which are not committed. They are left in
   place. Decide whether to commit them or add a rule to ignore them.
+- This verification pass (2026-10-14) starts at `79932db`. It adds, **committed on this branch** (the SHA is in `git log`): `game/tests/career_rate_limit_ui_headless.gd`
+  (not executed), `tools/godot/run-godot-checks.sh`, `services/world-api/test/godot-checks-runner-stage44.test.mjs`, a
+  career recovery step in `services/world-api/test/career-errors-stage44.test.mjs`, a `career_rate_limit` phase in
+  `tools/business-fixture/run-business-ui.sh`, the runner's save protection and its contract tests, the `user_data_dir`
+  probe, and this document's sections 6.3, 7.4, 7.5 (runbook), and 7.6. The 53 `.gd.uid` files remain untracked and are
+  not committed.
 - No secrets or session tokens are in the repository. Fixture sessions and the fixture world are outside it.
 - The repair of the local branch after the sandbox restart (section 2) was a local ref and index update only. It is not in
   the history.
