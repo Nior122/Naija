@@ -1,7 +1,8 @@
 # Phase 1 feature inventory
 
 Status of each planned system at the start of Phase 1 (Stage 39), with evidence from the repository. Rows 11 and 12 and the
-priority and dependency lists were updated in Stage 40. This is an
+priority and dependency lists were updated in Stage 40; rows 6–8 and 11–12 and the priority and next-stage sections were
+updated in Stage 41. This is an
 audit, not a claim of completion. The game is not finished, and this inventory does not make it production-ready.
 
 Statuses:
@@ -31,13 +32,13 @@ Statuses:
 | 3 | Cash ledger: balances, deposits, withdrawals, transfers, monthly interest and fees | COMPLETE (simulated ledger) | `src/economy/service.ts`; interest and fee loops skip accounts without a bank product; economy tests | Not real banking. Loans (`economyLoans`) not re-audited. |
 | 4 | Salary credit (careers) | PARTIAL | `src/careers/service.ts` `creditSalary` credits the existing cash account, de-duplicated by `salaryPayments` | Other career actions not re-audited. Career UI exists (`career_panel.gd`). |
 | 5 | Bus fare and clinic care (money routes) | COMPLETE | `money-routes-stage34.test.mjs` (both backends); client sends `world.bus` and `clinic.care` | None found in this pass. |
-| 6 | Housing: purchase, listing for sale, transfer | PARTIAL | `src/properties/service.ts`; `property-actions-stage35.test.mjs` | No client UI (`game/scripts` contains no `property.action`). |
-| 7 | Housing: rent start, termination, maintenance, furnishing | PARTIAL | As row 6; Stage 35 tests | No client UI. |
-| 8 | Housing: rent payment (`pay_rent`) | COMPLETE for the rules, PARTIAL overall | Stage 39: per-period due date, `property_rent_not_due`, per-period idempotency, counterparty checks, ledger rows; `test/housing-rent-stage39.test.mjs` | Rent is not collected automatically. No arrears, eviction, or late fees. No client UI. |
+| 6 | Housing: purchase, listing for sale, transfer | PARTIAL (Stage 41 client UI implemented; pending Godot runtime verification) | `src/properties/service.ts`; `property-actions-stage35.test.mjs`; `game/scripts/ui/housing_panel.gd`, `prototype_ui.gd`, `prototype_game.gd`; `test/housing-business-client-stage41.test.mjs` | Client UI (`HousingPanel`) is implemented and statically/contract-verified (`gdlint`, `gdformat`, Node WebSocket flow tests), but not yet runtime-verified in a Godot 4.7 binary. Server has no `unlist`/`cancel_listing` route or land-development mutation route. |
+| 7 | Housing: rent start, termination, maintenance, furnishing | PARTIAL (Stage 41 client UI implemented; pending Godot runtime verification) | As row 6; Stage 35 tests; `housing_panel.gd` (`rent`, `terminate_rental`, `maintain`, `furnish`, `remove_furnishing`); `test/housing-business-client-stage41.test.mjs` | Pending Godot 4.7 runtime verification of `HousingPanel`. `my_rentals` returns tenant agreements only (landlord sees active rentals per property via `my_properties` / `view`). |
+| 8 | Housing: rent payment (`pay_rent`) | COMPLETE on the server (Stage 39); client UI implemented in Stage 41 (pending Godot runtime verification); PARTIAL overall | Stage 39: per-period due date, `property_rent_not_due`, per-period idempotency, counterparty checks, ledger rows; `test/housing-rent-stage39.test.mjs`; Stage 41 `housing_panel.gd` (`pay_rent` gated by `paid_through_world_date`); `test/housing-business-client-stage41.test.mjs` | Pending Godot 4.7 runtime verification. Rent is not collected automatically. No arrears, eviction, or late fees. |
 | 9 | Housing counterparties: NPC landlords and sellers | COMPLETE (Stage 39) | NPC cash account in `economyAccounts` with no bank product; refusal before debit for any other owner kind | Business and organisation owners are refused (row 11). |
 | 10 | Ledger rows for property money | COMPLETE (Stage 39) | `property_purchase`, `property_sale_proceeds`, `rent_payment`, `rent_receipt`, `property_furnishing`, `property_maintenance` | Before Stage 39, property money moves wrote no ledger row. |
-| 11 | Businesses: creation, products, stock, sales, capital, withdrawals, expenses, payroll, transfers, production, closure, branches, ownership, staff | PARTIAL (Stage 40) | `src/businesses/service.ts` with `postBusinessMoney`; 16 action cases in the engine, including `buy_product`, `buy_service`, `pay_salary`, `transfer_funds`; `test/business-accounts-stage40.test.mjs`, `businesses.test.mjs`, `business-money-stage34.test.mjs`; both backends | No client UI. Shares are not enforced (co-owners share the account). Operating costs and supplier stock are sinks. NPC seed capital is unexplained issuance (`business_seed_capital`). Legacy revenue cannot be verified. Single writer only. See `docs/STAGE_40_BUSINESS_ACCOUNTS.md` section 7.4. |
-| 12 | Business payments: revenue, wages, capital, and any transfer to or from a business | COMPLETE on the server (Stage 40), PARTIAL overall | Shared business account (economy account, `kind: current`, holder = business id) in the same ledger; buyer-paid sales; owner capital and withdrawal; salaries to active employees; transfers between businesses the caller owns; every movement is an economy ledger row; the saved world is refused at load if a business does not reconcile (`businessAccountMismatches`); seller-initiated sales are refused | No client UI. Owner decision on the shared account is recorded in STAGE_40 section 2.2 (every owner or co-owner is equally authorised; withdrawals go to the caller). Revenue, tax, fines, borrowing, and minting remain closed. |
+| 11 | Businesses: creation, products, stock, sales, capital, withdrawals, expenses, payroll, transfers, production, closure, branches, ownership, staff | PARTIAL (Stage 40 server; Stage 41 client UI implemented, pending Godot runtime verification) | `src/businesses/service.ts` with `postBusinessMoney`; 18 action cases in `world-engine.ts`; `game/scripts/ui/business_panel.gd`, `prototype_ui.gd`, `prototype_game.gd`; `test/business-accounts-stage40.test.mjs`, `test/housing-business-client-stage41.test.mjs`, `businesses.test.mjs`, `business-money-stage34.test.mjs`; both backends | Client UI (`BusinessPanel`) is implemented and statically/contract-verified, but not yet runtime-verified in a Godot 4.7 binary. Server lacks `update_product`/`remove_product` and `pending_expenses` settlement; `transfer_ownership` deactivates the caller's ownership record; `character.business_profiles` filters by `owner_character_id`. Shares are not enforced on withdrawals. Operating costs and supplier stock are sinks. NPC seed capital is unexplained issuance (`business_seed_capital`). Single writer only. See `docs/STAGE_40_BUSINESS_ACCOUNTS.md` section 7.4 and `docs/STAGE_41_HOUSING_AND_BUSINESS_INTERFACES.md`. |
+| 12 | Business payments: revenue, wages, capital, and any transfer to or from a business | COMPLETE on the server (Stage 40); client UI implemented in Stage 41 (pending Godot runtime verification); PARTIAL overall | Shared business account (economy account, `kind: current`, holder = business id) in the same ledger; buyer-paid sales (`buy_product`, `buy_service`); owner capital and withdrawal; salaries to active employees (`pay_salary`); transfers between businesses the caller owns (`transfer_funds`); `game/scripts/ui/business_panel.gd`; `test/business-accounts-stage40.test.mjs`, `test/housing-business-client-stage41.test.mjs` | Pending Godot 4.7 runtime verification of `BusinessPanel`. Owner decision on the shared account is recorded in STAGE_40 section 2.2 (every owner or co-owner is equally authorised; withdrawals go to the caller). Revenue, tax, fines, borrowing, and minting remain closed. |
 | 13 | Government | SUSPENDED (writes) | `government_writes_suspended`; reads are open. 56 engine references | Not re-audited. |
 | 14 | Elections | SUSPENDED (writes) | `election_writes_suspended` | No elections are enabled. Not re-audited. |
 | 15 | Police: wanted requests and arrests | SUSPENDED | `request_wanted`, `execute_arrest` refused (`police_*_suspended`) | Prerequisite: station ownership and jurisdiction model (Stage 38, decision 10, open). |
@@ -57,37 +58,49 @@ Statuses:
 
 ## Missing and partial systems that matter most
 
-1. **Business client UI (rows 11–12, server COMPLETE in Stage 40).** Business money now works on the server, but the Godot
-   client has no business screen, so a player cannot use it yet.
-2. **Station and jurisdiction model (rows 15–17, BLOCKED).** Police and crime mutations stay suspended until an
-   assignment model exists that the server can check.
-3. **Authority for military and justice mutations (rows 18–19, SUSPENDED).** Needs judge assignment and the
-   authority model.
-4. **Client UI for housing and businesses (rows 6–8, 11).** The Godot client has no property or business commands.
-5. **Simulation of NPCs, social, world events, and transportation (rows 24–26, MISSING).** Persisted types only.
-6. **Rent collection, arrears, and eviction (row 8).** Not implemented. Rent is paid only when a tenant sends
-   `pay_rent`.
+1. **Godot 4.7 runtime verification of the Stage 41 Housing and Business UIs (rows 6–8, 11–12).** `HousingPanel` and
+   `BusinessPanel` are implemented in `game/scripts/ui/` and verified statically (`gdlint`, `gdformat`) and via Node
+   contract/WebSocket tests (`test/housing-business-client-stage41.test.mjs`), but have not been executed inside a Godot
+   4.7 binary because Godot is not installed in the sandbox.
+2. **Engine wiring and client surfaces for NPC, social, world events, and transportation (rows 23–26, MISSING in engine).**
+   Service modules (`src/npc`, `src/social`, `src/transportation`, `src/world-events`) and unit tests exist, but they have
+   0 references in `world-engine.ts` and no client UI.
+3. **Client surfaces for already-dispatched shared-world systems (rows 3, 22, 27, PARTIAL).** `economy.action` (banking
+   accounts, deposits, withdrawals, transfers), `culture.action`, `entertainment.action`, `relationship.progress`, and
+   `family.childbirth` are dispatched in `world-engine.ts`, but have no Godot client panels.
+4. **Station and jurisdiction model (rows 15–17, BLOCKED).** Police and crime mutations stay suspended until owner
+   decision 10 (station ownership and jurisdiction assignment) and decision 9 (`EDUCATION_HIERARCHY` key alignment) are
+   recorded.
+5. **Authority for military and justice mutations (rows 18–19, SUSPENDED).** Blocked on owner decision 11 (judge
+   assignment and justice socket routes) and the military authority model.
+6. **Rent collection, arrears, and eviction (row 8).** Not implemented on the server. Rent is paid only when a tenant
+   sends `pay_rent`.
 
 ## Next Phase 1 feature group
 
-Recommended next group: **client surfaces for housing and businesses (rows 6–8 and 11–12)**. Both server features are
-complete enough to use, and neither is playable without a client. It needs no new server decision, and it is not blocked.
-Godot is not installed in this sandbox, so the work needs a Godot run before it can be called done.
+Recommended next substantive stage (Stage 42), without making unresolved owner decisions on the developer's behalf:
 
-The station and jurisdiction model (rows 15–17) is the other candidate, but it is blocked on open owner decision 10 in
-row 28, and it should follow once that decision is recorded.
-
-Stage 40 remaining business work, for the record: a client business screen; a share-based split of withdrawals (its own
-design decision); a source policy for NPC seed capital; and reconciliation of legacy revenue recorded before Stage 40.
+- **Primary unblocked track — Engine & Client Integration of Unwired Simulation Modules (rows 23–26: Social/Relationships,
+  NPC interactions, Transportation beyond bus fare, and World Events) OR Client UI Surfaces for Dispatched Shared-World
+  Systems (rows 3, 22, 27: Banking `economy.action`, Culture `culture.action`, Entertainment `entertainment.action`, and
+  Family):**
+  - Neither track requires resolving open owner decisions 9–11 (station ownership, education hierarchy codes, or judge
+    assignment).
+  - If the owner records a decision on **Decision 10 (station ownership & jurisdiction assignment)** and **Decision 9
+    (`EDUCATION_HIERARCHY` code alignment)** first, Stage 42 can instead proceed with **Station & Jurisdiction Authority
+    and Police/Crime Enablement (rows 15–17, 28)**.
 
 ## Dependency order for Phase 1
 
 1. Housing rent contract and counterparties (done in Stage 39: rows 8–10).
    Business account model and business payments (done on the server in Stage 40: rows 11–12).
-2. Station and jurisdiction model, then police and crime enablement (rows 15–17), with negative tests.
-3. Judge assignment and the authority model, then justice and military mutations (rows 18–19).
-4. Client UI for housing and businesses (rows 6–8, 11–12). The recommended next group, above.
-5. Simulation of NPC, social, world events, and transportation (rows 23–26).
+2. Client UI for housing and businesses (implemented in Stage 41: rows 6–8, 11–12; pending Godot 4.7 runtime run).
+3. Simulation & engine/client integration of NPC, social, world events, transportation, banking, culture, and
+   entertainment (rows 3, 22–27) — unblocked by owner decisions 9–11.
+4. Station and jurisdiction model, then police and crime enablement (rows 15–17), once owner decisions 9 and 10 are
+   recorded.
+5. Judge assignment and the authority model, then justice and military mutations (rows 18–19), once owner decision 11 is
+   recorded.
 6. Remaining authority and suspended mechanisms, as the owner decides.
 
 Revenue, taxation, fines, borrowing, minting, and organisation payments are outside this order, by the user's

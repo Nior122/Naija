@@ -4,11 +4,11 @@
 
 ## Current state (handoff)
 
-**Latest completed work: Stage 40 (business accounts in the economy ledger), commit `8e564f7`.** CI run `38243775351` (push, branch `arena/00cdea0e-naija`) passed on that SHA: both the build/lint/test job and the live PostgreSQL job. Stage 39 (`b95dedb`) is complete; its foundation job failed once with no cause identified.
+**Latest completed work: Stage 41 (Housing and Business Gameplay Interfaces in the Godot 4.7 client; contract and WebSocket flow tests in `@naija/world-api`).** Previous completed server stage: Stage 40 (`8e564f7`, CI run `38243775351` passed on `8e564f7`, and CI run `38260938192` passed on `6d296a9`).
 
-**Next:** Stage 41, Housing and Business Gameplay Interfaces (Godot 4.7 client). Not started. See `docs/ARENA_HANDOFF.md` for the full handoff.
+**Stage 41 summary:** Implemented `game/scripts/ui/housing_panel.gd` (`HousingPanel`) and `game/scripts/ui/business_panel.gd` (`BusinessPanel`), wired them into `game/scripts/ui/prototype_ui.gd` and `game/scripts/prototype_game.gd`, extended `game/tests/ui_flow_headless.gd`, and added `services/world-api/test/housing-business-client-stage41.test.mjs`. Verified statically with `gdlint` / `gdformat` and with `npm run check` (`1,323` passed, `0` failed, `54` skipped in `node --test`). See [`STAGE_41_HOUSING_AND_BUSINESS_INTERFACES.md`](STAGE_41_HOUSING_AND_BUSINESS_INTERFACES.md) and [`PHASE_1_FEATURE_INVENTORY.md`](PHASE_1_FEATURE_INVENTORY.md).
 
-Godot 4.7 is not installed in the sandbox, so no Godot runtime check has been run for Stages 34–40. The Stage 21 section below was last updated at Stage 21. Stages 22–40 are recorded in their own `docs/STAGE_NN_*.md` documents and the handoff.
+Godot 4.7 is not installed in the sandbox, so no Godot runtime check has been run for Stages 34–41. The Stage 21 section below was last updated at Stage 21. Stages 22–41 are recorded in their own `docs/STAGE_NN_*.md` documents and the handoff.
 
 ## Current stage and verification gate (historical, Stage 21)
 

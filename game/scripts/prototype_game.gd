@@ -27,6 +27,10 @@ var playing: bool = false
 var multiplayer_client: Node
 var _online_mode: bool = false
 var _online_career_profile: Dictionary = {}
+var _online_property_profiles: Array = []
+var _online_rental_agreements: Array = []
+var _online_business_profiles: Array = []
+var _online_players_snapshot: Array = []
 var _online_input_accumulator: float = 0.0
 var _remote_players: Dictionary = {}
 var _time_accumulator: float = 0.0
@@ -71,6 +75,8 @@ func _ready() -> void:
 	ui.load_requested.connect(_continue_game)
 	ui.education_action_requested.connect(_on_education_action_requested)
 	ui.career_action_requested.connect(_on_career_action_requested)
+	ui.property_action_requested.connect(_on_property_action_requested)
+	ui.business_action_requested.connect(_on_business_action_requested)
 	ui.answer_requested.connect(_on_quiz_answer)
 	ui.purchase_requested.connect(_purchase_item)
 	ui.consume_requested.connect(_consume_item)
@@ -237,6 +243,13 @@ func _on_online_session_ready(
 	character.load_dictionary(character_data, clock.calendar_date())
 	var career_data: Variant = character_data.get("career_profile", {})
 	_online_career_profile = career_data.duplicate(true) if career_data is Dictionary else {}
+	var prop_data: Variant = character_data.get("property_profiles", [])
+	_online_property_profiles = prop_data.duplicate(true) if prop_data is Array else []
+	var rent_data: Variant = character_data.get("rental_agreements", [])
+	_online_rental_agreements = rent_data.duplicate(true) if rent_data is Array else []
+	var biz_data: Variant = character_data.get("business_profiles", [])
+	_online_business_profiles = biz_data.duplicate(true) if biz_data is Array else []
+	_online_players_snapshot = players_data.duplicate(true)
 	playing = true
 	_time_accumulator = 0.0
 	_online_input_accumulator = 0.0
@@ -265,19 +278,35 @@ func _on_online_message(message: Dictionary) -> void:
 				if career_data is Dictionary:
 					_online_career_profile = career_data.duplicate(true)
 					ui.update_career_profile(_online_career_profile)
+				var prop_data: Variant = character_data.get("property_profiles", [])
+				if prop_data is Array:
+					_online_property_profiles = prop_data.duplicate(true)
+				var rent_data: Variant = character_data.get("rental_agreements", [])
+				if rent_data is Array:
+					_online_rental_agreements = rent_data.duplicate(true)
+				ui.update_housing_records(_online_property_profiles, _online_rental_agreements)
+				var biz_data: Variant = character_data.get("business_profiles", [])
+				if biz_data is Array:
+					_online_business_profiles = biz_data.duplicate(true)
+					ui.update_business_records(_online_business_profiles)
 				_apply_online_character_snapshot(character_data)
 				if clock != null:
 					ui.update_career_world_context(character, clock)
+					ui.update_housing_world_context(character, clock, _online_players_snapshot)
+					ui.update_business_world_context(character, clock, _online_players_snapshot)
 		"world.snapshot":
+			var players_data: Variant = message.get("players", [])
+			if players_data is Array:
+				_online_players_snapshot = players_data.duplicate(true)
+				_sync_remote_players(players_data)
 			var clock_data: Variant = message.get("clock", {})
 			if clock_data is Dictionary and clock != null:
 				clock.load_dictionary(clock_data)
 				world.update_daypart(clock.daypart())
 				if character != null:
 					ui.update_career_world_context(character, clock)
-			var players_data: Variant = message.get("players", [])
-			if players_data is Array:
-				_sync_remote_players(players_data)
+					ui.update_housing_world_context(character, clock, _online_players_snapshot)
+					ui.update_business_world_context(character, clock, _online_players_snapshot)
 			_refresh_hud()
 		"presence.joined", "presence.moved":
 			var presence: Variant = message.get("player", {})
@@ -326,6 +355,10 @@ func _on_online_message(message: Dictionary) -> void:
 			ui.show_education_result(message)
 		"career.result", "career.error":
 			ui.show_career_response(message)
+		"property.result", "property.error":
+			ui.show_property_response(message)
+		"business.result", "business.error":
+			ui.show_business_response(message)
 		"school.complete":
 			(
 				ui
@@ -349,6 +382,8 @@ func _on_online_error(code: String, description: String) -> void:
 		world.set_geographic_preview(false)
 	if code in ["character_deceased", "rate_limited"]:
 		ui.show_career_transport_error(description)
+		ui.show_property_transport_error(description)
+		ui.show_business_transport_error(description)
 	if playing:
 		ui.notify("%s: %s" % [code.replace("_", " ").capitalize(), description])
 	else:
@@ -1064,6 +1099,40 @@ func _on_career_action_requested(action: String, payload: Dictionary) -> void:
 		)
 
 
+func _on_property_action_requested(action: String, payload: Dictionary) -> void:
+	if not _online_mode:
+		ui.show_property_transport_error("Property actions require the connected shared world.")
+		return
+	if character == null or not character.can_take_active_action():
+		ui.show_property_transport_error(
+			"Deceased characters cannot purchase, rent, or manage properties."
+		)
+		return
+	if not multiplayer_client.send_command(
+		"property.action", {"action": action, "payload": payload.duplicate(true)}
+	):
+		ui.show_property_transport_error(
+			"The property request could not reach the shared server. Reconnect before trying again."
+		)
+
+
+func _on_business_action_requested(action: String, payload: Dictionary) -> void:
+	if not _online_mode:
+		ui.show_business_transport_error("Business actions require the connected shared world.")
+		return
+	if character == null or not character.can_take_active_action():
+		ui.show_business_transport_error(
+			"Deceased characters cannot operate businesses or make storefront purchases."
+		)
+		return
+	if not multiplayer_client.send_command(
+		"business.action", {"action": action, "payload": payload.duplicate(true)}
+	):
+		ui.show_business_transport_error(
+			"The business request could not reach the shared server. Reconnect before trying again."
+		)
+
+
 func _can_enter_education_location(destination: String) -> bool:
 	if _online_mode:
 		return true
@@ -1151,6 +1220,23 @@ func _open_panel(panel_id: String) -> void:
 			ui.show_education(character, clock, character.current_location, _online_mode)
 		"careers":
 			ui.show_careers(character, _online_career_profile, _online_mode, clock)
+		"housing":
+			ui.show_housing(
+				character,
+				_online_property_profiles,
+				_online_rental_agreements,
+				_online_mode,
+				clock,
+				_online_players_snapshot
+			)
+		"businesses":
+			ui.show_businesses(
+				character,
+				_online_business_profiles,
+				_online_mode,
+				clock,
+				_online_players_snapshot
+			)
 		"chat":
 			if _online_mode:
 				ui.show_chat()
@@ -1270,7 +1356,10 @@ func get_shared_state() -> Dictionary:
 		"player_location": world.location_id,
 		"playing": playing,
 		"online_mode": _online_mode,
-		"career_profile": _online_career_profile
+		"career_profile": _online_career_profile,
+		"property_profiles": _online_property_profiles,
+		"rental_agreements": _online_rental_agreements,
+		"business_profiles": _online_business_profiles,
 	}
 
 
@@ -1308,6 +1397,12 @@ func set_shared_state(state: Dictionary) -> void:
 	# Restore career profile
 	if state.has("career_profile"):
 		_online_career_profile = state.career_profile
+	if state.has("property_profiles") and state.property_profiles is Array:
+		_online_property_profiles = state.property_profiles.duplicate(true)
+	if state.has("rental_agreements") and state.rental_agreements is Array:
+		_online_rental_agreements = state.rental_agreements.duplicate(true)
+	if state.has("business_profiles") and state.business_profiles is Array:
+		_online_business_profiles = state.business_profiles.duplicate(true)
 
 
 func _has_pending_character(state: Dictionary) -> bool:

@@ -15,12 +15,16 @@ signal consume_requested(item_id: String)
 signal attend_requested
 signal education_action_requested(action: String, payload: Dictionary)
 signal career_action_requested(action: String, payload: Dictionary)
+signal property_action_requested(action: String, payload: Dictionary)
+signal business_action_requested(action: String, payload: Dictionary)
 signal modal_changed(is_open: bool)
 
 const SCHOOL_SERVICE = preload("res://scripts/domain/school_service.gd")
 const EducationServiceScript = preload("res://scripts/domain/education_service.gd")
 const LifeSimulationServiceScript = preload("res://scripts/domain/life_simulation_service.gd")
 const CareerPanelScript = preload("res://scripts/ui/career_panel.gd")
+const HousingPanelScript = preload("res://scripts/ui/housing_panel.gd")
+const BusinessPanelScript = preload("res://scripts/ui/business_panel.gd")
 const SKIN_TONES: Array[Dictionary] = [
 	{"label": "Warm brown", "hex": "#9b654d"},
 	{"label": "Deep brown", "hex": "#70452f"},
@@ -51,6 +55,8 @@ var _showing_chat: bool = false
 var _quiz_id: String = ""
 var _quiz_mode: String = "school"
 var _career_panel: CareerPanel
+var _housing_panel: HousingPanel
+var _business_panel: BusinessPanel
 
 
 func _ready() -> void:
@@ -137,7 +143,7 @@ func show_game(character: CharacterState, clock: WorldClock, location_name: Stri
 	_add_background(Color(0.0, 0.0, 0.0, 0.0))
 	var panel := PanelContainer.new()
 	panel.position = Vector2(16.0, 16.0)
-	panel.custom_minimum_size = Vector2(308.0, 700.0)
+	panel.custom_minimum_size = Vector2(308.0, 748.0)
 	panel.size = panel.custom_minimum_size
 	panel.add_theme_stylebox_override("panel", _panel_style(Color(0.93, 0.92, 0.84, 0.96)))
 	_root.add_child(panel)
@@ -178,6 +184,8 @@ func show_game(character: CharacterState, clock: WorldClock, location_name: Stri
 	_add_menu_button(menu_grid, "Inventory", "inventory")
 	_add_menu_button(menu_grid, "Education", "school")
 	_add_menu_button(menu_grid, "Careers", "careers")
+	_add_menu_button(menu_grid, "Housing", "housing")
+	_add_menu_button(menu_grid, "Businesses", "businesses")
 	_add_menu_button(menu_grid, "Nearby chat", "chat")
 	_add_menu_button(menu_grid, "Save / Load", "save")
 	_add_menu_button(menu_grid, "Settings", "settings")
@@ -528,6 +536,160 @@ func update_career_world_context(character: CharacterState, clock: WorldClock) -
 
 func _on_career_action_requested(action: String, payload: Dictionary) -> void:
 	career_action_requested.emit(action, payload.duplicate(true))
+
+
+func show_housing(
+	character: CharacterState,
+	property_profiles: Array,
+	rental_agreements: Array,
+	is_online: bool,
+	clock: WorldClock,
+	nearby_players: Array = []
+) -> void:
+	var card := _open_modal(
+		"Housing, rentals & property",
+		"Server-checked property market, ownership, rentals, maintenance, furnishing & Naira ledger",
+		Vector2(820.0, 620.0)
+	)
+	_housing_panel = HousingPanelScript.new()
+	_housing_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_housing_panel.property_action_requested.connect(_on_property_action_requested)
+	card.add_child(_housing_panel)
+	(
+		_housing_panel
+		. configure(
+			{
+				"character_id": character.character_id,
+				"age": character.age,
+				"life_status": character.life_status,
+				"money": character.money,
+				"current_location": character.current_location,
+			},
+			property_profiles,
+			rental_agreements,
+			is_online,
+			clock.calendar_date(),
+			nearby_players
+		)
+	)
+	_add_modal_close(card)
+	_housing_panel.request_initial_data()
+
+
+func show_property_response(message: Dictionary) -> void:
+	if is_instance_valid(_housing_panel):
+		_housing_panel.apply_server_response(message)
+
+
+func show_property_transport_error(message: String) -> void:
+	if is_instance_valid(_housing_panel):
+		_housing_panel.show_transport_error(message)
+
+
+func update_housing_records(property_profiles: Array, rental_agreements: Array) -> void:
+	if is_instance_valid(_housing_panel):
+		_housing_panel.update_records(property_profiles, rental_agreements)
+
+
+func update_housing_world_context(
+	character: CharacterState, clock: WorldClock, nearby_players: Array = []
+) -> void:
+	if not is_instance_valid(_housing_panel):
+		return
+	(
+		_housing_panel
+		. update_world_context(
+			{
+				"character_id": character.character_id,
+				"age": character.age,
+				"life_status": character.life_status,
+				"money": character.money,
+				"current_location": character.current_location,
+			},
+			clock.calendar_date(),
+			nearby_players
+		)
+	)
+
+
+func _on_property_action_requested(action: String, payload: Dictionary) -> void:
+	property_action_requested.emit(action, payload.duplicate(true))
+
+
+func show_businesses(
+	character: CharacterState,
+	business_profiles: Array,
+	is_online: bool,
+	clock: WorldClock,
+	nearby_players: Array = []
+) -> void:
+	var card := _open_modal(
+		"Businesses, storefronts & treasury",
+		"Server-checked business accounts, buyer storefronts, restock, payroll, transfers & ledger",
+		Vector2(820.0, 620.0)
+	)
+	_business_panel = BusinessPanelScript.new()
+	_business_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_business_panel.business_action_requested.connect(_on_business_action_requested)
+	card.add_child(_business_panel)
+	(
+		_business_panel
+		. configure(
+			{
+				"character_id": character.character_id,
+				"age": character.age,
+				"life_status": character.life_status,
+				"money": character.money,
+				"current_location": character.current_location,
+			},
+			business_profiles,
+			is_online,
+			clock.calendar_date(),
+			nearby_players
+		)
+	)
+	_add_modal_close(card)
+	_business_panel.request_initial_data()
+
+
+func show_business_response(message: Dictionary) -> void:
+	if is_instance_valid(_business_panel):
+		_business_panel.apply_server_response(message)
+
+
+func show_business_transport_error(message: String) -> void:
+	if is_instance_valid(_business_panel):
+		_business_panel.show_transport_error(message)
+
+
+func update_business_records(business_profiles: Array) -> void:
+	if is_instance_valid(_business_panel):
+		_business_panel.update_records(business_profiles)
+
+
+func update_business_world_context(
+	character: CharacterState, clock: WorldClock, nearby_players: Array = []
+) -> void:
+	if not is_instance_valid(_business_panel):
+		return
+	(
+		_business_panel
+		. update_world_context(
+			{
+				"character_id": character.character_id,
+				"age": character.age,
+				"life_status": character.life_status,
+				"money": character.money,
+				"current_location": character.current_location,
+			},
+			clock.calendar_date(),
+			nearby_players
+		)
+	)
+
+
+func _on_business_action_requested(action: String, payload: Dictionary) -> void:
+	business_action_requested.emit(action, payload.duplicate(true))
 
 
 func show_education(
@@ -1201,7 +1363,7 @@ func _on_consume_pressed(item_id: String) -> void:
 
 
 func _add_menu_button(parent: GridContainer, label: String, panel_id: String) -> void:
-	var button := _button(label, Vector2(124.0, 38.0))
+	var button := _button(label, Vector2(124.0, 36.0))
 	button.pressed.connect(_on_panel_pressed.bind(panel_id))
 	parent.add_child(button)
 
@@ -1286,7 +1448,9 @@ func _create_center_card(minimum_size: Vector2) -> VBoxContainer:
 	return box
 
 
-func _open_modal(title: String, subtitle: String) -> VBoxContainer:
+func _open_modal(
+	title: String, subtitle: String, minimum_size: Vector2 = Vector2(590.0, 430.0)
+) -> VBoxContainer:
 	_close_modal()
 	_modal_layer = Control.new()
 	_modal_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -1300,13 +1464,13 @@ func _open_modal(title: String, subtitle: String) -> VBoxContainer:
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_modal_layer.add_child(center)
 	var panel := PanelContainer.new()
-	panel.custom_minimum_size = Vector2(590.0, 430.0)
+	panel.custom_minimum_size = minimum_size
 	panel.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	panel.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	panel.add_theme_stylebox_override("panel", _panel_style(Color("#f2f0e4")))
 	center.add_child(panel)
 	var scroll := ScrollContainer.new()
-	scroll.custom_minimum_size = Vector2(540.0, 390.0)
+	scroll.custom_minimum_size = minimum_size - Vector2(50.0, 40.0)
 	panel.add_child(scroll)
 	var content := VBoxContainer.new()
 	content.add_theme_constant_override("separation", 10)
@@ -1360,6 +1524,8 @@ func _on_purchase_pressed(item_id: String) -> void:
 func _close_modal() -> void:
 	if not _modal_open:
 		_career_panel = null
+		_housing_panel = null
+		_business_panel = null
 		return
 	if is_instance_valid(_modal_layer):
 		_modal_layer.queue_free()
@@ -1367,6 +1533,8 @@ func _close_modal() -> void:
 	_modal_open = false
 	_showing_chat = false
 	_career_panel = null
+	_housing_panel = null
+	_business_panel = null
 	modal_changed.emit(false)
 
 
@@ -1381,6 +1549,8 @@ func _clear_screen() -> void:
 	_showing_chat = false
 	_quiz_id = ""
 	_career_panel = null
+	_housing_panel = null
+	_business_panel = null
 
 
 func _add_label(parent: Node, text_value: String, size: int, color: Color, alignment: int) -> Label:

@@ -207,6 +207,25 @@ func _run() -> void:
 	_check(not proto.ui.is_modal_open(), "Welcome notice closed through its real button")
 	_observe("after new game: name=%s money=%d location=%s" % [proto.character.name, proto.character.money, proto.character.current_location])
 
+	# ---- 2b. Housing and Businesses HUD buttons open and close their modals ----
+	var housing_btn := _find_button(_main, "Housing")
+	_check(housing_btn != null, "HUD 'Housing' button is visible in 2D")
+	if housing_btn != null:
+		_activate(housing_btn)
+	await _frames(3)
+	_check(proto.ui.is_modal_open() and _label_contains(proto.ui, "Housing, rentals & property"), "Housing button opens the Housing modal")
+	await _close_open_modal(proto.ui)
+	_check(not proto.ui.is_modal_open(), "Housing modal closes through its real button")
+
+	var businesses_btn := _find_button(_main, "Businesses")
+	_check(businesses_btn != null, "HUD 'Businesses' button is visible in 2D")
+	if businesses_btn != null:
+		_activate(businesses_btn)
+	await _frames(3)
+	_check(proto.ui.is_modal_open() and _label_contains(proto.ui, "Businesses, storefronts & treasury"), "Businesses button opens the Businesses modal")
+	await _close_open_modal(proto.ui)
+	_check(not proto.ui.is_modal_open(), "Businesses modal closes through its real button")
+
 	# ---- 3. Save through the real HUD menu: Save / Load -> Save progress now ----
 	proto.character.money = SAVED_MONEY
 	var save_menu := _find_button(_main, "Save / Load")
