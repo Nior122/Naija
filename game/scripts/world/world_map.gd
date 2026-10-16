@@ -350,7 +350,7 @@ func _populate_home() -> void:
 		"Step out into Idera Quarter",
 		{"location": "town", "spawn": Vector2(300.0, 500.0)}
 	)
-	_add_object("home-bed", "Your bed", Vector2(440.0, 350.0), "sleep", "Sleep until morning", {})
+	_add_object("home-bed", "Your bed", Vector2(1250.0, 485.0), "sleep", "Sleep until morning", {})
 	_add_object(
 		"home-fridge",
 		"Kitchen cupboard",
@@ -764,9 +764,9 @@ func _draw_home() -> void:
 	draw_rect(Rect2(Vector2(135.0, 120.0), Vector2(28.0, 700.0)), Color("#81553c"), true)
 	draw_rect(Rect2(Vector2(1437.0, 120.0), Vector2(28.0, 700.0)), Color("#81553c"), true)
 	draw_line(Vector2(850.0, 150.0), Vector2(850.0, 785.0), Color("#c9b28d"), 7.0)
-	draw_rect(Rect2(Vector2(300.0, 265.0), Vector2(260.0, 120.0)), Color("#72906d"), true)
 	draw_rect(Rect2(Vector2(950.0, 250.0), Vector2(130.0, 150.0)), Color("#d8e0d5"), true)
 	draw_rect(Rect2(Vector2(385.0, 655.0), Vector2(285.0, 70.0)), Color("#815d46"), true)
+	draw_rect(Rect2(Vector2(1150.0, 440.0), Vector2(200.0, 110.0)), Color("#72906d"), true)
 	draw_rect(Rect2(Vector2(1140.0, 620.0), Vector2(150.0, 105.0)), Color("#825941"), true)
 	_draw_text("LIVING AREA", Vector2(330.0, 205.0), 18, Color("#5e4a39"))
 	_draw_text("BEDROOM", Vector2(990.0, 205.0), 18, Color("#5e4a39"))

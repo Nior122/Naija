@@ -797,7 +797,7 @@ func _sleep() -> void:
 	var sleep_minutes := clock.minutes_until_morning()
 	_advance_time(sleep_minutes)
 	character.sleep_until_morning()
-	character.position = Vector2(720.0, 540.0)
+	character.position = Vector2(1250.0, 580.0)
 	player.position = character.position
 	player.snap_camera()
 	_save_game(false)

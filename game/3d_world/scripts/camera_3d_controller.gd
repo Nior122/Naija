@@ -9,6 +9,8 @@ class_name Camera3DController
 @export var rotation_speed: float = 2.0
 @export var distance_from_target: float = 5.0
 @export var height_offset: float = 2.0
+# Body origin is mid-capsule, so eyes sit about 0.8 m above it.
+@export var first_person_eye_height: float = 0.8
 @export var min_pitch: float = -30.0  # Degrees
 @export var max_pitch: float = 60.0   # Degrees
 @export var collision_mask: int = 1
@@ -70,8 +72,14 @@ func _update_camera_position(delta: float) -> void:
 	var target_position = target_node.global_transform.origin
 	
 	if is_first_person:
-		# First person view
-		global_transform.origin = target_position + Vector3(0, height_offset, 0)
+		# First person: sit at eye height and face the same way the third-person camera looks.
+		var fp_yaw := deg_to_rad(current_yaw)
+		var fp_pitch := deg_to_rad(current_pitch)
+		var forward := -Vector3(sin(fp_yaw) * cos(fp_pitch), sin(fp_pitch), cos(fp_yaw) * cos(fp_pitch))
+		global_transform = Transform3D(
+			Basis.looking_at(forward, Vector3.UP),
+			target_position + Vector3(0, first_person_eye_height, 0)
+		)
 	else:
 		# Third person view
 		var yaw_rad = deg_to_rad(current_yaw)
@@ -105,8 +113,9 @@ func _update_camera_position(delta: float) -> void:
 		# Smooth movement to desired position
 		global_transform.origin = lerp(global_transform.origin, desired_position, follow_speed * delta)
 	
-	# Always look at target
-	look_at(target_position + Vector3(0, height_offset * 0.5, 0), Vector3.UP)
+	# Third person always looks at the target. First person has set its own orientation above.
+	if not is_first_person:
+		look_at(target_position + Vector3(0, height_offset * 0.5, 0), Vector3.UP)
 
 func set_target(target: Node3D) -> void:
 	"""Set a new target for the camera to follow"""

@@ -146,7 +146,7 @@ func _test_world_interactions() -> void:
 	var world := WorldMapScript.new()
 	root.add_child(world)
 	world.enter_location("home", family)
-	var bed := world.nearest_interactable(Vector2(440.0, 350.0))
+	var bed := world.nearest_interactable(Vector2(1250.0, 485.0))
 	_check(
 		is_instance_valid(bed) and bed.action_id == "sleep", "Nearby home objects can be targeted"
 	)

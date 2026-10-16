@@ -67,7 +67,7 @@ func _physics_process(delta: float) -> void:
 		
 		# Rotate character to face movement direction
 		if current_speed > 0.1:
-			var target_rotation = atan2(direction.x, direction.z)
+			var target_rotation = atan2(-direction.x, -direction.z)  # Godot forward is -Z
 			rotation.y = lerp_angle(rotation.y, target_rotation, 10.0 * delta)
 		
 		# Update animation state
