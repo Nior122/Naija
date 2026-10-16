@@ -11,6 +11,7 @@ import { loadLifeCatalog } from "../life/calendar.js";
 import type { CalendarDate } from "../life/types.js";
 import type { CharacterRecord, PersistentPlayer, PersistentWorldState } from "../multiplayer/types.js";
 import { loadCareerCatalog } from "./catalog.js";
+import { hasActiveBusinessEmployment } from "./commitments.js";
 import type {
   CareerApplicationRecord,
   CareerCatalog,
@@ -197,6 +198,10 @@ export function careerEligibility(
   }
   if (options.checkCurrentEmployment !== false && activeEmploymentFor(state, character.character_id)) {
     missing.push("Resign or complete the current employment before taking another full work commitment.");
+  }
+  // Stage 43: a business employment is a full work commitment too. See careers/commitments.ts.
+  if (options.checkCurrentEmployment !== false && hasActiveBusinessEmployment(state, character.character_id)) {
+    missing.push("End the current business employment before taking a career job.");
   }
   if (options.checkVacancy) {
     const vacancy = options.checkVacancy;
@@ -1083,6 +1088,8 @@ function refreshNpcCareers(state: PersistentWorldState, date: CalendarDate, now:
   const employerByJob = new Map<string, string>();
   for (const vacancy of catalog.vacancies) if (vacancy.employer_id) employerByJob.set(vacancy.job_id, vacancy.employer_id);
   for (const person of Object.values(state.people)) {
+    // Stage 42: the neighbourhood residents have no career assignment. Assigning them would take vacancies from players.
+    if (person.family_role === "neighbour") continue;
     const existing = state.npcCareers[person.person_id];
     let status: CareerEmploymentStatus | "student" | "unemployed" = "unemployed";
     if (person.life_status === "deceased") status = "deceased";

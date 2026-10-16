@@ -10,7 +10,7 @@
 | Package management | **npm workspaces + lockfile** | Root scripts for build, test, lint, and development. |
 | Testing | **Node built-in test runner, `fetch`, and `ws` clients** | `npm run check` covers 48 Node tests, including real WebSocket clients, career authority/privacy, payroll idempotency and state-file migration/restart. |
 | Linting | **ESLint 10 + typescript-eslint 8** | TypeScript service source. |
-| Source control / automation | **Git + GitHub Actions** | CI runs Node build, lint, and tests (`npm run check`). |
+| Source control / automation | **Git + GitHub Actions** | CI has two jobs: `npm run check` (build, lint, and file-backend tests), and the live PostgreSQL tests against a disposable `postgres:18` service container. On failure the live job writes its full test output and the PostgreSQL service log to an uploaded artifact (`world-api-live-postgres-log`, kept 14 days) and lists the failing tests in the job summary (Stage 38). The live-job failure of run `38209331236` is not explained; the output change is unverified until a run shows it. From Stage 39 the foundation job keeps its output in the same way (`world-api-foundation-log`). The foundation-job failure of run `38235819303` (commit `b95dedb`) is not explained either: its logs could not be retrieved, and a local repro passed. |
 | Prototype persistence | **Versioned local JSON file** | Schema-version-3 one-process snapshot for the shared clock, character/lifecycle data and career/payroll maps; no DB or multi-process coordination. |
 | Future persistence candidate | **PostgreSQL** | Not configured or connected; evaluate before production persistence. |
 

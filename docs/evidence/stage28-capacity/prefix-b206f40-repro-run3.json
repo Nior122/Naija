@@ -1,0 +1,88 @@
+{
+  "tree": "/tmp/prefix-s28/services/world-api",
+  "target": 3000,
+  "created": 708,
+  "firstFailure": {
+    "attempt": 709,
+    "code": "persistence_failed"
+  },
+  "samples": [
+    {
+      "identities": 50,
+      "bytes": 1290125,
+      "elapsedSeconds": 0
+    },
+    {
+      "identities": 100,
+      "bytes": 2495925,
+      "elapsedSeconds": 2
+    },
+    {
+      "identities": 150,
+      "bytes": 3648817,
+      "elapsedSeconds": 3
+    },
+    {
+      "identities": 200,
+      "bytes": 4826301,
+      "elapsedSeconds": 6
+    },
+    {
+      "identities": 250,
+      "bytes": 5983199,
+      "elapsedSeconds": 9
+    },
+    {
+      "identities": 300,
+      "bytes": 7186215,
+      "elapsedSeconds": 13
+    },
+    {
+      "identities": 350,
+      "bytes": 8382017,
+      "elapsedSeconds": 18
+    },
+    {
+      "identities": 400,
+      "bytes": 9563979,
+      "elapsedSeconds": 24
+    },
+    {
+      "identities": 450,
+      "bytes": 10749805,
+      "elapsedSeconds": 31
+    },
+    {
+      "identities": 500,
+      "bytes": 11890580,
+      "elapsedSeconds": 39
+    },
+    {
+      "identities": 550,
+      "bytes": 13005093,
+      "elapsedSeconds": 47
+    },
+    {
+      "identities": 600,
+      "bytes": 14190164,
+      "elapsedSeconds": 57
+    },
+    {
+      "identities": 650,
+      "bytes": 15369871,
+      "elapsedSeconds": 67
+    },
+    {
+      "identities": 700,
+      "bytes": 16589300,
+      "elapsedSeconds": 78
+    }
+  ],
+  "shutdown": {
+    "ok": false,
+    "error": "World data file exceeds the 16 MiB prototype limit.",
+    "ms": 111
+  },
+  "creationSeconds": 80,
+  "finalFileBytes": 16772826
+}

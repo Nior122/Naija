@@ -1,0 +1,24 @@
+{
+  "backend": "postgres",
+  "database_name_class": "test-or-probe (name not recorded)",
+  "requested_identities": 2500,
+  "created_identities": 1056,
+  "first_failure": {
+    "attempt": 1057,
+    "code": "world_capacity_reached"
+  },
+  "size_limit_bytes": 16777216,
+  "final_snapshot_bytes": 17822747,
+  "bytes_per_identity_marginal": 16878,
+  "creation_latency_ms": {
+    "p50": 559,
+    "p95": 1133,
+    "max": 1420
+  },
+  "creation_phase_seconds": 610,
+  "shutdown_ms": 804,
+  "shutdown_error": null,
+  "probe_rows_deleted": true,
+  "node": "v22.22.3",
+  "finished_at": "2026-10-10T20:04:46.439Z"
+}

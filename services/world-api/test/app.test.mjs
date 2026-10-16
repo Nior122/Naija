@@ -174,7 +174,13 @@ test("HTTP health, world metadata, 404, and read-only method checks remain intac
     const health = await fetch(`${baseUrl}/health`);
     assert.equal(health.status, 200);
     assert.equal(health.headers.get("cache-control"), "no-store");
-    assert.deepEqual(await health.json(), { status: "ok", service: "world-api" });
+    const healthBody = await health.json();
+    assert.equal(healthBody.status, "healthy");
+    assert.equal(healthBody.version, "1.0.0");
+    assert.ok(healthBody.uptime >= 0);
+    assert.ok(healthBody.timestamp > 0);
+    assert.ok(healthBody.checks);
+    assert.ok(healthBody.metrics);
 
     const world = await fetch(`${baseUrl}/api/v1/world`);
     assert.equal(world.status, 200);
@@ -183,18 +189,50 @@ test("HTTP health, world metadata, 404, and read-only method checks remain intac
       name: "Nigeria",
       projectName: "Naija: One World",
       topology: "single-logical-world",
-      implementationStage: 6,
+      implementationStage: 22,
       simulationImplemented: true,
       simulationScope: "bounded-multiplayer-prototype",
       geographyImplemented: true,
+      geographyScope: "national-admin-registry-with-regional-environment-profiles",
       educationImplemented: true,
       educationScope: "fictional-configurable-education-prototype",
       lifeSimulationImplemented: true,
       lifeSimulationScope: "configurable-calendar-family-relationships-and-life-history-foundation",
       careersImplemented: true,
       careersScope: "server-authoritative-configurable-vacancies-employment-work-sessions-and-payroll-prototype",
-      geographicCoverage: "national-admin-registry-plus-bounded-akure-south-sample",
-      fullNationalGeography: false,
+      economyImplemented: true,
+      economyScope: "naira-denominated-ledger-banking-market-goods-tax-estimation-and-credit-prototype",
+      businessesImplemented: true,
+      businessesScope: "configurable-business-templates-products-inventory-sales-production-expenses-and-ownership-prototype",
+      housingImplemented: true,
+      housingScope: "configurable-property-types-ownership-listings-rental-agreements-sales-maintenance-and-furnishing-prototype",
+      governmentImplemented: true,
+      governmentScope: "federal-state-local-government-structure-offices-appointments-budgets-projects-and-announcements-prototype",
+      electionsImplemented: true,
+      electionsScope: "political-parties-elections-candidates-campaigns-voting-results-and-government-office-integration-prototype",
+      justiceImplemented: true,
+      justiceScope: "laws-courts-cases-evidence-hearings-judgments-fines-appeals-and-legislative-proposals-prototype",
+      policeImplemented: true,
+      policeScope: "stations-officers-recruitment-incidents-dispatch-investigations-evidence-wanted-records-arrests-misconduct-and-audits-prototype",
+      militaryImplemented: true,
+      militaryScope: "organizations-bases-units-recruitment-training-ranks-promotions-command-appointments-assignments-leave-assets-national-security-events-discipline-and-audits-prototype",
+      crimeImplemented: true,
+      crimeScope: "crime-definitions-incidents-resolution-detection-evidence-criminal-records-notoriety-restitution-rehabilitation-and-integration-with-police-justice-economy-prototype",
+      cultureImplemented: true,
+      cultureScope: "communities-institutions-religious-traditional-memberships-cultural-profiles-festivals-events-projects-announcements-disputes-reputation-and-geography-integration-prototype",
+      entertainmentImplemented: true,
+      socialImplemented: true,
+      transportationImplemented: true,
+      transportationScope: 'road-network-vehicle-ownership-purchase-fuel-maintenance-public-transport-routes-trips-cargo-shipments-driver-licenses-facilities-and-routing-prototype',
+      npcImplemented: true,
+      npcScope: 'npc-profiles-routines-needs-goals-activities-simulation-engine-population-generation-decision-logging-and-world-event-reactions-prototype',
+      worldEventsImplemented: true,
+      worldEventsScope: 'world-event-framework-causal-chains-event-consumers-geographic-scope-idempotency-and-multi-system-integration-prototype',
+      entertainmentScope: "professions-creator-profiles-music-projects-film-productions-content-creation-events-contracts-journalism-fame-monetization-and-moderation-prototype",
+      regionalRegistryImplemented: true,
+      regionalRegistryScope: 'all-37-states-with-environment-profiles-spatial-queries-and-regional-metadata',
+      geographicCoverage: "national-admin-registry-with-regional-environment-profiles",
+      fullNationalGeography: true,
       fullNationalSimulation: false,
     });
 
@@ -569,7 +607,7 @@ test("state-changing requests require IDs and do not replay a successful travel"
   });
 });
 
-test("identity creation retries recover the same player without duplicating records", async () => {
+test("identity creation retries with a key alone are refused (D-05) without duplicating records; the original session still works", async () => {
   await withServer(async ({ websocketUrl, stateFile }) => {
     const first = await openPeer(websocketUrl);
     const creationKey = randomBytes(32).toString("hex");
@@ -580,13 +618,18 @@ test("identity creation retries recover the same player without duplicating reco
 
     const retry = await openPeer(websocketUrl);
     try {
+      // D-05: a creation key alone does not re-issue the identity or rotate its token.
       retry.send({ type: "identity.create", creationKey, profile });
-      const recovered = await retry.waitForType("identity.created");
-      assert.equal(recovered.playerId, original.playerId);
-      assert.notEqual(recovered.sessionToken, original.sessionToken);
-      retry.send({ type: "session.resume", sessionToken: recovered.sessionToken });
-      const ready = await retry.waitForType("session.ready");
-      assert.equal(ready.playerId, original.playerId);
+      const refused = await retry.waitForType("error");
+      assert.equal(refused.code, "identity_recovery_unavailable");
+      const resumed = await openPeer(websocketUrl);
+      try {
+        resumed.send({ type: "session.resume", sessionToken: original.sessionToken });
+        const ready = await resumed.waitForType("session.ready");
+        assert.equal(ready.playerId, original.playerId, "the original session still works");
+      } finally {
+        await resumed.close();
+      }
       const saved = JSON.parse(await readFile(stateFile, "utf8"));
       assert.equal(Object.keys(saved.players).length, 1);
       assert.notEqual(JSON.stringify(saved).includes(creationKey), true);

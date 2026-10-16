@@ -123,6 +123,16 @@ export function addYearsClamped(date: CalendarDate, years: number): CalendarDate
   return { year, month: date.month, day: Math.min(date.day, daysInMonth(year, date.month)) };
 }
 
+/** Adds whole calendar months. The day is clamped to the length of the target month (31 January + 1 month = 28 or 29 February). */
+export function addMonthsClamped(date: CalendarDate, months: number): CalendarDate {
+  if (!isValidDate(date) || !Number.isSafeInteger(months) || months < 0) throw new Error("invalid_calendar_date");
+  const monthIndex = date.year * 12 + (date.month - 1) + months;
+  const year = Math.floor(monthIndex / 12);
+  const month = (monthIndex % 12) + 1;
+  if (year < 1 || year > 9999) throw new Error("calendar_date_out_of_range");
+  return { year, month, day: Math.min(date.day, daysInMonth(year, month)) };
+}
+
 export function birthdayDateForYear(dateOfBirth: CalendarDate, year: number): CalendarDate {
   if (!isValidDate(dateOfBirth) || !Number.isSafeInteger(year) || year < dateOfBirth.year || year > 9999) {
     throw new Error("invalid_birthday_year");

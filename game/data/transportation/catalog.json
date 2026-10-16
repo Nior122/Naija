@@ -1,0 +1,436 @@
+{
+  "schema_version": 1,
+  "world_id": "nigeria-main",
+  "notice": "Transportation catalog for Naija: One World. All prices in Nigerian Naira (NGN).",
+  "rules": {
+    "currency": "NGN",
+    "currency_label": "Nigerian Naira",
+    "currency_symbol": "₦",
+    "minimum_driver_age": 18,
+    "commercial_driver_age": 21,
+    "heavy_vehicle_age": 25,
+    "maximum_vehicle_age_years": 30,
+    "fuel_consumption_base_liters_per_100km": 8,
+    "maintenance_interval_km": 5000,
+    "minimum_fuel_liters": 0,
+    "maximum_fuel_liters": 200,
+    "traffic_congestion_multiplier_min": 1.0,
+    "traffic_congestion_multiplier_max": 3.0,
+    "road_condition_multiplier_min": 0.5,
+    "road_condition_multiplier_max": 1.5
+  },
+  "vehicle_categories": [
+    {
+      "id": "bicycle",
+      "label": "Bicycle",
+      "requires_license": false,
+      "minimum_age": 12,
+      "description": "Non-motorized bicycle"
+    },
+    {
+      "id": "motorcycle",
+      "label": "Motorcycle",
+      "requires_license": true,
+      "minimum_age": 18,
+      "description": "Two-wheeled motor vehicle"
+    },
+    {
+      "id": "tricycle",
+      "label": "Tricycle (Keke)",
+      "requires_license": true,
+      "minimum_age": 18,
+      "description": "Three-wheeled passenger vehicle"
+    },
+    {
+      "id": "compact_car",
+      "label": "Compact Car",
+      "requires_license": true,
+      "minimum_age": 18,
+      "description": "Small personal vehicle"
+    },
+    {
+      "id": "sedan",
+      "label": "Sedan",
+      "requires_license": true,
+      "minimum_age": 18,
+      "description": "Mid-size personal vehicle"
+    },
+    {
+      "id": "suv",
+      "label": "SUV",
+      "requires_license": true,
+      "minimum_age": 18,
+      "description": "Sport utility vehicle"
+    },
+    {
+      "id": "pickup_truck",
+      "label": "Pickup Truck",
+      "requires_license": true,
+      "minimum_age": 18,
+      "description": "Light commercial vehicle"
+    },
+    {
+      "id": "minibus",
+      "label": "Minibus",
+      "requires_license": true,
+      "minimum_age": 21,
+      "description": "Small commercial passenger vehicle"
+    },
+    {
+      "id": "commercial_bus",
+      "label": "Commercial Bus",
+      "requires_license": true,
+      "minimum_age": 21,
+      "description": "Large passenger vehicle"
+    },
+    {
+      "id": "delivery_van",
+      "label": "Delivery Van",
+      "requires_license": true,
+      "minimum_age": 21,
+      "description": "Small cargo vehicle"
+    },
+    {
+      "id": "heavy_truck",
+      "label": "Heavy Truck",
+      "requires_license": true,
+      "minimum_age": 25,
+      "description": "Large cargo vehicle"
+    },
+    {
+      "id": "tanker_truck",
+      "label": "Tanker Truck",
+      "requires_license": true,
+      "minimum_age": 25,
+      "description": "Liquid cargo vehicle"
+    }
+  ],
+  "vehicle_definitions": [
+    {
+      "id": "bicycle_standard",
+      "category_id": "bicycle",
+      "name": "Standard Bicycle",
+      "capacity_passengers": 1,
+      "capacity_cargo_kg": 20,
+      "base_price_ngn": 35000,
+      "fuel_type": "none",
+      "fuel_capacity_liters": 0,
+      "fuel_consumption_liters_per_100km": 0,
+      "max_speed_kmh": 25,
+      "durability": 100,
+      "maintenance_cost_per_service_ngn": 2000,
+      "requires_license": false
+    },
+    {
+      "id": "motorcycle_basic",
+      "category_id": "motorcycle",
+      "name": "Basic Motorcycle",
+      "capacity_passengers": 2,
+      "capacity_cargo_kg": 50,
+      "base_price_ngn": 250000,
+      "fuel_type": "petrol",
+      "fuel_capacity_liters": 15,
+      "fuel_consumption_liters_per_100km": 3,
+      "max_speed_kmh": 120,
+      "durability": 100,
+      "maintenance_cost_per_service_ngn": 8000,
+      "requires_license": true
+    },
+    {
+      "id": "tricycle_keke",
+      "category_id": "tricycle",
+      "name": "Keke Tricycle",
+      "capacity_passengers": 3,
+      "capacity_cargo_kg": 100,
+      "base_price_ngn": 450000,
+      "fuel_type": "petrol",
+      "fuel_capacity_liters": 12,
+      "fuel_consumption_liters_per_100km": 4,
+      "max_speed_kmh": 80,
+      "durability": 100,
+      "maintenance_cost_per_service_ngn": 10000,
+      "requires_license": true
+    },
+    {
+      "id": "compact_hatchback",
+      "category_id": "compact_car",
+      "name": "Compact Hatchback",
+      "capacity_passengers": 5,
+      "capacity_cargo_kg": 300,
+      "base_price_ngn": 3500000,
+      "fuel_type": "petrol",
+      "fuel_capacity_liters": 45,
+      "fuel_consumption_liters_per_100km": 7,
+      "max_speed_kmh": 160,
+      "durability": 100,
+      "maintenance_cost_per_service_ngn": 25000,
+      "requires_license": true
+    },
+    {
+      "id": "sedan_standard",
+      "category_id": "sedan",
+      "name": "Standard Sedan",
+      "capacity_passengers": 5,
+      "capacity_cargo_kg": 400,
+      "base_price_ngn": 5500000,
+      "fuel_type": "petrol",
+      "fuel_capacity_liters": 55,
+      "fuel_consumption_liters_per_100km": 8,
+      "max_speed_kmh": 180,
+      "durability": 100,
+      "maintenance_cost_per_service_ngn": 30000,
+      "requires_license": true
+    },
+    {
+      "id": "suv_standard",
+      "category_id": "suv",
+      "name": "Standard SUV",
+      "capacity_passengers": 7,
+      "capacity_cargo_kg": 600,
+      "base_price_ngn": 8500000,
+      "fuel_type": "petrol",
+      "fuel_capacity_liters": 70,
+      "fuel_consumption_liters_per_100km": 11,
+      "max_speed_kmh": 170,
+      "durability": 100,
+      "maintenance_cost_per_service_ngn": 40000,
+      "requires_license": true
+    },
+    {
+      "id": "pickup_standard",
+      "category_id": "pickup_truck",
+      "name": "Standard Pickup",
+      "capacity_passengers": 5,
+      "capacity_cargo_kg": 1000,
+      "base_price_ngn": 7500000,
+      "fuel_type": "diesel",
+      "fuel_capacity_liters": 80,
+      "fuel_consumption_liters_per_100km": 10,
+      "max_speed_kmh": 160,
+      "durability": 100,
+      "maintenance_cost_per_service_ngn": 35000,
+      "requires_license": true
+    },
+    {
+      "id": "minibus_standard",
+      "category_id": "minibus",
+      "name": "Standard Minibus",
+      "capacity_passengers": 18,
+      "capacity_cargo_kg": 500,
+      "base_price_ngn": 6500000,
+      "fuel_type": "diesel",
+      "fuel_capacity_liters": 100,
+      "fuel_consumption_liters_per_100km": 12,
+      "max_speed_kmh": 140,
+      "durability": 100,
+      "maintenance_cost_per_service_ngn": 45000,
+      "requires_license": true
+    },
+    {
+      "id": "bus_commercial",
+      "category_id": "commercial_bus",
+      "name": "Commercial Bus",
+      "capacity_passengers": 50,
+      "capacity_cargo_kg": 2000,
+      "base_price_ngn": 25000000,
+      "fuel_type": "diesel",
+      "fuel_capacity_liters": 250,
+      "fuel_consumption_liters_per_100km": 25,
+      "max_speed_kmh": 120,
+      "durability": 100,
+      "maintenance_cost_per_service_ngn": 80000,
+      "requires_license": true
+    },
+    {
+      "id": "van_delivery",
+      "category_id": "delivery_van",
+      "name": "Delivery Van",
+      "capacity_passengers": 3,
+      "capacity_cargo_kg": 1500,
+      "base_price_ngn": 9500000,
+      "fuel_type": "diesel",
+      "fuel_capacity_liters": 90,
+      "fuel_consumption_liters_per_100km": 11,
+      "max_speed_kmh": 140,
+      "durability": 100,
+      "maintenance_cost_per_service_ngn": 40000,
+      "requires_license": true
+    },
+    {
+      "id": "truck_heavy",
+      "category_id": "heavy_truck",
+      "name": "Heavy Truck",
+      "capacity_passengers": 3,
+      "capacity_cargo_kg": 10000,
+      "base_price_ngn": 35000000,
+      "fuel_type": "diesel",
+      "fuel_capacity_liters": 300,
+      "fuel_consumption_liters_per_100km": 35,
+      "max_speed_kmh": 100,
+      "durability": 100,
+      "maintenance_cost_per_service_ngn": 120000,
+      "requires_license": true
+    },
+    {
+      "id": "tanker_standard",
+      "category_id": "tanker_truck",
+      "name": "Standard Tanker",
+      "capacity_passengers": 3,
+      "capacity_cargo_kg": 15000,
+      "base_price_ngn": 45000000,
+      "fuel_type": "diesel",
+      "fuel_capacity_liters": 350,
+      "fuel_consumption_liters_per_100km": 38,
+      "max_speed_kmh": 90,
+      "durability": 100,
+      "maintenance_cost_per_service_ngn": 150000,
+      "requires_license": true
+    }
+  ],
+  "fuel_types": [
+    {
+      "id": "petrol",
+      "label": "Petrol (PMS)",
+      "base_price_per_liter_ngn": 750,
+      "energy_density_mj_per_liter": 34.2
+    },
+    {
+      "id": "diesel",
+      "label": "Diesel (AGO)",
+      "base_price_per_liter_ngn": 950,
+      "energy_density_mj_per_liter": 38.6
+    },
+    {
+      "id": "electricity",
+      "label": "Electricity",
+      "base_price_per_kwh_ngn": 150,
+      "energy_density_mj_per_liter": 0
+    }
+  ],
+  "road_types": [
+    {
+      "id": "residential_street",
+      "label": "Residential Street",
+      "speed_limit_kmh": 30,
+      "base_travel_speed_kmh": 25,
+      "condition_factor": 1.0,
+      "vehicle_restrictions": []
+    },
+    {
+      "id": "urban_road",
+      "label": "Urban Road",
+      "speed_limit_kmh": 50,
+      "base_travel_speed_kmh": 40,
+      "condition_factor": 1.0,
+      "vehicle_restrictions": []
+    },
+    {
+      "id": "arterial_road",
+      "label": "Arterial Road",
+      "speed_limit_kmh": 70,
+      "base_travel_speed_kmh": 60,
+      "condition_factor": 1.0,
+      "vehicle_restrictions": []
+    },
+    {
+      "id": "highway",
+      "label": "Highway",
+      "speed_limit_kmh": 100,
+      "base_travel_speed_kmh": 90,
+      "condition_factor": 1.0,
+      "vehicle_restrictions": ["bicycle"]
+    },
+    {
+      "id": "expressway",
+      "label": "Expressway",
+      "speed_limit_kmh": 120,
+      "base_travel_speed_kmh": 100,
+      "condition_factor": 1.0,
+      "vehicle_restrictions": ["bicycle", "motorcycle", "tricycle"]
+    },
+    {
+      "id": "rural_road",
+      "label": "Rural Road",
+      "speed_limit_kmh": 60,
+      "base_travel_speed_kmh": 45,
+      "condition_factor": 0.8,
+      "vehicle_restrictions": []
+    }
+  ],
+  "facility_types": [
+    {
+      "id": "bus_stop",
+      "label": "Bus Stop",
+      "description": "Public transport boarding point"
+    },
+    {
+      "id": "motor_park",
+      "label": "Motor Park",
+      "description": "Commercial vehicle terminal"
+    },
+    {
+      "id": "fuel_station",
+      "label": "Fuel Station",
+      "description": "Vehicle refueling facility"
+    },
+    {
+      "id": "repair_garage",
+      "label": "Repair Garage",
+      "description": "Vehicle maintenance facility"
+    },
+    {
+      "id": "vehicle_dealership",
+      "label": "Vehicle Dealership",
+      "description": "Vehicle sales facility"
+    },
+    {
+      "id": "intercity_terminal",
+      "label": "Intercity Terminal",
+      "description": "Long-distance transport terminal"
+    }
+  ],
+  "transport_modes": [
+    {
+      "id": "walking",
+      "label": "Walking",
+      "speed_kmh": 5,
+      "requires_vehicle": false,
+      "cost_per_km_ngn": 0
+    },
+    {
+      "id": "private_vehicle",
+      "label": "Private Vehicle",
+      "speed_kmh": 60,
+      "requires_vehicle": true,
+      "cost_per_km_ngn": 0
+    },
+    {
+      "id": "public_bus",
+      "label": "Public Bus",
+      "speed_kmh": 40,
+      "requires_vehicle": false,
+      "cost_per_km_ngn": 50
+    },
+    {
+      "id": "taxi",
+      "label": "Taxi",
+      "speed_kmh": 50,
+      "requires_vehicle": false,
+      "cost_per_km_ngn": 150
+    },
+    {
+      "id": "ride_hailing",
+      "label": "Ride Hailing",
+      "speed_kmh": 50,
+      "requires_vehicle": false,
+      "cost_per_km_ngn": 180
+    },
+    {
+      "id": "intercity_bus",
+      "label": "Intercity Bus",
+      "speed_kmh": 70,
+      "requires_vehicle": false,
+      "cost_per_km_ngn": 40
+    }
+  ]
+}

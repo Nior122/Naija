@@ -17,10 +17,13 @@
     "lint": "eslint services/world-api/src --ext .ts",
     "check": "npm run lint && npm test",
     "geography:import": "npm run build && node tools/geography/import-geography.mjs",
-    "geography:check": "npm run build && node tools/geography/import-geography.mjs --check"
+    "geography:check": "npm run build && node tools/geography/import-geography.mjs --check",
+    "db:status": "npm run build && node services/world-api/dist/database/cli.js status",
+    "db:migrate": "npm run build && node services/world-api/dist/database/cli.js migrate"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",
+    "@types/pg": "^8.23.1",
     "eslint": "^10.12.0",
     "tsx": "^4.23.15",
     "typescript": "^5.9.3",

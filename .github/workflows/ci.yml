@@ -22,4 +22,118 @@ jobs:
       - name: Install dependencies
         run: npm ci
       - name: Run foundation checks
-        run: npm run check
+        # Stage 39: the full output is kept in a file, so a failure can be read afterwards, as the PostgreSQL job does. The
+        # file holds the lint output and the TAP stream of the tests. pipefail keeps the exit code of npm run check.
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run check 2>&1 | tee "$RUNNER_TEMP/world-api-foundation.log"
+      - name: Summarise failing foundation tests
+        if: failure()
+        shell: bash
+        run: |
+          LOG="$RUNNER_TEMP/world-api-foundation.log"
+          {
+            echo "### Failing foundation tests"
+            echo ""
+            echo "Test names, errors, and hook failures from the output (the full log is in the job artifact)."
+            echo ""
+            echo '```'
+            if [ -f "$LOG" ]; then
+              grep -E "^\s*not ok |failureType:|  error:|hookFailed|testCodeFailure|^# (tests|pass|fail|skipped|todo)" "$LOG" | head -n 300 || true
+            else
+              echo "The output file was not written."
+            fi
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Keep the foundation test log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: world-api-foundation-log
+          path: ${{ runner.temp }}/world-api-foundation.log
+          retention-days: 14
+          if-no-files-found: warn
+
+  node-live-database:
+    # Runs the live PostgreSQL tests against a disposable service container. The container is created for this job only,
+    # listens on the runner's loopback interface, and has no password (trust authentication on the ephemeral container).
+    # It is not a deployment and holds no data. The TLS live suite is not run here: it needs a TLS-enabled server and a
+    # private test CA, and its tests skip with that stated reason.
+    name: World API live PostgreSQL tests (disposable service)
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: naija
+          POSTGRES_DB: naija_test
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U naija -d naija_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgres://naija@127.0.0.1:5432/naija_test?sslmode=disable
+      DB_SSL: "false"
+      NAIJA_ENV: test
+      NAIJA_ALLOW_DB_TESTS: "true"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Run tests with live PostgreSQL
+        # Stage 38: the full output is kept in a file, so a failure can be read afterwards. The file holds the TAP stream:
+        # each failing test's name, its error, its stack, and whether a setup or teardown hook failed (failureType). pipefail
+        # keeps the exit code of npm test. The database is an ephemeral container with trust authentication and no password,
+        # so the connection string in the output holds no secret. This job references no repository or environment secret.
+        shell: bash
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee "$RUNNER_TEMP/world-api-live-postgres.log"
+      - name: Summarise failing live PostgreSQL tests
+        if: failure()
+        shell: bash
+        run: |
+          LOG="$RUNNER_TEMP/world-api-live-postgres.log"
+          {
+            echo "### Failing live PostgreSQL tests"
+            echo ""
+            echo "Test names, errors, and hook failures from the TAP output (the full log is in the job artifact)."
+            echo ""
+            echo '```'
+            if [ -f "$LOG" ]; then
+              grep -E "^\s*not ok |failureType:|  error:|hookFailed|testCodeFailure" "$LOG" | head -n 300 || true
+            else
+              echo "The test output file was not written."
+            fi
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Collect the PostgreSQL service log
+        if: failure()
+        shell: bash
+        run: |
+          {
+            echo ""
+            echo "=== PostgreSQL service container log (last 200 lines) ==="
+            for id in $(docker ps -a --filter "ancestor=postgres:18" -q); do
+              docker logs --tail 200 "$id" 2>&1 || true
+            done
+          } >> "$RUNNER_TEMP/world-api-live-postgres.log"
+      - name: Keep the live PostgreSQL test log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: world-api-live-postgres-log
+          path: ${{ runner.temp }}/world-api-live-postgres.log
+          retention-days: 14
+          if-no-files-found: warn

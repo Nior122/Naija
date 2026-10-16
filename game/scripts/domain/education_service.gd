@@ -348,6 +348,17 @@ static func subject_names(record: Dictionary) -> Array[String]:
 	return result
 
 
+## JSON numbers load as floats, and Array.has() does not match the integer 0 against 0.0.
+## Weekday lists from the catalog therefore never matched, so no lesson was ever scheduled.
+static func _has_weekday(days: Variant, weekday: int) -> bool:
+	if not days is Array:
+		return false
+	for value in days:
+		if typeof(value) in [TYPE_INT, TYPE_FLOAT] and int(value) == weekday:
+			return true
+	return false
+
+
 static func schedule_for_day(record: Dictionary, day: int) -> Array[Dictionary]:
 	var data := catalog()
 	var weekday := posmod(day - 1, 7)
@@ -355,7 +366,7 @@ static func schedule_for_day(record: Dictionary, day: int) -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
 	for entry_value in data.get("timetable", []):
 		var entry: Dictionary = entry_value
-		if not entry.get("days_of_week", []).has(weekday):
+		if not _has_weekday(entry.get("days_of_week", []), weekday):
 			continue
 		if not entry.get("class_ids", []).has(str(record.get("current_class_id", ""))):
 			continue
@@ -471,7 +482,7 @@ static func mark_missed_periods(record: Dictionary, day: int, minute_of_day: int
 	var weekday := posmod(day - 1, 7)
 	if (
 		str(record.get("enrollment_status", "")) != "enrolled"
-		or not data.get("calendar", {}).get("school_days_of_week", []).has(weekday)
+		or not _has_weekday(data.get("calendar", {}).get("school_days_of_week", []), weekday)
 	):
 		return 0
 	var marked := 0
@@ -555,7 +566,7 @@ static func record_result(
 		}
 	)
 	sync_legacy_character(character)
-	return int(character.get("academic_scores", {}).get(subject_name, roundi(score)))
+	return int(character.academic_scores.get(subject_name, roundi(score)))
 
 
 static func close_current_term(character: Object, day: int) -> Dictionary:
@@ -1088,7 +1099,7 @@ static func answer_final_exam(
 			break
 	if registration_index >= 0:
 		record.final_exam_registrations[registration_index].status = "in_progress"
-	var result_status := _publish_final_exam_results(record, registration_id, day, data)
+	var result_status: Variant = _publish_final_exam_results(record, registration_id, day, data)
 	sync_legacy_character(character)
 	return {
 		"ok": true,
@@ -1270,7 +1281,7 @@ static func respond_to_offer(
 
 
 static func begin_tertiary_course(character: Object) -> Dictionary:
-	var record: Dictionary = character.get("education_record", {})
+	var record: Dictionary = character.education_record
 	var enrollment: Variant = record.get("tertiary_enrollment", null)
 	if not enrollment is Dictionary or str(enrollment.get("status", "")) == "completed":
 		return {}
@@ -1292,7 +1303,7 @@ static func begin_tertiary_course(character: Object) -> Dictionary:
 static func record_tertiary_answer(
 	character: Object, course_id: String, answer_index: int, day: int
 ) -> Dictionary:
-	var record: Dictionary = character.get("education_record", {})
+	var record: Dictionary = character.education_record
 	var enrollment: Variant = record.get("tertiary_enrollment", null)
 	var data := catalog()
 	if not enrollment is Dictionary or str(enrollment.get("status", "")) == "completed":
@@ -1691,7 +1702,7 @@ static func request_family_support(character: Object, day: int, location: String
 			"education_family_support_location_required",
 			"Speak with your family at home about study costs."
 		)
-	var guardians: Variant = character.get("household", {}).get("guardians", [])
+	var guardians: Variant = character.household.get("guardians", [])
 	if (
 		not guardians is Array
 		or guardians.size() < int(data.get("family_support", {}).get("minimum_guardians", 1))

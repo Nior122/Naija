@@ -1,0 +1,104 @@
+{
+  "schema_version": 1,
+  "world_id": "nigeria-main",
+  "notice": "Stage 13 — Police and Security System. Static catalogue of police organizational structure, ranks, incident categories, misconduct categories, and configurable rules. All values are game-design parameters.",
+  "police_levels": [
+    { "id": "national", "label": "National Headquarters", "description": "National police command." },
+    { "id": "state", "label": "State Command", "description": "State-level police command." },
+    { "id": "division", "label": "Division", "description": "Area command or division." },
+    { "id": "station", "label": "Police Station", "description": "Local police station." }
+  ],
+  "ranks": [
+    { "id": "constable", "label": "Police Constable", "level": 1, "description": "Entry-level officer." },
+    { "id": "corporal", "label": "Corporal", "level": 2, "description": "Senior constable." },
+    { "id": "sergeant", "label": "Sergeant", "level": 3, "description": "Junior supervisor." },
+    { "id": "inspector", "label": "Inspector", "level": 4, "description": "Mid-level supervisor and investigator." },
+    { "id": "chief_inspector", "label": "Chief Inspector", "level": 5, "description": "Senior investigator." },
+    { "id": "superintendent", "label": "Superintendent", "level": 6, "description": "Station or unit commander." },
+    { "id": "chief_superintendent", "label": "Chief Superintendent", "level": 7, "description": "Division commander." },
+    { "id": "assistant_commissioner", "label": "Assistant Commissioner", "level": 8, "description": "State deputy command." },
+    { "id": "deputy_commissioner", "label": "Deputy Commissioner", "level": 9, "description": "State command." },
+    { "id": "commissioner", "label": "Commissioner of Police", "level": 10, "description": "State Commissioner of Police." }
+  ],
+  "incident_categories": [
+    { "id": "theft", "label": "Theft or Suspected Theft" },
+    { "id": "assault", "label": "Assault Allegation" },
+    { "id": "property_damage", "label": "Property Damage" },
+    { "id": "fraud", "label": "Fraud Allegation" },
+    { "id": "disturbance", "label": "Disturbance or Public Nuisance" },
+    { "id": "missing_person", "label": "Missing Person" },
+    { "id": "traffic_incident", "label": "Traffic Incident" },
+    { "id": "public_safety", "label": "Public Safety Concern" },
+    { "id": "business_complaint", "label": "Business Complaint" },
+    { "id": "suspicious_activity", "label": "Suspicious Activity" },
+    { "id": "domestic_dispute", "label": "Domestic Dispute" },
+    { "id": "vandalism", "label": "Vandalism" },
+    { "id": "noise_complaint", "label": "Noise Complaint" },
+    { "id": "other", "label": "Other" }
+  ],
+  "dispatch_priorities": [
+    { "id": "low", "label": "Low Priority" },
+    { "id": "normal", "label": "Normal Priority" },
+    { "id": "high", "label": "High Priority" },
+    { "id": "emergency", "label": "Emergency" }
+  ],
+  "misconduct_categories": [
+    { "id": "unauthorized_arrest", "label": "Unauthorized Arrest" },
+    { "id": "improper_access", "label": "Improper Case Access" },
+    { "id": "evidence_tampering", "label": "Evidence Tampering" },
+    { "id": "abuse_of_authority", "label": "Abuse of Authority" },
+    { "id": "unauthorized_disclosure", "label": "Unauthorized Disclosure" },
+    { "id": "corruption_allegation", "label": "Corruption Allegation" },
+    { "id": "procedural_failure", "label": "Failure to Follow Procedure" },
+    { "id": "neglect_of_duty", "label": "Neglect of Duty" },
+    { "id": "other", "label": "Other Misconduct" }
+  ],
+  "training_modules": [
+    { "id": "law_procedures", "label": "Law and Procedures" },
+    { "id": "citizen_interaction", "label": "Citizen Interaction" },
+    { "id": "report_writing", "label": "Report Writing" },
+    { "id": "incident_response", "label": "Incident Response" },
+    { "id": "evidence_handling", "label": "Evidence Handling" },
+    { "id": "professional_conduct", "label": "Professional Conduct" },
+    { "id": "emergency_communication", "label": "Emergency Communication" },
+    { "id": "investigation_basics", "label": "Investigation Basics" }
+  ],
+  "complaint_outcomes": [
+    { "id": "no_finding", "label": "No Finding" },
+    { "id": "advisory", "label": "Advisory Notice" },
+    { "id": "training_required", "label": "Training Requirement" },
+    { "id": "formal_warning", "label": "Formal Warning" },
+    { "id": "restricted_permissions", "label": "Restricted Permissions" },
+    { "id": "suspension", "label": "Suspension" },
+    { "id": "demotion", "label": "Demotion" },
+    { "id": "dismissal", "label": "Dismissal" },
+    { "id": "legal_referral", "label": "Referred to Legal System" }
+  ],
+  "rules": {
+    "minimum_recruitment_age": 18,
+    "minimum_rank_age": { "constable": 18, "corporal": 20, "sergeant": 22, "inspector": 25, "chief_inspector": 28, "superintendent": 30, "chief_superintendent": 33, "assistant_commissioner": 35, "deputy_commissioner": 38, "commissioner": 40 },
+    "minimum_education_for_recruitment": "secondary",
+    "training_duration_days": 30,
+    "incident_description_max_length": 3000,
+    "incident_summary_max_length": 500,
+    "investigation_summary_max_length": 2000,
+    "complaint_description_max_length": 2000,
+    "dispatch_notes_max_length": 1000,
+    "wanted_reason_max_length": 500,
+    "arrest_reason_max_length": 500,
+    "evidence_description_max_length": 2000,
+    "max_incidents_per_station": 500,
+    "max_investigations_per_officer": 20,
+    "max_dispatch_per_station": 100,
+    "max_wanted_records": 1000,
+    "max_evidence_per_incident": 50,
+    "report_duplicate_window_hours": 24,
+    "supported_government_levels": ["federal", "state", "local"]
+  },
+  "seed_stations": [
+    { "id": "station:fct-hq", "name": "FCT Police Command Headquarters", "level": "state", "jurisdiction": "ng:state:fc", "parent_unit_id": null, "status": "active" },
+    { "id": "station:abuja-central", "name": "Abuja Central Police Station", "level": "station", "jurisdiction": "ng:state:fc", "parent_unit_id": "station:fct-hq", "status": "active" },
+    { "id": "station:abuja-south", "name": "Abuja South Police Station", "level": "station", "jurisdiction": "ng:state:fc", "parent_unit_id": "station:fct-hq", "status": "active" },
+    { "id": "station:national-hq", "name": "National Police Headquarters", "level": "national", "jurisdiction": null, "parent_unit_id": null, "status": "active" }
+  ]
+}

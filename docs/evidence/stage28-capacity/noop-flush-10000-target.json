@@ -1,0 +1,66 @@
+{
+  "mode": "noop-flush",
+  "label": "NO-OP FLUSH during creations: no per-creation save; one real save timed at the end",
+  "requested_identities": 10000,
+  "created_identities": 1452,
+  "first_failure": null,
+  "size_limit_bytes": 1073741824,
+  "creation_latency_ms": {
+    "count": 1452,
+    "p50": 286.72,
+    "p95": 1042.29,
+    "max": 1604.39
+  },
+  "save_latency_ms": {
+    "count": 1,
+    "p50": 437.88,
+    "p95": 437.88,
+    "max": 437.88
+  },
+  "creation_phase_seconds": 600.24,
+  "final_file_bytes": 34179582,
+  "bytes_per_identity_marginal": 23540,
+  "final_save": {
+    "duration_ms": 492.42,
+    "file_bytes": 34179582,
+    "exceeds_16_mib": true,
+    "error": null
+  },
+  "shutdown_ms": 438.35,
+  "shutdown_error": null,
+  "memory": [
+    {
+      "identities": 250,
+      "rss_mb": 155.22,
+      "heap_used_mb": 32.4
+    },
+    {
+      "identities": 500,
+      "rss_mb": 191.7,
+      "heap_used_mb": 39.79
+    },
+    {
+      "identities": 750,
+      "rss_mb": 233.37,
+      "heap_used_mb": 73.33
+    },
+    {
+      "identities": 1000,
+      "rss_mb": 264.17,
+      "heap_used_mb": 86.26
+    },
+    {
+      "identities": 1250,
+      "rss_mb": 280.98,
+      "heap_used_mb": 114.83
+    },
+    {
+      "identities": 1452,
+      "rss_mb": 404.38,
+      "heap_used_mb": 99.01
+    }
+  ],
+  "size_checkpoints": [],
+  "node": "v22.22.3",
+  "finished_at": "2026-10-10T18:15:05.603Z"
+}

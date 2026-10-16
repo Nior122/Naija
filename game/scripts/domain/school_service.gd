@@ -38,7 +38,7 @@ static func question_for(subject: String) -> Dictionary:
 	var subject_id := ""
 	var questions: Array = EducationServiceScript.catalog().get("questions", [])
 	for question in questions:
-		var configured_subject := EducationServiceScript.catalog().get("subjects", []).filter(
+		var configured_subject: Variant = EducationServiceScript.catalog().get("subjects", []).filter(
 			func(entry: Dictionary) -> bool:
 				return str(entry.get("id", "")) == str(question.get("subject_id", ""))
 		)

@@ -1,0 +1,297 @@
+{
+  "schema_version": 1,
+  "world_id": "nigeria-main",
+  "notice": "NPC Society catalog for Naija: One World. Defines NPC behavior rules, needs, and simulation parameters.",
+  "rules": {
+    "population": {
+      "max_npcs_per_region": 1000,
+      "default_household_size_min": 2,
+      "default_household_size_max": 6,
+      "age_distribution": {
+        "child_percentage": 0.30,
+        "young_adult_percentage": 0.25,
+        "adult_percentage": 0.35,
+        "elderly_percentage": 0.10
+      },
+      "employment_rate": 0.65,
+      "student_rate": 0.20
+    },
+    "simulation": {
+      "tick_interval_minutes": 15,
+      "distant_npc_update_interval_minutes": 60,
+      "decision_interval_minutes": 30,
+      "max_active_npcs_per_tick": 100,
+      "needs_decay_rate_per_hour": {
+        "hunger": 5.0,
+        "rest": 3.0,
+        "social": 2.0,
+        "safety": 0.5,
+        "income_satisfaction": 1.0,
+        "housing_satisfaction": 0.5,
+        "health": 0.2
+      }
+    },
+    "needs": {
+      "thresholds": {
+        "critical": 20,
+        "low": 40,
+        "moderate": 60,
+        "high": 80
+      },
+      "satisfaction_rates": {
+        "hunger_per_meal": 50,
+        "rest_per_night": 80,
+        "social_per_interaction": 30,
+        "health_per_medical_visit": 40
+      }
+    },
+    "activities": {
+      "default_durations_minutes": {
+        "sleeping": 480,
+        "working": 480,
+        "studying": 360,
+        "shopping": 60,
+        "socializing": 120,
+        "eating": 30,
+        "relaxing": 60,
+        "entertainment": 120,
+        "household_chores": 90,
+        "childcare": 240
+      },
+      "need_satisfaction": {
+        "sleeping": { "rest": 5 },
+        "eating": { "hunger": 10 },
+        "socializing": { "social": 8 },
+        "relaxing": { "rest": 3, "social": 2 },
+        "entertainment": { "social": 5, "rest": 2 }
+      }
+    },
+    "movement": {
+      "walking_speed_kmh": 5.0,
+      "max_commuting_distance_km": 30,
+      "preferred_transport_modes": ["walking", "public_bus", "taxi"],
+      "transport_cost_tolerance": 0.15
+    },
+    "personality": {
+      "trait_count_per_npc": 2,
+      "influence_on_decisions": 0.3
+    },
+    "economy": {
+      "starting_money_range_ngn": {
+        "min": 5000,
+        "max": 50000
+      },
+      "daily_expense_rate_ngn": 2000,
+      "savings_rate_percentage": 0.10
+    }
+  },
+  "occupations": [
+    {
+      "id": "teacher",
+      "label": "Teacher",
+      "category": "education",
+      "typical_hours": "08:00-16:00",
+      "required_education": "bachelor",
+      "salary_range_ngn": [80000, 150000]
+    },
+    {
+      "id": "doctor",
+      "label": "Doctor",
+      "category": "healthcare",
+      "typical_hours": "09:00-17:00",
+      "required_education": "medical_degree",
+      "salary_range_ngn": [200000, 500000]
+    },
+    {
+      "id": "shopkeeper",
+      "label": "Shopkeeper",
+      "category": "retail",
+      "typical_hours": "08:00-18:00",
+      "required_education": "secondary",
+      "salary_range_ngn": [50000, 120000]
+    },
+    {
+      "id": "driver",
+      "label": "Driver",
+      "category": "transportation",
+      "typical_hours": "06:00-18:00",
+      "required_education": "secondary",
+      "salary_range_ngn": [40000, 100000]
+    },
+    {
+      "id": "mechanic",
+      "label": "Mechanic",
+      "category": "skilled_trade",
+      "typical_hours": "08:00-17:00",
+      "required_education": "vocational",
+      "salary_range_ngn": [60000, 130000]
+    },
+    {
+      "id": "farmer",
+      "label": "Farmer",
+      "category": "agriculture",
+      "typical_hours": "06:00-18:00",
+      "required_education": "primary",
+      "salary_range_ngn": [30000, 80000]
+    },
+    {
+      "id": "office_worker",
+      "label": "Office Worker",
+      "category": "professional",
+      "typical_hours": "09:00-17:00",
+      "required_education": "bachelor",
+      "salary_range_ngn": [100000, 250000]
+    },
+    {
+      "id": "trader",
+      "label": "Market Trader",
+      "category": "retail",
+      "typical_hours": "07:00-17:00",
+      "required_education": "primary",
+      "salary_range_ngn": [40000, 150000]
+    },
+    {
+      "id": "nurse",
+      "label": "Nurse",
+      "category": "healthcare",
+      "typical_hours": "08:00-16:00",
+      "required_education": "diploma",
+      "salary_range_ngn": [70000, 140000]
+    },
+    {
+      "id": "construction_worker",
+      "label": "Construction Worker",
+      "category": "skilled_trade",
+      "typical_hours": "07:00-16:00",
+      "required_education": "primary",
+      "salary_range_ngn": [35000, 90000]
+    }
+  ],
+  "location_types": [
+    {
+      "id": "home",
+      "label": "Home",
+      "activities_allowed": ["sleeping", "eating", "relaxing", "household_chores", "childcare", "socializing"],
+      "need_modifiers": { "safety": 10, "rest": 2 }
+    },
+    {
+      "id": "workplace",
+      "label": "Workplace",
+      "activities_allowed": ["working", "socializing"],
+      "need_modifiers": { "income_satisfaction": 5 }
+    },
+    {
+      "id": "school",
+      "label": "School",
+      "activities_allowed": ["studying", "socializing"],
+      "need_modifiers": {}
+    },
+    {
+      "id": "market",
+      "label": "Market",
+      "activities_allowed": ["shopping", "socializing"],
+      "need_modifiers": {}
+    },
+    {
+      "id": "hospital",
+      "label": "Hospital",
+      "activities_allowed": ["healthcare_visit"],
+      "need_modifiers": { "health": 10, "safety": 5 }
+    },
+    {
+      "id": "restaurant",
+      "label": "Restaurant",
+      "activities_allowed": ["eating", "socializing"],
+      "need_modifiers": { "hunger": 8, "social": 3 }
+    },
+    {
+      "id": "entertainment_venue",
+      "label": "Entertainment Venue",
+      "activities_allowed": ["entertainment", "socializing"],
+      "need_modifiers": { "social": 5, "rest": 3 }
+    },
+    {
+      "id": "religious_center",
+      "label": "Religious Center",
+      "activities_allowed": ["religious_service", "socializing"],
+      "need_modifiers": { "social": 4, "safety": 3 }
+    }
+  ],
+  "routine_templates": [
+    {
+      "id": "standard_worker",
+      "name": "Standard Worker Routine",
+      "description": "Typical 9-5 worker schedule",
+      "schedule": [
+        { "start_hour": 22, "start_minute": 0, "end_hour": 6, "end_minute": 0, "activity": "sleeping" },
+        { "start_hour": 6, "start_minute": 0, "end_hour": 7, "end_minute": 0, "activity": "preparing_for_day" },
+        { "start_hour": 7, "start_minute": 0, "end_hour": 8, "end_minute": 0, "activity": "commuting" },
+        { "start_hour": 8, "start_minute": 0, "end_hour": 16, "end_minute": 0, "activity": "working" },
+        { "start_hour": 16, "start_minute": 0, "end_hour": 17, "end_minute": 0, "activity": "commuting" },
+        { "start_hour": 17, "start_minute": 0, "end_hour": 19, "end_minute": 0, "activity": "eating" },
+        { "start_hour": 19, "start_minute": 0, "end_hour": 22, "end_minute": 0, "activity": "relaxing" }
+      ]
+    },
+    {
+      "id": "student",
+      "name": "Student Routine",
+      "description": "Full-time student schedule",
+      "schedule": [
+        { "start_hour": 22, "start_minute": 0, "end_hour": 6, "end_minute": 30, "activity": "sleeping" },
+        { "start_hour": 6, "start_minute": 30, "end_hour": 7, "end_minute": 30, "activity": "preparing_for_day" },
+        { "start_hour": 7, "start_minute": 30, "end_hour": 8, "end_minute": 0, "activity": "commuting" },
+        { "start_hour": 8, "start_minute": 0, "end_hour": 14, "end_minute": 0, "activity": "studying" },
+        { "start_hour": 14, "start_minute": 0, "end_hour": 15, "end_minute": 0, "activity": "eating" },
+        { "start_hour": 15, "start_minute": 0, "end_hour": 17, "end_minute": 0, "activity": "studying" },
+        { "start_hour": 17, "start_minute": 0, "end_hour": 18, "end_minute": 0, "activity": "commuting" },
+        { "start_hour": 18, "start_minute": 0, "end_hour": 20, "end_minute": 0, "activity": "eating" },
+        { "start_hour": 20, "start_minute": 0, "end_hour": 22, "end_minute": 0, "activity": "relaxing" }
+      ]
+    },
+    {
+      "id": "trader",
+      "name": "Market Trader Routine",
+      "description": "Market trader schedule",
+      "schedule": [
+        { "start_hour": 21, "start_minute": 0, "end_hour": 5, "end_minute": 30, "activity": "sleeping" },
+        { "start_hour": 5, "start_minute": 30, "end_hour": 6, "end_minute": 30, "activity": "preparing_for_day" },
+        { "start_hour": 6, "start_minute": 30, "end_hour": 7, "end_minute": 0, "activity": "commuting" },
+        { "start_hour": 7, "start_minute": 0, "end_hour": 17, "end_minute": 0, "activity": "working" },
+        { "start_hour": 17, "start_minute": 0, "end_hour": 18, "end_minute": 0, "activity": "commuting" },
+        { "start_hour": 18, "start_minute": 0, "end_hour": 20, "end_minute": 0, "activity": "eating" },
+        { "start_hour": 20, "start_minute": 0, "end_hour": 21, "end_minute": 0, "activity": "relaxing" }
+      ]
+    },
+    {
+      "id": "retired",
+      "name": "Retired Person Routine",
+      "description": "Flexible schedule for retired individuals",
+      "schedule": [
+        { "start_hour": 22, "start_minute": 0, "end_hour": 6, "end_minute": 0, "activity": "sleeping" },
+        { "start_hour": 6, "start_minute": 0, "end_hour": 8, "end_minute": 0, "activity": "preparing_for_day" },
+        { "start_hour": 8, "start_minute": 0, "end_hour": 10, "end_minute": 0, "activity": "household_chores" },
+        { "start_hour": 10, "start_minute": 0, "end_hour": 12, "end_minute": 0, "activity": "socializing" },
+        { "start_hour": 12, "start_minute": 0, "end_hour": 13, "end_minute": 0, "activity": "eating" },
+        { "start_hour": 13, "start_minute": 0, "end_hour": 15, "end_minute": 0, "activity": "relaxing" },
+        { "start_hour": 15, "start_minute": 0, "end_hour": 17, "end_minute": 0, "activity": "socializing" },
+        { "start_hour": 17, "start_minute": 0, "end_hour": 19, "end_minute": 0, "activity": "eating" },
+        { "start_hour": 19, "start_minute": 0, "end_hour": 22, "end_minute": 0, "activity": "relaxing" }
+      ]
+    },
+    {
+      "id": "unemployed",
+      "name": "Unemployed Seeking Work",
+      "description": "Schedule for unemployed individuals seeking work",
+      "schedule": [
+        { "start_hour": 23, "start_minute": 0, "end_hour": 7, "end_minute": 0, "activity": "sleeping" },
+        { "start_hour": 7, "start_minute": 0, "end_hour": 8, "end_minute": 0, "activity": "preparing_for_day" },
+        { "start_hour": 8, "start_minute": 0, "end_hour": 12, "end_minute": 0, "activity": "unemployed_seeking_work" },
+        { "start_hour": 12, "start_minute": 0, "end_hour": 13, "end_minute": 0, "activity": "eating" },
+        { "start_hour": 13, "start_minute": 0, "end_hour": 16, "end_minute": 0, "activity": "unemployed_seeking_work" },
+        { "start_hour": 16, "start_minute": 0, "end_hour": 18, "end_minute": 0, "activity": "socializing" },
+        { "start_hour": 18, "start_minute": 0, "end_hour": 19, "end_minute": 0, "activity": "eating" },
+        { "start_hour": 19, "start_minute": 0, "end_hour": 23, "end_minute": 0, "activity": "relaxing" }
+      ]
+    }
+  ]
+}

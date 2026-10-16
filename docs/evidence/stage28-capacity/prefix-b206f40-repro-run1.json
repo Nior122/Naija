@@ -1,0 +1,87 @@
+{
+  "tree": "/tmp/prefix-s28/services/world-api",
+  "target": 3000,
+  "created": 709,
+  "firstFailure": {
+    "attempt": 710,
+    "code": "persistence_failed"
+  },
+  "samples": [
+    {
+      "identities": 50,
+      "bytes": 1313937,
+      "elapsedSeconds": 0
+    },
+    {
+      "identities": 100,
+      "bytes": 2453655,
+      "elapsedSeconds": 2
+    },
+    {
+      "identities": 150,
+      "bytes": 3651046,
+      "elapsedSeconds": 3
+    },
+    {
+      "identities": 200,
+      "bytes": 4833636,
+      "elapsedSeconds": 6
+    },
+    {
+      "identities": 250,
+      "bytes": 5997787,
+      "elapsedSeconds": 9
+    },
+    {
+      "identities": 300,
+      "bytes": 7191846,
+      "elapsedSeconds": 13
+    },
+    {
+      "identities": 350,
+      "bytes": 8410383,
+      "elapsedSeconds": 17
+    },
+    {
+      "identities": 400,
+      "bytes": 9599613,
+      "elapsedSeconds": 23
+    },
+    {
+      "identities": 450,
+      "bytes": 10777611,
+      "elapsedSeconds": 29
+    },
+    {
+      "identities": 500,
+      "bytes": 11963811,
+      "elapsedSeconds": 37
+    },
+    {
+      "identities": 550,
+      "bytes": 13105538,
+      "elapsedSeconds": 45
+    },
+    {
+      "identities": 600,
+      "bytes": 14263864,
+      "elapsedSeconds": 54
+    },
+    {
+      "identities": 650,
+      "bytes": 15407753,
+      "elapsedSeconds": 64
+    },
+    {
+      "identities": 700,
+      "bytes": 16548671,
+      "elapsedSeconds": 75
+    }
+  ],
+  "shutdown": {
+    "ok": true,
+    "ms": 144
+  },
+  "creationSeconds": 77,
+  "finalFileBytes": 16756585
+}

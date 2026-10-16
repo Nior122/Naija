@@ -257,6 +257,19 @@ func to_dictionary() -> Dictionary:
 	}
 
 
+## JSON parsing returns every number as a float, so a saved date of birth comes back as
+## {"year": 2008.0, ...}. That value is not equal to the original integer dictionary. Restore the
+## calendar fields as integers. Other keys are copied unchanged.
+static func _date_with_integer_fields(raw: Variant) -> Dictionary:
+	if not raw is Dictionary:
+		return {}
+	var result: Dictionary = raw.duplicate(true)
+	for key in ["year", "month", "day"]:
+		if result.has(key) and typeof(result[key]) == TYPE_FLOAT:
+			result[key] = int(result[key])
+	return result
+
+
 func load_dictionary(data: Dictionary, current_world_date: Dictionary = {}) -> void:
 	player_id = str(data.get("player_id", _new_id("player")))
 	character_id = str(data.get("character_id", _new_id("character")))
@@ -317,8 +330,7 @@ func load_dictionary(data: Dictionary, current_world_date: Dictionary = {}) -> v
 	)
 	var raw_life_profile: Variant = data.get("life_profile", {})
 	life_profile = raw_life_profile.duplicate(true) if raw_life_profile is Dictionary else {}
-	var raw_dob: Variant = data.get("date_of_birth", {})
-	date_of_birth = raw_dob.duplicate(true) if raw_dob is Dictionary else {}
+	date_of_birth = _date_with_integer_fields(data.get("date_of_birth", {}))
 	life_stage_id = str(data.get("life_stage_id", "secondary-school-youth"))
 	life_status = str(data.get("life_status", "alive"))
 	if life_status not in ["alive", "retired", "deceased"]:
@@ -632,8 +644,9 @@ func _load_life_history(value: Variant, target: Array[Dictionary]) -> void:
 		var event_date: Variant = event.get("date", event.get("world_date", {}))
 		event["date"] = event_date.duplicate(true) if event_date is Dictionary else {}
 		event["summary"] = str(event.get("summary", event.get("type", "Life event")))
-		if not event.has("age") and event.get("data", {}) is Dictionary and event.data.has("age"):
-			event["age"] = int(event.data.age)
+		var event_data: Variant = event.get("data", {})
+		if not event.has("age") and event_data is Dictionary and event_data.has("age"):
+			event["age"] = int(event_data["age"])
 		target.append(event)
 
 

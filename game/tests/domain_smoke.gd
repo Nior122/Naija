@@ -5,12 +5,17 @@ const WorldClockScript = preload("res://scripts/domain/world_clock.gd")
 const HouseholdFactoryScript = preload("res://scripts/domain/household_factory.gd")
 const LifeSimulationServiceScript = preload("res://scripts/domain/life_simulation_service.gd")
 const SchoolServiceScript = preload("res://scripts/domain/school_service.gd")
+const EducationServiceScript = preload("res://scripts/domain/education_service.gd")
 const SaveServiceScript = preload("res://scripts/services/save_service.gd")
 const WorldMapScript = preload("res://scripts/world/world_map.gd")
 const TEST_SAVE_PATH: String = "user://naija-stage1-test-save.json"
+# Pins the starter-household profile used by this run (see _test_character_creation_and_household).
+const STARTER_HOUSEHOLD_SEED: int = 1
+const SaveSlotGuardScript = preload("res://tests/support/save_slot_guard.gd")
 
 var _failures: Array[String] = []
 var _checks: int = 0
+var _guard := SaveSlotGuardScript.new()
 
 
 func _initialize() -> void:
@@ -18,6 +23,17 @@ func _initialize() -> void:
 
 
 func _run() -> void:
+	# Takes the shared save-test lock, so no other save-writing test runs on the same user-data dir at the same time.
+	if not _guard.acquire_lock("domain_smoke"):
+		print("FAIL: save-test lock refused: %s" % _guard.message)
+		quit(1)
+		return
+	if FileAccess.file_exists(TEST_SAVE_PATH):
+		# Refuse rather than overwrite a file this test did not create in this run.
+		print("FAIL: a file already exists at %s. It was not created by this run; nothing was changed." % TEST_SAVE_PATH)
+		_guard.release_lock()
+		quit(1)
+		return
 	_test_character_creation_and_household()
 	_test_needs_money_and_inventory()
 	_test_school_records()
@@ -25,6 +41,9 @@ func _run() -> void:
 	_test_clock()
 	_test_life_simulation()
 	_test_save_and_load()
+	_test_legacy_academic_view_is_rebuilt_on_load()
+	if not _guard.release_lock():
+		_failures.append("The save-test lock could not be released: %s" % _guard.message)
 	if _failures.is_empty():
 		print("PASS: %d Stage 1–5 domain checks" % _checks)
 		quit(0)
@@ -108,11 +127,10 @@ func _test_school_records() -> void:
 	)
 	_check(new_score > prior_score, "A correct class activity improves the academic average")
 	_check(character.attendance.size() == 1, "Attending class stores an attendance record")
-	var following_lesson: Dictionary = SchoolServiceScript.next_lesson(
-		character, clock.day, clock.minute_of_day
-	)
+	# English Language starts at 09:00 and its window opens 30 minutes earlier, so check it at 08:30.
+	var following_lesson: Dictionary = SchoolServiceScript.next_lesson(character, clock.day, 510)
 	_check(
-		str(following_lesson.get("subject", "")) == "English",
+		str(following_lesson.get("subject", "")) == "English Language",
 		"A completed subject is not repeated in the same day"
 	)
 	var english_score_before := int(character.academic_scores["English"])
@@ -128,7 +146,7 @@ func _test_world_interactions() -> void:
 	var world := WorldMapScript.new()
 	root.add_child(world)
 	world.enter_location("home", family)
-	var bed := world.nearest_interactable(Vector2(440.0, 350.0))
+	var bed := world.nearest_interactable(Vector2(1250.0, 485.0))
 	_check(
 		is_instance_valid(bed) and bed.action_id == "sleep", "Nearby home objects can be targeted"
 	)
@@ -174,6 +192,20 @@ func _test_life_simulation() -> void:
 		"Calendar weeks begin on the configured Monday"
 	)
 
+	# Starter households pick one configured caregiver/sibling profile at random (life_catalog.json lists four, with 2 to 4
+	# relatives). That is intended variety, but it changes how many per-relative checks run. Sweep seeded samples to check
+	# every sampled household stays inside the configured range, then pin the random stream for the household used below,
+	# so the total check count is reproducible. Production randomness is not changed.
+	var sampled_sizes: Dictionary = {}
+	for sample_seed in range(1, 41):
+		seed(sample_seed)
+		var sample: Dictionary = HouseholdFactoryScript.create_household(date)
+		sampled_sizes[sample.get("family_members", []).size()] = true
+	var sample_sizes_in_range := true
+	for size_key in sampled_sizes:
+		sample_sizes_in_range = sample_sizes_in_range and int(size_key) >= 2 and int(size_key) <= 4
+	_check(sample_sizes_in_range, "Every seeded starter household has 2 to 4 relatives (sizes seen: %s)" % str(sampled_sizes.keys()))
+	seed(STARTER_HOUSEHOLD_SEED)
 	var household: Dictionary = HouseholdFactoryScript.create_household(date)
 	var relatives: Array = household.get("family_members", [])
 	_check(
@@ -482,7 +514,12 @@ func _test_save_and_load() -> void:
 	character.hunger = 61.0
 	character.current_location = "classroom"
 	character.position = Vector2(321.0, 456.0)
-	character.academic_scores["Biology"] = 88
+	# The academic result is written through the authoritative education record, not the legacy
+	# academic_scores view, which is rebuilt from that record on every load.
+	var biology_score: int = EducationServiceScript.record_result(
+		character, 1, "Biology", true, "11:30"
+	)
+	_check(biology_score > 0, "A lesson result is recorded in the education record")
 	character.add_item("water", "Bottled water", 2, "food", 8)
 	var clock := WorldClockScript.new()
 	clock.advance_minutes(75)
@@ -512,7 +549,10 @@ func _test_save_and_load() -> void:
 			restored.appearance.get("hairstyle", "") == "Braids",
 			"Save/load restores appearance choices"
 		)
-		_check(restored.academic_scores["Biology"] == 88, "Save/load restores academic data")
+		_check(
+			restored.academic_scores.get("Biology", -1) == biology_score,
+			"Save/load restores academic data"
+		)
 		_check(
 			restored_clock.day == clock.day and restored_clock.minute_of_day == clock.minute_of_day,
 			"Save/load restores world time"
@@ -548,6 +588,48 @@ func _test_save_and_load() -> void:
 	var absolute_path := ProjectSettings.globalize_path(TEST_SAVE_PATH)
 	if FileAccess.file_exists(TEST_SAVE_PATH):
 		DirAccess.remove_absolute(absolute_path)
+
+
+# Regression guard for the academic-fixture defect: the education record is authoritative and the legacy
+# academic_scores and attendance views are rebuilt from it on load. A direct write to those views must not
+# survive a save/load, so fixtures must write through the record (see _test_save_and_load).
+func _test_legacy_academic_view_is_rebuilt_on_load() -> void:
+	var character := CharacterStateScript.new()
+	character.create_new(
+		"Nneka", 16, "girl", {"hairstyle": "Braids"}, HouseholdFactoryScript.create_household()
+	)
+	var record_biology := int(
+		EducationServiceScript.legacy_academic_scores(character.education_record).get("Biology", -1)
+	)
+	character.academic_scores["Biology"] = 88
+	character.attendance.append(
+		{"day": 3, "subject": "Biology", "score": 88, "attended_at": "Day 3 · 11:30"}
+	)
+	var clock := WorldClockScript.new()
+	var save_result: Dictionary = SaveServiceScript.save_state(character, clock, TEST_SAVE_PATH)
+	_check(bool(save_result.get("ok", false)), "The projection regression save can be written")
+	var loaded: Dictionary = SaveServiceScript.load_state(TEST_SAVE_PATH)
+	_check(bool(loaded.get("ok", false)), "The projection regression save can be loaded")
+	if bool(loaded.get("ok", false)):
+		var restored := CharacterStateScript.new()
+		var restored_clock := WorldClockScript.new()
+		restored_clock.load_dictionary(loaded["clock"])
+		restored.load_dictionary(loaded["character"], restored_clock.calendar_date())
+		_check(
+			restored.academic_scores.get("Biology", -1) == record_biology,
+			"Load rebuilds the legacy academic view from the education record"
+		)
+		_check(
+			restored.academic_scores
+			== EducationServiceScript.legacy_academic_scores(restored.education_record),
+			"The restored academic view matches the education record"
+		)
+		_check(
+			restored.attendance.is_empty(),
+			"Load rebuilds the legacy attendance view from the education record"
+		)
+	if FileAccess.file_exists(TEST_SAVE_PATH):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(TEST_SAVE_PATH))
 
 
 func _check(condition: bool, description: String) -> void:

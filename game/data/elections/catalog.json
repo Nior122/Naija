@@ -1,0 +1,173 @@
+{
+  "schema_version": 1,
+  "world_id": "nigeria-main",
+  "notice": "Stage 11 — Elections and Politics. Static catalogue of election types, eligibility rules, and political system configuration. All values are game-design parameters subject to balancing.",
+  "election_types": [
+    { "id": "presidential", "label": "Presidential Election", "level": "federal", "description": "Election for President of the Federal Republic of Nigeria.", "office_definition_id": "office:president" },
+    { "id": "governorship", "label": "Gubernatorial Election", "level": "state", "description": "Election for State Governor.", "office_definition_id": "office:governor" },
+    { "id": "senatorial", "label": "Senatorial Election", "level": "state", "description": "Election for Senator representing a senatorial district.", "office_definition_id": "office:senator" },
+    { "id": "house_of_representatives", "label": "House of Representatives Election", "level": "federal", "description": "Election for Member of the House of Representatives.", "office_definition_id": "office:member_house" },
+    { "id": "state_assembly", "label": "State House of Assembly Election", "level": "state", "description": "Election for State House of Assembly member.", "office_definition_id": "office:state_assembly_member" },
+    { "id": "local_chairman", "label": "Local Government Chairman Election", "level": "local", "description": "Election for Local Government Area Chairman.", "office_definition_id": "office:lg-chairman" }
+  ],
+  "election_phases": [
+    { "id": "scheduling", "label": "Scheduling" },
+    { "id": "candidate_registration", "label": "Candidate Registration" },
+    { "id": "screening", "label": "Candidate Screening" },
+    { "id": "campaign", "label": "Campaign Period" },
+    { "id": "voting", "label": "Voting" },
+    { "id": "counting", "label": "Vote Counting" },
+    { "id": "certification", "label": "Result Certification" },
+    { "id": "completed", "label": "Completed" },
+    { "id": "disputed", "label": "Disputed" },
+    { "id": "cancelled", "label": "Cancelled" }
+  ],
+  "eligibility_rules": {
+    "presidential": {
+      "minimum_age": 40,
+      "must_be_alive": true,
+      "must_be_citizen": true,
+      "party_affiliation_required": true,
+      "residency_requirement": null,
+      "term_length_days": 1460,
+      "max_terms": 2,
+      "winning_rule": "plurality_national",
+      "description": "Must be at least 40, citizen, affiliated with a political party."
+    },
+    "governorship": {
+      "minimum_age": 35,
+      "must_be_alive": true,
+      "must_be_citizen": true,
+      "party_affiliation_required": true,
+      "residency_state_required": true,
+      "term_length_days": 1460,
+      "max_terms": 2,
+      "winning_rule": "plurality_state",
+      "description": "Must be at least 35, citizen, state resident, affiliated with a political party."
+    },
+    "senatorial": {
+      "minimum_age": 35,
+      "must_be_alive": true,
+      "must_be_citizen": true,
+      "party_affiliation_required": true,
+      "residency_state_required": true,
+      "term_length_days": 1460,
+      "max_terms": 2,
+      "winning_rule": "plurality_district",
+      "description": "Must be at least 35, citizen, state resident, party-affiliated."
+    },
+    "house_of_representatives": {
+      "minimum_age": 30,
+      "must_be_alive": true,
+      "must_be_citizen": true,
+      "party_affiliation_required": true,
+      "residency_requirement": null,
+      "term_length_days": 1460,
+      "max_terms": 4,
+      "winning_rule": "plurality_constituency",
+      "description": "Must be at least 30, citizen, party-affiliated."
+    },
+    "state_assembly": {
+      "minimum_age": 30,
+      "must_be_alive": true,
+      "must_be_citizen": true,
+      "party_affiliation_required": true,
+      "residency_state_required": true,
+      "term_length_days": 1460,
+      "max_terms": 4,
+      "winning_rule": "plurality_constituency",
+      "description": "Must be at least 30, citizen, state resident, party-affiliated."
+    },
+    "local_chairman": {
+      "minimum_age": 30,
+      "must_be_alive": true,
+      "must_be_citizen": true,
+      "party_affiliation_required": false,
+      "residency_lga_required": true,
+      "term_length_days": 1460,
+      "max_terms": 2,
+      "winning_rule": "plurality_lga",
+      "description": "Must be at least 30, citizen, LGA resident. Independent candidates permitted."
+    }
+  },
+  "voter_eligibility": {
+    "minimum_age": 18,
+    "must_be_alive": true,
+    "must_be_citizen": true,
+    "geographic_requirement": "must_be_in_election_jurisdiction"
+  },
+  "party_rules": {
+    "minimum_founder_age": 21,
+    "minimum_member_age": 18,
+    "unique_name_required": true,
+    "unique_abbreviation_required": true,
+    "max_parties_per_character": 1,
+    "party_name_min_length": 3,
+    "party_name_max_length": 80,
+    "party_abbreviation_min_length": 2,
+    "party_abbreviation_max_length": 6,
+    "party_description_max_length": 500,
+    "party_statuses": ["proposed", "pending_registration", "active", "suspended", "dissolved"],
+    "membership_statuses": ["active", "resigned", "suspended", "expelled"],
+    "leadership_roles": ["national_chairman", "national_secretary", "deputy_chairman", "treasurer", "publicity_secretary", "state_chairman", "local_chairman"]
+  },
+  "campaign_rules": {
+    "max_manifesto_length": 2000,
+    "max_campaign_message_length": 1000,
+    "max_campaign_title_length": 120,
+    "max_events_per_campaign": 50,
+    "campaign_themes": [
+      { "id": "education", "label": "Education" },
+      { "id": "healthcare", "label": "Healthcare" },
+      { "id": "employment", "label": "Employment" },
+      { "id": "housing", "label": "Housing" },
+      { "id": "transportation", "label": "Transportation" },
+      { "id": "agriculture", "label": "Agriculture" },
+      { "id": "business", "label": "Business Development" },
+      { "id": "security", "label": "Public Safety" },
+      { "id": "infrastructure", "label": "Infrastructure" },
+      { "id": "finance", "label": "Public Finance" },
+      { "id": "environment", "label": "Environment" },
+      { "id": "youth", "label": "Youth Development" },
+      { "id": "technology", "label": "Technology" }
+    ],
+    "debate_types": [
+      { "id": "policy_debate", "label": "Policy Debate" },
+      { "id": "town_hall", "label": "Town Hall Meeting" },
+      { "id": "public_speech", "label": "Public Speech" },
+      { "id": "community_meeting", "label": "Community Meeting" }
+    ]
+  },
+  "dispute_rules": {
+    "max_description_length": 2000,
+    "max_evidence_items": 10,
+    "dispute_statuses": ["submitted", "under_review", "accepted", "rejected", "resolved", "escalated"]
+  },
+  "audit_categories": [
+    "election_created",
+    "election_schedule_changed",
+    "election_cancelled",
+    "candidate_registered",
+    "candidate_approved",
+    "candidate_rejected",
+    "poll_opened",
+    "ballot_cast",
+    "ballot_rejected",
+    "poll_closed",
+    "votes_counted",
+    "result_certified",
+    "result_published",
+    "dispute_submitted",
+    "dispute_reviewed",
+    "dispute_resolved",
+    "office_transferred",
+    "party_created",
+    "party_registered",
+    "party_suspended",
+    "party_dissolved",
+    "membership_joined",
+    "membership_left",
+    "campaign_fund_recorded",
+    "campaign_expense_recorded"
+  ]
+}

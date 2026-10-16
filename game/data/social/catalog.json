@@ -1,0 +1,119 @@
+{
+  "schema_version": 1,
+  "world_id": "nigeria-main",
+  "notice": "Configurable catalogue for social network system. All limits and categories are game design parameters.",
+  "content_types": [
+    { "id": "text", "label": "Text Post", "description": "Plain text post." },
+    { "id": "image", "label": "Image Post", "description": "Post with image." },
+    { "id": "video", "label": "Video Post", "description": "Post with video reference." },
+    { "id": "link", "label": "Link Post", "description": "Post with external link." },
+    { "id": "announcement", "label": "Announcement", "description": "Official announcement." },
+    { "id": "event", "label": "Event Post", "description": "Event-related post." },
+    { "id": "poll", "label": "Poll", "description": "Poll post." },
+    { "id": "sponsored", "label": "Sponsored Content", "description": "Paid promotional content." }
+  ],
+  "visibility_types": [
+    { "id": "public", "label": "Public", "description": "Visible to everyone." },
+    { "id": "followers", "label": "Followers Only", "description": "Visible to followers only." },
+    { "id": "private", "label": "Private", "description": "Visible only to author." }
+  ],
+  "reaction_types": [
+    { "id": "like", "label": "Like", "emoji": "👍" },
+    { "id": "love", "label": "Love", "emoji": "❤️" },
+    { "id": "haha", "label": "Haha", "emoji": "😂" },
+    { "id": "wow", "label": "Wow", "emoji": "😮" },
+    { "id": "sad", "label": "Sad", "emoji": "😢" },
+    { "id": "angry", "label": "Angry", "emoji": "😡" }
+  ],
+  "notification_types": [
+    { "id": "new_follower", "label": "New Follower", "description": "Someone followed you." },
+    { "id": "follow_request", "label": "Follow Request", "description": "Someone requested to follow you." },
+    { "id": "follow_approved", "label": "Follow Approved", "description": "Your follow request was approved." },
+    { "id": "mention", "label": "Mention", "description": "Someone mentioned you." },
+    { "id": "reply", "label": "Reply", "description": "Someone replied to your post." },
+    { "id": "comment", "label": "Comment", "description": "Someone commented on your post." },
+    { "id": "reaction", "label": "Reaction", "description": "Someone reacted to your post." },
+    { "id": "repost", "label": "Repost", "description": "Someone reposted your content." },
+    { "id": "moderation_action", "label": "Moderation Action", "description": "Action taken on your content." },
+    { "id": "report_resolved", "label": "Report Resolved", "description": "Your report has been reviewed." }
+  ],
+  "report_categories": [
+    { "id": "spam", "label": "Spam", "description": "Unsolicited or repetitive content." },
+    { "id": "harassment", "label": "Harassment", "description": "Bullying or threatening behavior." },
+    { "id": "hate_speech", "label": "Hate Speech", "description": "Discriminatory content." },
+    { "id": "misinformation", "label": "Misinformation", "description": "False or misleading information." },
+    { "id": "impersonation", "label": "Impersonation", "description": "Pretending to be someone else." },
+    { "id": "privacy_violation", "label": "Privacy Violation", "description": "Sharing private information." },
+    { "id": "inappropriate_content", "label": "Inappropriate Content", "description": "Content violates community standards." },
+    { "id": "fraudulent_advertising", "label": "Fraudulent Advertising", "description": "Misleading advertisements." },
+    { "id": "manipulated_engagement", "label": "Manipulated Engagement", "description": "Fake likes, follows, or comments." },
+    { "id": "other", "label": "Other", "description": "Other violation." }
+  ],
+  "report_statuses": [
+    { "id": "pending", "label": "Pending", "description": "Awaiting review." },
+    { "id": "under_review", "label": "Under Review", "description": "Being reviewed by moderator." },
+    { "id": "resolved", "label": "Resolved", "description": "Review complete." },
+    { "id": "dismissed", "label": "Dismissed", "description": "No action needed." }
+  ],
+  "ad_campaign_statuses": [
+    { "id": "draft", "label": "Draft", "description": "Campaign not yet active." },
+    { "id": "pending_approval", "label": "Pending Approval", "description": "Awaiting moderator approval." },
+    { "id": "active", "label": "Active", "description": "Campaign is running." },
+    { "id": "paused", "label": "Paused", "description": "Campaign temporarily stopped." },
+    { "id": "completed", "label": "Completed", "description": "Campaign finished." },
+    { "id": "rejected", "label": "Rejected", "description": "Campaign not approved." }
+  ],
+  "account_statuses": [
+    { "id": "active", "label": "Active", "description": "Normal active account." },
+    { "id": "suspended", "label": "Suspended", "description": "Account temporarily suspended." },
+    { "id": "banned", "label": "Banned", "description": "Account permanently banned." }
+  ],
+  "trending_categories": [
+    { "id": "politics", "label": "Politics", "description": "Political discussions." },
+    { "id": "entertainment", "label": "Entertainment", "description": "Entertainment news." },
+    { "id": "sports", "label": "Sports", "description": "Sports discussions." },
+    { "id": "business", "label": "Business", "description": "Business and economy." },
+    { "id": "culture", "label": "Culture", "description": "Cultural topics." },
+    { "id": "technology", "label": "Technology", "description": "Tech discussions." },
+    { "id": "community", "label": "Community", "description": "Local community topics." }
+  ],
+  "rules": {
+    "minimum_age_for_social_account": 13,
+    "username_min_length": 3,
+    "username_max_length": 20,
+    "username_pattern": "^[a-zA-Z0-9_]+$",
+    "display_name_max_length": 50,
+    "bio_max_length": 200,
+    "post_content_max_length": 500,
+    "comment_content_max_length": 300,
+    "hashtag_max_length": 30,
+    "max_hashtags_per_post": 10,
+    "max_mentions_per_post": 20,
+    "max_posts_per_hour": 30,
+    "max_comments_per_hour": 60,
+    "max_reactions_per_hour": 120,
+    "max_follows_per_hour": 50,
+    "max_follow_requests_per_day": 100,
+    "max_blocks": 500,
+    "max_mutes": 500,
+    "max_reports_per_day": 20,
+    "max_notifications_per_user": 1000,
+    "feed_page_size": 20,
+    "search_page_size": 20,
+    "trending_window_hours": 24,
+    "trending_min_posts": 5,
+    "trending_decay_rate_per_hour": 0.1,
+    "ad_campaign_min_budget": 1000,
+    "ad_campaign_max_budget": 10000000,
+    "ad_campaign_min_duration_days": 1,
+    "ad_campaign_max_duration_days": 90,
+    "notification_batch_size": 50,
+    "max_pending_follow_requests": 100,
+    "private_account_requires_approval": true,
+    "allow_private_accounts": true,
+    "allow_verified_badges": true,
+    "max_pinned_posts": 3,
+    "edit_window_minutes": 60,
+    "delete_grace_period_minutes": 5
+  }
+}

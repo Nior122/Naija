@@ -27,12 +27,24 @@ var playing: bool = false
 var multiplayer_client: Node
 var _online_mode: bool = false
 var _online_career_profile: Dictionary = {}
+# Stage 44: the request ID of the career action now in flight. A refused career.action comes back as
+# a plain "error" with this ID, and the career panel is told only when the ID matches.
+var _career_request_id: String = ""
+# Stage 41: the character's own property, rental and business records, from session.ready and
+# character.snapshot.
+var _online_property_profiles: Array = []
+var _online_rental_agreements: Array = []
+var _online_business_profiles: Array = []
+# Stage 42: the NPCs this character can see now, from character.snapshot (bounded by the server).
+var _online_npc_profiles: Array = []
 var _online_input_accumulator: float = 0.0
 var _remote_players: Dictionary = {}
 var _time_accumulator: float = 0.0
 var _seconds_per_game_minute: float = 0.65
 var _active_subject: String = ""
 var _active_question: Dictionary = {}
+# True while the scene switcher has this session suspended for the 3D world (see suspend_session).
+var _suspended: bool = false
 
 
 func _ready() -> void:
@@ -69,6 +81,10 @@ func _ready() -> void:
 	ui.load_requested.connect(_continue_game)
 	ui.education_action_requested.connect(_on_education_action_requested)
 	ui.career_action_requested.connect(_on_career_action_requested)
+	ui.housing_action_requested.connect(_on_housing_action_requested)
+	ui.business_action_requested.connect(_on_business_action_requested)
+	ui.npc_action_requested.connect(_on_npc_action_requested)
+	ui.npc_view_requested.connect(_on_npc_view_requested)
 	ui.answer_requested.connect(_on_quiz_answer)
 	ui.purchase_requested.connect(_purchase_item)
 	ui.consume_requested.connect(_consume_item)
@@ -78,7 +94,9 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
-	if not playing:
+	# A suspended session does not advance the clock, move, or autosave. process_mode also stops
+	# this callback; the flag keeps the rule explicit.
+	if not playing or _suspended:
 		return
 	if character != null and not character.can_take_active_action():
 		player.movement_enabled = false
@@ -95,7 +113,7 @@ func _process(delta: float) -> void:
 				)
 		var online_nearest := world.nearest_interactable(player.position)
 		world.set_focused_entity(online_nearest)
-		var remote_nearest := _nearest_remote_player()
+		var remote_nearest: Variant = _nearest_remote_player()
 		if (
 			is_instance_valid(remote_nearest)
 			and player.position.distance_to(remote_nearest.position) < 82.0
@@ -171,6 +189,7 @@ func _block_deceased_action() -> bool:
 func _unhandled_input(event: InputEvent) -> void:
 	if (
 		not playing
+		or _suspended
 		or ui.is_modal_open()
 		or character == null
 		or not character.can_take_active_action()
@@ -187,6 +206,16 @@ func _notification(what: int) -> void:
 
 
 func _start_new_game(profile: Dictionary) -> void:
+	# A new life overwrites the local save. The creation screen asks the player first and marks the
+	# request with replace_existing_save. Without that mark, refuse before any state changes, so a
+	# request that bypasses the confirmation cannot replace the saved life.
+	if SaveServiceScript.has_save() and not bool(profile.get("replace_existing_save", false)):
+		ui.show_notice(
+			"Saved life kept",
+			"A saved life already exists on this device. Choose Continue saved life, or confirm "
+			+ "replacing it. Nothing was changed."
+		)
+		return
 	multiplayer_client.disconnect_from_world()
 	_online_mode = false
 	player.server_controlled = false
@@ -232,6 +261,7 @@ func _on_online_session_ready(
 	character.load_dictionary(character_data, clock.calendar_date())
 	var career_data: Variant = character_data.get("career_profile", {})
 	_online_career_profile = career_data.duplicate(true) if career_data is Dictionary else {}
+	_store_online_profiles(character_data)
 	playing = true
 	_time_accumulator = 0.0
 	_online_input_accumulator = 0.0
@@ -261,6 +291,7 @@ func _on_online_message(message: Dictionary) -> void:
 					_online_career_profile = career_data.duplicate(true)
 					ui.update_career_profile(_online_career_profile)
 				_apply_online_character_snapshot(character_data)
+				_store_online_profiles(character_data)
 				if clock != null:
 					ui.update_career_world_context(character, clock)
 		"world.snapshot":
@@ -287,6 +318,11 @@ func _on_online_message(message: Dictionary) -> void:
 			var chat_text := str(message.get("text", ""))
 			ui.add_chat_message(sender, chat_text)
 			ui.notify("%s: %s" % [sender, chat_text])
+		"persistence.restored":
+			# Once per outage (server-side); see MultiplayerClientScript.persistence_notice. Never claims recovery.
+			var restored_notice: Variant = MultiplayerClientScript.persistence_notice(message)
+			if not restored_notice.is_empty():
+				ui.notify(restored_notice)
 		"player.interaction":
 			ui.notify(
 				(
@@ -315,6 +351,7 @@ func _on_online_message(message: Dictionary) -> void:
 		"education.result", "education.error":
 			ui.show_education_result(message)
 		"career.result", "career.error":
+			_clear_career_request(message)
 			ui.show_career_response(message)
 		"school.complete":
 			(
@@ -324,7 +361,26 @@ func _on_online_message(message: Dictionary) -> void:
 					"There is no class or registered exam session available at this time. Check your timetable."
 				)
 			)
+		"property.result", "property.error":
+			ui.show_housing_response(message)
+		"business.result", "business.error":
+			ui.show_business_response(message)
+		"npc.result", "npc.error", "npc.view":
+			ui.show_npc_response(message)
+		"error":
+			# Stage 44: a generic error with a request ID answers the pending housing, business or NPC
+			# request. Without this, the request waited for its timeout, then showed as unconfirmed.
+			if not str(message.get("requestId", "")).is_empty():
+				ui.show_request_error(message)
+				if str(message.get("requestId", "")) == _career_request_id:
+					# The career panel shows its own refusal and is no longer busy. Other families
+					# keep the toast only.
+					_career_request_id = ""
+					ui.show_career_transport_error(
+						str(message.get("message", "The server refused this career request."))
+					)
 		"command.duplicate":
+			ui.show_command_duplicate(str(message.get("requestId", "")))
 			ui.notify("That action was already processed by the server.")
 
 
@@ -332,12 +388,19 @@ func _on_online_status_changed(status: String) -> void:
 	ui.set_online_status(status.capitalize())
 	if playing and status == "reconnecting":
 		ui.notify("Connection lost. Reconnecting to the shared world…")
+	if playing and (status == "reconnecting" or status == "offline"):
+		ui.show_connection_lost(
+			"Connection lost. A change that was waiting may or may not have been saved. "
+			+ "Retry sends the same request ID, which the server applies at most once."
+		)
 
 
 func _on_online_error(code: String, description: String) -> void:
 	if code.begins_with("geography_") and world.geography_preview_enabled:
 		world.set_geographic_preview(false)
-	if code in ["character_deceased", "rate_limited"]:
+	# Stage 44: rate_limited refuses one request, so it is not a career transport error. The
+	# refused request gets the refusal through the "error" branch (ui.show_request_error).
+	if code == "character_deceased":
 		ui.show_career_transport_error(description)
 	if playing:
 		ui.notify("%s: %s" % [code.replace("_", " ").capitalize(), description])
@@ -479,25 +542,58 @@ func _send_chat_message(message_text: String) -> void:
 	multiplayer_client.send_command("chat.send", {"text": message_text})
 
 
+# Shared by Continue (startup) and Load (in-game, after confirmation). Everything is validated and built
+# into local objects first. The active session (character, clock, online connection) is released only at
+# the commit point, so a failure leaves the current session usable and unchanged.
 func _continue_game() -> void:
-	multiplayer_client.disconnect_from_world()
-	_online_mode = false
-	player.server_controlled = false
 	var result: Dictionary = SaveServiceScript.load_state()
 	if not bool(result.get("ok", false)):
 		ui.show_notice(
 			"Saved life unavailable",
-			str(result.get("error", "The saved game could not be loaded."))
+			str(result.get("error", "The saved game could not be loaded.")) + _unchanged_session_note()
 		)
 		return
-	clock = WorldClockScript.new()
-	clock.load_dictionary(result["clock"])
-	character = CharacterStateScript.new()
-	character.load_dictionary(result["character"], clock.calendar_date())
-	if not WorldMapScript.is_valid_location(character.current_location):
-		character.set_location("home", Vector2(720.0, 540.0))
+	var saved_character: Variant = result.get("character", {})
+	var saved_clock: Variant = result.get("clock", {})
+	if not _is_restorable_save(saved_character, saved_clock):
+		ui.show_notice(
+			"Saved life unavailable",
+			"The save file is missing the character name or clock fields needed to restore a session."
+			+ _unchanged_session_note()
+		)
+		return
+	var loaded_clock := WorldClockScript.new()
+	loaded_clock.load_dictionary(saved_clock)
+	var loaded_character := CharacterStateScript.new()
+	loaded_character.load_dictionary(saved_character, loaded_clock.calendar_date())
+	if not WorldMapScript.is_valid_location(loaded_character.current_location):
+		loaded_character.set_location("home", Vector2(720.0, 540.0))
+	# Commit point: the save has been read and validated, so the active session can be released.
+	multiplayer_client.disconnect_from_world()
+	_online_mode = false
+	player.server_controlled = false
+	clock = loaded_clock
+	character = loaded_character
 	_begin_play_session()
 	ui.notify("Welcome back, %s. Your local progress was loaded." % character.name)
+
+
+# A save is restorable only if it has a non-empty character name and the clock day and minute.
+# The character and clock loaders fill missing fields with defaults, so without this check an empty
+# but well-formed JSON object would silently replace the session with a default character.
+static func _is_restorable_save(character_data: Variant, clock_data: Variant) -> bool:
+	if not character_data is Dictionary or not clock_data is Dictionary:
+		return false
+	var character_fields: Dictionary = character_data
+	var clock_fields: Dictionary = clock_data
+	var character_name: Variant = character_fields.get("name", "")
+	if not character_name is String or (character_name as String).strip_edges().is_empty():
+		return false
+	return clock_fields.has("day") and clock_fields.has("minute_of_day")
+
+
+func _unchanged_session_note() -> String:
+	return " Your current session was not changed." if playing else ""
 
 
 func _begin_play_session() -> void:
@@ -701,7 +797,7 @@ func _sleep() -> void:
 	var sleep_minutes := clock.minutes_until_morning()
 	_advance_time(sleep_minutes)
 	character.sleep_until_morning()
-	character.position = Vector2(720.0, 540.0)
+	character.position = Vector2(1250.0, 580.0)
 	player.position = character.position
 	player.snap_camera()
 	_save_game(false)
@@ -1004,6 +1100,12 @@ func _on_education_action_requested(action: String, payload: Dictionary = {}) ->
 	ui.show_education_result(result)
 
 
+## Stage 44: forgets the in-flight career request once the server has answered it.
+func _clear_career_request(message: Dictionary) -> void:
+	if str(message.get("requestId", "")) == _career_request_id:
+		_career_request_id = ""
+
+
 func _on_career_action_requested(action: String, payload: Dictionary) -> void:
 	if not _online_mode:
 		ui.show_career_transport_error("Career actions require the connected shared world.")
@@ -1013,12 +1115,101 @@ func _on_career_action_requested(action: String, payload: Dictionary) -> void:
 			"Deceased characters cannot start work, apply or earn future salary."
 		)
 		return
+	var request_id: String = multiplayer_client.new_request_id()
+	_career_request_id = request_id
 	if not multiplayer_client.send_command(
-		"career.action", {"action": action, "payload": payload.duplicate(true)}
+		"career.action", {"action": action, "payload": payload.duplicate(true)}, request_id
 	):
+		_career_request_id = ""
 		ui.show_career_transport_error(
 			"The career request could not reach the shared server. Reconnect before trying again."
 		)
+
+
+## Stage 41: keeps the property, rental and business records that the screens show. The server's
+## records are the source; an open panel is refreshed from them.
+func _store_online_profiles(character_data: Dictionary) -> void:
+	var properties: Variant = character_data.get("property_profiles", null)
+	var rentals: Variant = character_data.get("rental_agreements", null)
+	var businesses: Variant = character_data.get("business_profiles", null)
+	if properties is Array:
+		_online_property_profiles = properties.duplicate(true)
+	if rentals is Array:
+		_online_rental_agreements = rentals.duplicate(true)
+	if businesses is Array:
+		_online_business_profiles = businesses.duplicate(true)
+	var npcs: Variant = character_data.get("npc_profiles", null)
+	if npcs is Array:
+		_online_npc_profiles = npcs.duplicate(true)
+	if character != null:
+		ui.update_housing_profiles(_online_property_profiles, _online_rental_agreements, character.money)
+		ui.update_business_profiles(_online_business_profiles, character.money)
+		ui.update_npc_profiles(_online_npc_profiles)
+
+
+func _on_housing_action_requested(action: String, payload: Dictionary, request_id: String) -> void:
+	_send_domain_action("property.action", action, payload, request_id)
+
+
+func _on_business_action_requested(action: String, payload: Dictionary, request_id: String) -> void:
+	_send_domain_action("business.action", action, payload, request_id)
+
+
+## Stage 42: a social action toward one NPC. The server validates it and applies it at most once for
+## the request ID.
+func _on_npc_action_requested(action: String, npc_id: String, request_id: String) -> void:
+	var message := NPCSocialContract.action_message(action, npc_id)
+	if message.is_empty():
+		ui.show_send_failure(request_id, "That social action is not available. Nothing was changed.")
+		return
+	_send_tracked_command(NPCSocialContract.CHANGING_MESSAGE, message, request_id)
+
+
+## Stage 42: a read-only summary and history of one NPC. Not tracked; it does not block the game.
+func _on_npc_view_requested(npc_id: String) -> void:
+	var message := NPCSocialContract.view_message(npc_id)
+	if message.is_empty() or not _online_mode:
+		return
+	multiplayer_client.send_command(NPCSocialContract.VIEW_MESSAGE, message)
+
+
+## Sends a housing or business request on the existing authenticated socket (Stage 41). A read has
+## no request ID and does not block the game. A change that gets no answer in time is marked
+## unconfirmed, and a retry reuses its ID.
+func _send_domain_action(
+	message_type: String, action: String, payload: Dictionary, request_id: String
+) -> void:
+	_send_tracked_command(
+		message_type, {"action": action, "payload": payload.duplicate(true)}, request_id
+	)
+
+
+## Sends one command on the existing socket. A changing request (request_id not empty) that cannot
+## be sent is reported to its screen, and one that gets no answer in time is marked unconfirmed by
+## the tracker.
+func _send_tracked_command(message_type: String, values: Dictionary, request_id: String) -> void:
+	var failure := ""
+	if not _online_mode:
+		failure = "The shared world is not connected. Nothing was changed."
+	elif not multiplayer_client.send_command(message_type, values, request_id):
+		failure = (
+			"The request could not reach the shared server. Nothing was changed. "
+			+ "Reconnect and try again."
+		)
+	if not failure.is_empty():
+		if request_id.is_empty():
+			ui.notify(failure)
+		else:
+			ui.show_send_failure(request_id, failure)
+		return
+	if not request_id.is_empty():
+		get_tree().create_timer(ServerRequestTracker.REQUEST_TIMEOUT_SECONDS).timeout.connect(
+			_on_request_timeout.bind(request_id)
+		)
+
+
+func _on_request_timeout(request_id: String) -> void:
+	ui.request_timed_out(request_id)
 
 
 func _can_enter_education_location(destination: String) -> bool:
@@ -1108,6 +1299,14 @@ func _open_panel(panel_id: String) -> void:
 			ui.show_education(character, clock, character.current_location, _online_mode)
 		"careers":
 			ui.show_careers(character, _online_career_profile, _online_mode, clock)
+		"housing":
+			ui.show_housing(
+				character, _online_mode, _online_property_profiles, _online_rental_agreements
+			)
+		"businesses":
+			ui.show_businesses(character, _online_mode, _online_business_profiles)
+		"people":
+			ui.show_people(character, _online_mode, _online_npc_profiles)
 		"chat":
 			if _online_mode:
 				ui.show_chat()
@@ -1207,3 +1406,114 @@ func _save_game(show_result: bool = true) -> void:
 		ui.show_save_result(save_message, save_ok)
 	elif not save_ok:
 		ui.notify("Autosave failed: %s" % str(result.get("error", "unknown error")))
+
+
+func get_shared_state() -> Dictionary:
+	"""Get the current game state for sharing with 3D mode"""
+	if character == null or clock == null:
+		return {}
+	
+	# Update character position before sharing
+	character.position = player.position
+	character.current_location = world.location_id
+	
+	# CharacterState and WorldClock serialise with to_dictionary(). The same dictionary is what
+	# the save service writes, and it carries geographic_location, the 2D source of the region.
+	return {
+		"character": character.to_dictionary(),
+		"clock": clock.to_dictionary(),
+		"player_position": player.position,
+		"player_location": world.location_id,
+		"playing": playing,
+		"online_mode": _online_mode,
+		"career_profile": _online_career_profile
+	}
+
+
+func set_shared_state(state: Dictionary) -> void:
+	"""Restore game state from 3D mode"""
+	if state.is_empty():
+		return
+	
+	# Restore clock first. The character load uses the clock's calendar date, as the save and
+	# online-session paths do.
+	if state.has("clock") and clock != null:
+		clock.load_dictionary(state.clock)
+
+	# Restore character state
+	if state.has("character") and character != null and clock != null:
+		character.load_dictionary(state.character, clock.calendar_date())
+	elif _has_pending_character(state):
+		# The character or clock does not exist yet, so the restore cannot run. Logged, not silent.
+		push_warning("[PrototypeGame] Shared character state not restored: no character or clock exists yet.")
+	
+	# Restore player position and location
+	if state.has("player_position"):
+		player.position = state.player_position
+	if state.has("player_location"):
+		world.location_id = state.player_location
+	
+	# Restore playing state
+	if state.has("playing"):
+		playing = state.playing
+	
+	# Restore online mode
+	if state.has("online_mode"):
+		_online_mode = state.online_mode
+	
+	# Restore career profile
+	if state.has("career_profile"):
+		_online_career_profile = state.career_profile
+
+
+func _has_pending_character(state: Dictionary) -> bool:
+	var value: Variant = state.get("character", {})
+	return value is Dictionary and not (value as Dictionary).is_empty()
+
+
+func suspend_session() -> void:
+	"""Suspend this session while the 3D world is active. The instance and all its state are kept.
+
+	Called by the scene switcher instead of freeing this node. The subtree stops processing, so the
+	clock, movement, autosave, and interaction input do not run. The node is hidden, including the
+	UI layer, which is a CanvasLayer and does not inherit visibility from this node. The multiplayer
+	client keeps processing so an online socket is still polled. Nothing here changes game state."""
+	if _suspended:
+		return
+	_suspended = true
+	process_mode = Node.PROCESS_MODE_DISABLED
+	visible = false
+	if is_instance_valid(ui):
+		ui.visible = false
+	if is_instance_valid(multiplayer_client):
+		multiplayer_client.process_mode = Node.PROCESS_MODE_ALWAYS
+
+
+func resume_session() -> void:
+	"""Resume the session that suspend_session() kept. Does not re-run initialisation, does not reopen
+	character creation, and does not reload character or clock state."""
+	if not _suspended:
+		return
+	_suspended = false
+	process_mode = Node.PROCESS_MODE_INHERIT
+	visible = true
+	if is_instance_valid(ui):
+		ui.visible = true
+	if is_instance_valid(multiplayer_client):
+		multiplayer_client.process_mode = Node.PROCESS_MODE_INHERIT
+
+
+func is_suspended() -> bool:
+	return _suspended
+
+
+# True while a blocking modal (for example the Load confirmation) owns input. The scene switcher asks
+# this before it changes worlds, so the world-switch key cannot bypass an open modal.
+func blocks_world_switch() -> bool:
+	return is_instance_valid(ui) and ui.is_modal_open()
+
+
+func get_multiplayer_client() -> Node:
+	"""Get the multiplayer client node"""
+	return multiplayer_client
+

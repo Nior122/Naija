@@ -2,6 +2,11 @@ import { existsSync } from "node:fs";
 import { loadEnvFile } from "node:process";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
+import { parseMetricsAccess, type MetricsAccess } from "./metrics-access.js";
+import { readRuntimeEnvironment, type RuntimeEnvironment } from "./runtime-environment.js";
+import type { IdentityBudgetOptions } from "./multiplayer/world-engine.js";
+import type { WorldFileFormat } from "./multiplayer/persistence.js";
+import { parseTrustedProxies, type TrustedProxies } from "./client-address.js";
 
 // The API workspace lives at services/world-api; keep local-only config at the repository root.
 const localEnvFile = new URL("../../../.env", import.meta.url);
@@ -17,20 +22,96 @@ export interface ApiConfig {
   readonly websocketPath: string;
   readonly allowedOrigins: readonly string[];
   readonly gameMinuteMs?: number;
+  readonly environment: RuntimeEnvironment;
+  readonly metricsAccess: MetricsAccess;
+  /** Usage percentages of the world-state size limit that log a warning (strictly ascending). */
+  readonly worldStateWarnPercent: readonly number[];
+  /** R4 identity-creation budget. Undefined unless NAIJA_IDENTITY_BUDGET=enabled. */
+  readonly identityBudget: IdentityBudgetOptions | undefined;
+  /** File-backend save format. Default "pretty". */
+  readonly worldStateFormat: WorldFileFormat;
+  /** NAIJA_TRUSTED_PROXIES. Empty by default: X-Forwarded-For is never read. */
+  readonly trustedProxies: TrustedProxies;
 }
 
-export function readApiConfig(): ApiConfig {
-  const rawPort = process.env.PORT ?? "3000";
+const IDENTITY_BUDGET_DEFAULTS = { perIp: 10, global: 100, windowMinutes: 60 } as const;
+
+function parseBoundedInteger(raw: string | undefined, fallback: number, min: number, max: number, name: string): number {
+  if (raw === undefined || raw.trim() === "") return fallback;
+  const value = /^\d{1,9}$/.test(raw.trim()) ? Number(raw.trim()) : Number.NaN;
+  if (!Number.isInteger(value) || value < min || value > max) {
+    // The value is not echoed back, so a secret or a typo is not written to logs.
+    throw new Error(`${name} must be an integer from ${min} to ${max}.`);
+  }
+  return value;
+}
+
+/**
+ * R4 identity-creation budget. NAIJA_IDENTITY_BUDGET: "enabled" or "disabled" (default disabled, so nothing is enforced
+ * until an operator turns it on). When enabled, NAIJA_IDENTITY_LIMIT_PER_IP (default 10), NAIJA_IDENTITY_LIMIT_GLOBAL
+ * (default 100) and NAIJA_IDENTITY_WINDOW_MINUTES (default 60) apply. Limits are validated even when disabled.
+ */
+export function parseIdentityBudget(env: NodeJS.ProcessEnv): IdentityBudgetOptions | undefined {
+  const perIpLimit = parseBoundedInteger(env.NAIJA_IDENTITY_LIMIT_PER_IP, IDENTITY_BUDGET_DEFAULTS.perIp, 1, 1000, "NAIJA_IDENTITY_LIMIT_PER_IP");
+  const globalLimit = parseBoundedInteger(env.NAIJA_IDENTITY_LIMIT_GLOBAL, IDENTITY_BUDGET_DEFAULTS.global, 1, 100_000, "NAIJA_IDENTITY_LIMIT_GLOBAL");
+  const windowMinutes = parseBoundedInteger(env.NAIJA_IDENTITY_WINDOW_MINUTES, IDENTITY_BUDGET_DEFAULTS.windowMinutes, 1, 1440, "NAIJA_IDENTITY_WINDOW_MINUTES");
+  const mode = (env.NAIJA_IDENTITY_BUDGET ?? "disabled").trim();
+  if (mode !== "enabled" && mode !== "disabled") {
+    throw new Error("NAIJA_IDENTITY_BUDGET must be 'enabled' or 'disabled'.");
+  }
+  if (mode === "disabled") return undefined;
+  return { perIpLimit, globalLimit, windowMs: windowMinutes * 60_000 };
+}
+
+/**
+ * WORLD_STATE_WARN_PERCENT: comma-separated integers from 1 to 99, strictly ascending. Default "75,90".
+ * Invalid values stop startup; the value is not echoed back.
+ */
+export function parseWorldStateWarnPercent(env: NodeJS.ProcessEnv): readonly number[] {
+  const raw = env.WORLD_STATE_WARN_PERCENT;
+  if (raw === undefined || raw.trim() === "") return [75, 90];
+  const parts = raw.split(",").map((part) => part.trim());
+  const values = parts.map((part) => (/^\d{1,2}$/.test(part) ? Number(part) : Number.NaN));
+  const valid = values.every((value) => Number.isInteger(value) && value >= 1 && value <= 99) &&
+    values.every((value, index) => index === 0 || value > (values[index - 1] ?? 0));
+  if (!valid) throw new Error("WORLD_STATE_WARN_PERCENT must be strictly ascending integers from 1 to 99, for example 75,90.");
+  return values;
+}
+
+/**
+ * NAIJA_WORLD_STATE_FORMAT: "pretty" (default) or "compact". File backend only; PostgreSQL is not affected.
+ * Compact output is opt-in until the saved-world validation is approved (docs/STAGE_28_COMPACT_JSON_ROLLOUT.md).
+ * Invalid values stop startup and are not echoed.
+ */
+export function parseWorldStateFormat(env: NodeJS.ProcessEnv): WorldFileFormat {
+  const raw = env.NAIJA_WORLD_STATE_FORMAT;
+  if (raw === undefined || raw.trim() === "") return "pretty";
+  const value = raw.trim();
+  if (value !== "pretty" && value !== "compact") {
+    throw new Error("NAIJA_WORLD_STATE_FORMAT must be 'pretty' or 'compact'.");
+  }
+  return value;
+}
+
+export function readApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
+  const environment = readRuntimeEnvironment(env, { required: true }) as RuntimeEnvironment;
+  // Production persists to PostgreSQL only. The startup check in persistence/open.ts enforces the same rule; this
+  // rejects the combination at configuration time as well, so the reader and the startup agree.
+  if (environment === "production" && env.PERSISTENCE_BACKEND?.trim().toLowerCase() === "file") {
+    throw new Error("PERSISTENCE_BACKEND=file is not allowed when NAIJA_ENV=production. Production requires PostgreSQL.");
+  }
+  const metricsAccess = parseMetricsAccess(env, environment);
+  const rawPort = env.PORT ?? "3000";
   const port = Number(rawPort);
   if (!Number.isInteger(port) || port < 1 || port > 65_535) {
     throw new Error("PORT must be an integer between 1 and 65535.");
   }
 
-  const rawWebsocketPath = process.env.WS_PATH ?? "/ws";
+  const rawWebsocketPath = env.WS_PATH ?? "/ws";
   if (!rawWebsocketPath.startsWith("/") || rawWebsocketPath.includes("?")) {
     throw new Error("WS_PATH must be a URL path beginning with '/'.");
   }
-  const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? "")
+  const allowedOrigins = (env.ALLOWED_ORIGINS ?? "")
     .split(",")
     .map((origin) => origin.trim())
     .filter((origin) => origin.length > 0);
@@ -45,10 +126,10 @@ export function readApiConfig(): ApiConfig {
     }
   }
 
-  const dataFile = process.env.DATA_FILE
-    ? resolve(process.cwd(), process.env.DATA_FILE)
+  const dataFile = env.DATA_FILE
+    ? resolve(process.cwd(), env.DATA_FILE)
     : DEFAULT_DATA_FILE;
-  const rawGameMinuteMs = process.env.GAME_MINUTE_MS;
+  const rawGameMinuteMs = env.GAME_MINUTE_MS;
   let gameMinuteMs: number | undefined;
   if (rawGameMinuteMs !== undefined) {
     gameMinuteMs = Number(rawGameMinuteMs);
@@ -62,5 +143,11 @@ export function readApiConfig(): ApiConfig {
     websocketPath: rawWebsocketPath,
     allowedOrigins,
     ...(gameMinuteMs === undefined ? {} : { gameMinuteMs }),
+    environment,
+    metricsAccess,
+    worldStateWarnPercent: parseWorldStateWarnPercent(env),
+    identityBudget: parseIdentityBudget(env),
+    worldStateFormat: parseWorldStateFormat(env),
+    trustedProxies: parseTrustedProxies(env.NAIJA_TRUSTED_PROXIES),
   };
 }

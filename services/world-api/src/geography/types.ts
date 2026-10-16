@@ -156,3 +156,140 @@ export interface GeographyImportResult {
   readonly admin: NigerianAdminData;
   readonly region: GeographicRegion;
 }
+
+/**
+ * Climate zone classification for a region.
+ */
+export type ClimateZone = 
+  | 'arid'
+  | 'semi-arid'
+  | 'tropical'
+  | 'montane'
+  | 'equatorial';
+
+/**
+ * Terrain type for a region.
+ */
+export type TerrainType =
+  | 'coastal'
+  | 'forest'
+  | 'savanna'
+  | 'desert'
+  | 'plateau'
+  | 'mountain'
+  | 'urban';
+
+/**
+ * Geographic region of Nigeria.
+ */
+export type NigerianRegion =
+  | 'northcentral'
+  | 'northeast'
+  | 'northwest'
+  | 'southeast'
+  | 'southsouth'
+  | 'southwest';
+
+/**
+ * Primary industry classification.
+ */
+export type PrimaryIndustry =
+  | 'agriculture'
+  | 'commerce'
+  | 'education'
+  | 'entertainment'
+  | 'fishing'
+  | 'finance'
+  | 'government'
+  | 'livestock'
+  | 'manufacturing'
+  | 'mining'
+  | 'oil-and-gas'
+  | 'coal-mining'
+  | 'real-estate'
+  | 'rubber'
+  | 'services'
+  | 'technology'
+  | 'tourism'
+  | 'trade'
+  | 'hydroelectric';
+
+/**
+ * Regional environment profile with gameplay and simulation metadata.
+ */
+export interface RegionalEnvironmentProfile {
+  climate: ClimateZone;
+  terrain: TerrainType;
+  primary_industries: PrimaryIndustry[];
+  languages: string[];
+  cultural_significance: string;
+  gameplay_features: string[];
+  restrictions: string[];
+}
+
+/**
+ * Nigerian state or FCT with complete metadata.
+ */
+export interface NigerianState {
+  id: string;
+  name: string;
+  code: string;
+  capital: string;
+  region: NigerianRegion;
+  lgas: string[];
+  population: number;
+  area_km2: number;
+  coordinates: {
+    center: GeographicCoordinate;
+    bounds: GeographicBounds;
+  };
+  environment: RegionalEnvironmentProfile;
+}
+
+/**
+ * Complete regional catalog for Nigeria.
+ */
+export interface RegionalCatalog {
+  schema_version: number;
+  world_id: string;
+  country: {
+    id: string;
+    name: string;
+    capital: string;
+    population: number;
+    area_km2: number;
+  };
+  states: NigerianState[];
+}
+
+/**
+ * Regional environment profiles mapped by state ID.
+ */
+export interface RegionalEnvironmentProfiles {
+  schema_version: number;
+  world_id: string;
+  profiles: Record<string, RegionalEnvironmentProfile>;
+}
+
+/**
+ * Spatial query result for point-in-region checks.
+ */
+export interface RegionQueryResult {
+  region_id: string;
+  state_id: string;
+  state_name: string;
+  lga_id?: string;
+  lga_name?: string;
+  distance_to_center?: number;
+}
+
+/**
+ * Result of finding nearest region to a coordinate.
+ */
+export interface NearestRegionResult {
+  region_id: string;
+  state_id: string;
+  state_name: string;
+  distance_km: number;
+  bearing_degrees: number;
+}
