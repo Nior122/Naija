@@ -94,7 +94,7 @@ function makeWorld(date = { year: 2025, month: 1, day: 4 }) {
   const lifeCatalog = loadLifeCatalog();
   const day = worldDayForDate(date, lifeCatalog);
   const state = {
-    schemaVersion: 3,
+    schemaVersion: 14,
     worldId: "nigeria-main",
     worldClock: normalizeWorldClock({
       day,
@@ -583,7 +583,8 @@ test("Stage 5 schema version 2 migrates to Stage 6 version 3 without dropping li
   const legacyPlayer = addPlayer(original.state, "legacy-character", { age: 45, name: "Preserved Person" });
   createStarterFamily(original.state, legacyPlayer.playerId, legacyPlayer.character, Date.UTC(2025, 0, 1));
   delete original.state.players[legacyPlayer.playerId];
-  const preservedPersonId = Object.keys(original.state.people)[0];
+  // Stage 42: the seeded neighbourhood residents come first in the map, so pick the family member this test is about.
+  const preservedPersonId = Object.keys(original.state.people).find((id) => original.state.people[id].family_role !== "neighbour");
   const preservedPersonName = original.state.people[preservedPersonId].name;
   await original.flush();
   const legacy = JSON.parse(await readFile(stateFile, "utf8"));
@@ -592,11 +593,14 @@ test("Stage 5 schema version 2 migrates to Stage 6 version 3 without dropping li
   await writeFile(stateFile, JSON.stringify(legacy), "utf8");
 
   const migrated = new WorldStore(stateFile, Date.UTC(2025, 0, 2));
-  assert.equal(migrated.state.schemaVersion, 3);
+  assert.equal(migrated.state.schemaVersion, 18);
   assert.equal(migrated.state.people[preservedPersonId].name, preservedPersonName);
   assert.ok(Object.keys(migrated.state.careerEmployers).length >= 12);
   assert.ok(Object.keys(migrated.state.careerVacancies).length >= 10);
   assert.ok(migrated.state.npcCareers[preservedPersonId]);
+  assert.ok(typeof migrated.state.economyAccounts === "object");
+  assert.ok(typeof migrated.state.economyTransactions === "object");
+  assert.ok(typeof migrated.state.economyLoans === "object");
   await migrated.flush();
 });
 
@@ -630,12 +634,22 @@ test("authenticated career actions use the caller identity, return private profi
       assert.equal(application.character_id, firstIdentity.ready.character.character_id);
       assert.equal(application.status, "under_review");
 
+      // A byte-identical retry is a duplicate (Stage 36 compares the request body with the recorded request).
       const duplicate = first.waitForType("command.duplicate");
+      first.send({
+        type: "career.action", action: "apply",
+        payload: { vacancy_id: marketVacancy.vacancy_id, character_id: secondIdentity.ready.character.character_id },
+        requestId: "career-apply-001",
+      });
+      await duplicate;
+
+      // The same ID with a different body is a different request: refused, and not applied.
+      const reused = first.waitFor((message) => message.type === "error" && message.requestId === "career-apply-001", 20000);
       first.send({
         type: "career.action", action: "apply", payload: { vacancy_id: marketVacancy.vacancy_id },
         requestId: "career-apply-001",
       });
-      await duplicate;
+      assert.equal((await reused).code, "request_id_reused");
 
       const unauthorized = second.waitFor((message) => message.type === "career.error" && message.action === "withdraw_application");
       second.send({

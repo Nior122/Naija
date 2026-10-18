@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "world_id": "nigeria-main",
+  "notice": "Stage 42 NPC social catalog for Naija: One World. Fictional residents only; no real person is represented. Activity is derived from the in-game clock (world_clock). Affinity, history, and cooldowns are owned by the server; clients never submit values. School days come from the education catalog.",
+  "activity": {
+    "sleep_start_hour": 22,
+    "sleep_end_hour": 6,
+    "school_start_hour": 8,
+    "school_end_hour": 14,
+    "school_age_min": 6,
+    "school_age_max": 17,
+    "socialising_start_hour": 18,
+    "socialising_end_hour": 21,
+    "states": [
+      { "activity": "sleeping", "label": "Asleep", "location_id": "home", "location_label": "At home" },
+      { "activity": "studying", "label": "At school", "location_id": "schoolyard", "location_label": "At the schoolyard" },
+      { "activity": "socializing", "label": "Socialising", "location_id": "community_hall", "location_label": "At the community hall" },
+      { "activity": "relaxing", "label": "Relaxing", "location_id": "home", "location_label": "At home" }
+    ]
+  },
+  "bonds": {
+    "affinity_min": -100,
+    "affinity_max": 100,
+    "start_affinity_neighbour": 0,
+    "start_affinity_household": 15,
+    "hostile_at_or_below": -40,
+    "friend_at_or_above": 40,
+    "friend_min_talks": 3,
+    "acquaint_min_affinity": 5,
+    "history_limit": 20
+  },
+  "actions": {
+    "greet": { "label": "Greet", "affinity_change": 2, "cooldown_minutes": 30 },
+    "talk": { "label": "Talk", "affinity_change": 4, "cooldown_minutes": 60 },
+    "acquaint": { "label": "Become acquainted", "affinity_change": 0, "cooldown_minutes": 0 },
+    "argue": { "label": "Argue", "affinity_change": -15, "cooldown_minutes": 60 },
+    "apologise": { "label": "Apologise", "affinity_change": 10, "cooldown_minutes": 60 }
+  },
+  "dialogue": {
+    "greet": {
+      "first_meeting": ["Good day, {player}. I am {name}. Welcome to the street.", "Hello there, {player}. Have we met before? I am {name}."],
+      "returning": ["Ah, {player}! You came back. Good to see you again.", "{player}, my friend! How have you been since we last spoke?"],
+      "family": ["Good day, {player}. Did you eat today?", "{player}, I see you. Mind yourself out there."],
+      "friend": ["{player}! My friend, you are always welcome.", "Ah, {player}. Come, let us greet properly."],
+      "hostile": ["I have nothing to say to you, {player}.", "Do not greet me. Not today."]
+    },
+    "talk": {
+      "stranger": ["Sorry, I am busy. Maybe another time.", "We do not really know each other yet, {player}."],
+      "acquaintance": ["So {player}, how is your work going these days?", "Good to talk with you, {player}. Tell me the news."],
+      "family": ["{player}, sit down. Let us talk about how the family is doing.", "Tell me everything, {player}. I am listening."],
+      "friend": ["{player}, you know I always have time for you. What is on your mind?", "We have come a long way, {player}. Talk to me."],
+      "hostile": ["You want to talk now? I am not ready to listen.", "Leave me be, {player}."]
+    },
+    "acquaint": {
+      "success": ["Alright then, {player}. Now we know each other properly. I am {name}."]
+    },
+    "argue": {
+      "success": ["{player}, that was uncalled for! Do not speak to me like that again.", "You have made me very angry, {player}. Think about what you did."]
+    },
+    "apologise": {
+      "success": ["Hmm. Thank you for saying sorry, {player}. Let us leave it there.", "I accept your apology, {player}. Mind your tongue next time."]
+    }
+  },
+  "residents": [
+    { "person_id": "npc-nb-folake-bello", "name": "Folake Bello", "age": 58, "household_key": "bello", "home_type": "Two-room family flat" },
+    { "person_id": "npc-nb-tope-bello", "name": "Tope Bello", "age": 27, "household_key": "bello", "home_type": "Two-room family flat" },
+    { "person_id": "npc-nb-yusuf-danjuma", "name": "Yusuf Danjuma", "age": 34, "household_key": "danjuma", "home_type": "One-room flat" },
+    { "person_id": "npc-nb-uche-eze", "name": "Uche Eze", "age": 41, "household_key": "eze", "home_type": "Bungalow" },
+    { "person_id": "npc-nb-chioma-eze", "name": "Chioma Eze", "age": 13, "household_key": "eze", "home_type": "Bungalow" },
+    { "person_id": "npc-nb-segun-adeyemi", "name": "Segun Adeyemi", "age": 72, "household_key": "adeyemi", "home_type": "Single-storey house" }
+  ],
+  "neighbourhood_id": "idera-quarter"
+}

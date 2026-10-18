@@ -1,0 +1,599 @@
+{
+  "generatedAt": "2026-10-11T04:30:21.668Z",
+  "allRestored": true,
+  "finalMatchesBaseline": true,
+  "results": [
+    {
+      "kind": "baseline",
+      "hashes": {
+        "src/multiplayer/world-engine.ts": "9d681841e106af058ebc25316cc955f45fcd648c4f5533ecfc5f392dcb099c52",
+        "src/justice/service.ts": "7099d4d9a7cc1901d28f0c08bed16045494d34520b5f61c31f39d5b7009718de",
+        "dist/multiplayer/world-engine.js": "2cfca11d0419f642cdece402c977ccb1dc793f781188ae36b4a52343a23bc843",
+        "dist/justice/service.js": "17a9f806c66aad6fd4265afdeca21c4087c64b14ae3aea244277bc43d084f024"
+      }
+    },
+    {
+      "id": "M0-attempt1-replay",
+      "guard": "Replay of the first (anomalous) mutation text from the hardening report: suspension map entries and the stranger party check removed.",
+      "tests": [
+        "test/justice-finance-containment.test.mjs"
+      ],
+      "expectFailures": true,
+      "preHashes": {
+        "src/multiplayer/world-engine.ts": "9d681841e106af058ebc25316cc955f45fcd648c4f5533ecfc5f392dcb099c52",
+        "src/justice/service.ts": "7099d4d9a7cc1901d28f0c08bed16045494d34520b5f61c31f39d5b7009718de",
+        "dist/multiplayer/world-engine.js": "2cfca11d0419f642cdece402c977ccb1dc793f781188ae36b4a52343a23bc843",
+        "dist/justice/service.js": "17a9f806c66aad6fd4265afdeca21c4087c64b14ae3aea244277bc43d084f024"
+      },
+      "editsApplied": 3,
+      "mutatedBuildExit": 0,
+      "mutatedDistChanged": [
+        {
+          "file": "dist/multiplayer/world-engine.js",
+          "changed": true
+        },
+        {
+          "file": "dist/justice/service.js",
+          "changed": true
+        }
+      ],
+      "testExit": 1,
+      "testSignal": null,
+      "counts": {
+        "tests": 7,
+        "pass": 3,
+        "fail": 4,
+        "skipped": 0
+      },
+      "failingTests": [
+        "not ok 1 - [file] decide_appeal is refused for an assigned judge, a party, and a stranger; state is unchanged",
+        "not ok 2 - [file] pay_fine is refused for the responsible character and for a third party; no fine or money changes",
+        "not ok 3 - [file] create_criminal_record is refused against another character, against self, and with a made-up incident; no record is created",
+        "not ok 4 - [file] submit_evidence: parties may submit; a stranger, a forged party field, and a withdrawn participant are refused"
+      ],
+      "detected": true,
+      "log": "/tmp/s28/mutation-backups/M0-attempt1-replay/test.log",
+      "restore": {
+        "buildExit": 0,
+        "sourceHashesMatch": true,
+        "distHashesMatch": true
+      }
+    },
+    {
+      "id": "M1-judge-view-removed",
+      "guard": "Assigned-judge view branch removed from viewCaseForCharacter.",
+      "tests": [
+        "test/justice-case-access.test.mjs"
+      ],
+      "expectFailures": true,
+      "preHashes": {
+        "src/multiplayer/world-engine.ts": "9d681841e106af058ebc25316cc955f45fcd648c4f5533ecfc5f392dcb099c52",
+        "src/justice/service.ts": "7099d4d9a7cc1901d28f0c08bed16045494d34520b5f61c31f39d5b7009718de",
+        "dist/multiplayer/world-engine.js": "2cfca11d0419f642cdece402c977ccb1dc793f781188ae36b4a52343a23bc843",
+        "dist/justice/service.js": "17a9f806c66aad6fd4265afdeca21c4087c64b14ae3aea244277bc43d084f024"
+      },
+      "editsApplied": 1,
+      "mutatedBuildExit": 0,
+      "mutatedDistChanged": [
+        {
+          "file": "dist/multiplayer/world-engine.js",
+          "changed": false
+        },
+        {
+          "file": "dist/justice/service.js",
+          "changed": true
+        }
+      ],
+      "testExit": 1,
+      "testSignal": null,
+      "counts": {
+        "tests": 2,
+        "pass": 1,
+        "fail": 1,
+        "skipped": 0
+      },
+      "failingTests": [
+        "not ok 1 - [file] an assigned judge of the case's court may view the case but may not submit evidence; a party still may"
+      ],
+      "detected": true,
+      "log": "/tmp/s28/mutation-backups/M1-judge-view-removed/test.log",
+      "restore": {
+        "buildExit": 0,
+        "sourceHashesMatch": true,
+        "distHashesMatch": true
+      }
+    },
+    {
+      "id": "M2-judge-evidence-allowed",
+      "guard": "Judge may not submit evidence check removed.",
+      "tests": [
+        "test/justice-case-access.test.mjs"
+      ],
+      "expectFailures": true,
+      "preHashes": {
+        "src/multiplayer/world-engine.ts": "9d681841e106af058ebc25316cc955f45fcd648c4f5533ecfc5f392dcb099c52",
+        "src/justice/service.ts": "7099d4d9a7cc1901d28f0c08bed16045494d34520b5f61c31f39d5b7009718de",
+        "dist/multiplayer/world-engine.js": "2cfca11d0419f642cdece402c977ccb1dc793f781188ae36b4a52343a23bc843",
+        "dist/justice/service.js": "17a9f806c66aad6fd4265afdeca21c4087c64b14ae3aea244277bc43d084f024"
+      },
+      "editsApplied": 1,
+      "mutatedBuildExit": 0,
+      "mutatedDistChanged": [
+        {
+          "file": "dist/multiplayer/world-engine.js",
+          "changed": false
+        },
+        {
+          "file": "dist/justice/service.js",
+          "changed": true
+        }
+      ],
+      "testExit": 1,
+      "testSignal": null,
+      "counts": {
+        "tests": 2,
+        "pass": 1,
+        "fail": 1,
+        "skipped": 0
+      },
+      "failingTests": [
+        "not ok 1 - [file] an assigned judge of the case's court may view the case but may not submit evidence; a party still may"
+      ],
+      "detected": true,
+      "log": "/tmp/s28/mutation-backups/M2-judge-evidence-allowed/test.log",
+      "restore": {
+        "buildExit": 0,
+        "sourceHashesMatch": true,
+        "distHashesMatch": true
+      }
+    },
+    {
+      "id": "M3-stranger-evidence-allowed",
+      "guard": "Party standing check removed from submitEvidence.",
+      "tests": [
+        "test/justice-finance-containment.test.mjs"
+      ],
+      "expectFailures": true,
+      "preHashes": {
+        "src/multiplayer/world-engine.ts": "9d681841e106af058ebc25316cc955f45fcd648c4f5533ecfc5f392dcb099c52",
+        "src/justice/service.ts": "7099d4d9a7cc1901d28f0c08bed16045494d34520b5f61c31f39d5b7009718de",
+        "dist/multiplayer/world-engine.js": "2cfca11d0419f642cdece402c977ccb1dc793f781188ae36b4a52343a23bc843",
+        "dist/justice/service.js": "17a9f806c66aad6fd4265afdeca21c4087c64b14ae3aea244277bc43d084f024"
+      },
+      "editsApplied": 1,
+      "mutatedBuildExit": 0,
+      "mutatedDistChanged": [
+        {
+          "file": "dist/multiplayer/world-engine.js",
+          "changed": false
+        },
+        {
+          "file": "dist/justice/service.js",
+          "changed": true
+        }
+      ],
+      "testExit": 1,
+      "testSignal": null,
+      "counts": {
+        "tests": 7,
+        "pass": 6,
+        "fail": 1,
+        "skipped": 0
+      },
+      "failingTests": [
+        "not ok 4 - [file] submit_evidence: parties may submit; a stranger, a forged party field, and a withdrawn participant are refused"
+      ],
+      "detected": true,
+      "log": "/tmp/s28/mutation-backups/M3-stranger-evidence-allowed/test.log",
+      "restore": {
+        "buildExit": 0,
+        "sourceHashesMatch": true,
+        "distHashesMatch": true
+      }
+    },
+    {
+      "id": "M4-stranger-view-allowed",
+      "guard": "View gate removed from viewCaseForCharacter (strangers can read cases).",
+      "tests": [
+        "test/justice-finance-containment.test.mjs"
+      ],
+      "expectFailures": true,
+      "preHashes": {
+        "src/multiplayer/world-engine.ts": "9d681841e106af058ebc25316cc955f45fcd648c4f5533ecfc5f392dcb099c52",
+        "src/justice/service.ts": "7099d4d9a7cc1901d28f0c08bed16045494d34520b5f61c31f39d5b7009718de",
+        "dist/multiplayer/world-engine.js": "2cfca11d0419f642cdece402c977ccb1dc793f781188ae36b4a52343a23bc843",
+        "dist/justice/service.js": "17a9f806c66aad6fd4265afdeca21c4087c64b14ae3aea244277bc43d084f024"
+      },
+      "editsApplied": 1,
+      "mutatedBuildExit": 0,
+      "mutatedDistChanged": [
+        {
+          "file": "dist/multiplayer/world-engine.js",
+          "changed": false
+        },
+        {
+          "file": "dist/justice/service.js",
+          "changed": true
+        }
+      ],
+      "testExit": 1,
+      "testSignal": null,
+      "counts": {
+        "tests": 7,
+        "pass": 6,
+        "fail": 1,
+        "skipped": 0
+      },
+      "failingTests": [
+        "not ok 5 - [file] view_case: parties see the case; a stranger and a made-up ID get the same refusal with no case data"
+      ],
+      "detected": true,
+      "log": "/tmp/s28/mutation-backups/M4-stranger-view-allowed/test.log",
+      "restore": {
+        "buildExit": 0,
+        "sourceHashesMatch": true,
+        "distHashesMatch": true
+      }
+    },
+    {
+      "id": "M5-key-only-takeover-restored",
+      "guard": "D-05 refusal replaced with the old key-only recoverIdentity call.",
+      "tests": [
+        "test/identity-budget.test.mjs",
+        "test/identity-concurrency.test.mjs"
+      ],
+      "expectFailures": true,
+      "preHashes": {
+        "src/multiplayer/world-engine.ts": "9d681841e106af058ebc25316cc955f45fcd648c4f5533ecfc5f392dcb099c52",
+        "src/justice/service.ts": "7099d4d9a7cc1901d28f0c08bed16045494d34520b5f61c31f39d5b7009718de",
+        "dist/multiplayer/world-engine.js": "2cfca11d0419f642cdece402c977ccb1dc793f781188ae36b4a52343a23bc843",
+        "dist/justice/service.js": "17a9f806c66aad6fd4265afdeca21c4087c64b14ae3aea244277bc43d084f024"
+      },
+      "editsApplied": 1,
+      "mutatedBuildExit": 0,
+      "mutatedDistChanged": [
+        {
+          "file": "dist/multiplayer/world-engine.js",
+          "changed": true
+        },
+        {
+          "file": "dist/justice/service.js",
+          "changed": false
+        }
+      ],
+      "testExit": 1,
+      "testSignal": null,
+      "counts": {
+        "tests": 20,
+        "pass": 16,
+        "fail": 4,
+        "skipped": 0
+      },
+      "failingTests": [
+        "not ok 8 - R4 budget: a key-only retry of an existing identity is refused (D-05), creates nothing, and leaves the session working",
+        "not ok 4 - R1: after success, a later request with the key is refused (D-05); the identity and its session are unchanged",
+        "not ok 5 - R1: the first socket closing mid-save does not leave a reservation; a later key-only request is refused and creates no second identity",
+        "not ok 15 - R1 concurrent identity creation",
+        "not ok 1 - two sockets sending the same key at once for an existing identity: both are refused, no session is issued, the original token works",
+        "not ok 16 - R1 concurrent key-only requests for an existing identity (D-05)"
+      ],
+      "detected": true,
+      "log": "/tmp/s28/mutation-backups/M5-key-only-takeover-restored/test.log",
+      "restore": {
+        "buildExit": 0,
+        "sourceHashesMatch": true,
+        "distHashesMatch": true
+      }
+    },
+    {
+      "id": "M6-containment-suspensions-removed",
+      "guard": "All three justice/crime suspension map entries removed.",
+      "tests": [
+        "test/justice-finance-containment.test.mjs"
+      ],
+      "expectFailures": true,
+      "preHashes": {
+        "src/multiplayer/world-engine.ts": "9d681841e106af058ebc25316cc955f45fcd648c4f5533ecfc5f392dcb099c52",
+        "src/justice/service.ts": "7099d4d9a7cc1901d28f0c08bed16045494d34520b5f61c31f39d5b7009718de",
+        "dist/multiplayer/world-engine.js": "2cfca11d0419f642cdece402c977ccb1dc793f781188ae36b4a52343a23bc843",
+        "dist/justice/service.js": "17a9f806c66aad6fd4265afdeca21c4087c64b14ae3aea244277bc43d084f024"
+      },
+      "editsApplied": 3,
+      "mutatedBuildExit": 0,
+      "mutatedDistChanged": [
+        {
+          "file": "dist/multiplayer/world-engine.js",
+          "changed": true
+        },
+        {
+          "file": "dist/justice/service.js",
+          "changed": false
+        }
+      ],
+      "testExit": 1,
+      "testSignal": null,
+      "counts": {
+        "tests": 7,
+        "pass": 4,
+        "fail": 3,
+        "skipped": 0
+      },
+      "failingTests": [
+        "not ok 1 - [file] decide_appeal is refused for an assigned judge, a party, and a stranger; state is unchanged",
+        "not ok 2 - [file] pay_fine is refused for the responsible character and for a third party; no fine or money changes",
+        "not ok 3 - [file] create_criminal_record is refused against another character, against self, and with a made-up incident; no record is created"
+      ],
+      "detected": true,
+      "log": "/tmp/s28/mutation-backups/M6-containment-suspensions-removed/test.log",
+      "restore": {
+        "buildExit": 0,
+        "sourceHashesMatch": true,
+        "distHashesMatch": true
+      }
+    },
+    {
+      "id": "M7-enlistment-suspension-removed",
+      "guard": "enlist suspension entry removed (applicant could reach enlistment with an unverified application ID).",
+      "tests": [
+        "test/family-containment.test.mjs"
+      ],
+      "expectFailures": true,
+      "preHashes": {
+        "src/multiplayer/world-engine.ts": "9d681841e106af058ebc25316cc955f45fcd648c4f5533ecfc5f392dcb099c52",
+        "src/justice/service.ts": "7099d4d9a7cc1901d28f0c08bed16045494d34520b5f61c31f39d5b7009718de",
+        "dist/multiplayer/world-engine.js": "2cfca11d0419f642cdece402c977ccb1dc793f781188ae36b4a52343a23bc843",
+        "dist/justice/service.js": "17a9f806c66aad6fd4265afdeca21c4087c64b14ae3aea244277bc43d084f024"
+      },
+      "editsApplied": 1,
+      "mutatedBuildExit": 0,
+      "mutatedDistChanged": [
+        {
+          "file": "dist/multiplayer/world-engine.js",
+          "changed": true
+        },
+        {
+          "file": "dist/justice/service.js",
+          "changed": false
+        }
+      ],
+      "testExit": 1,
+      "testSignal": null,
+      "counts": {
+        "tests": 3,
+        "pass": 2,
+        "fail": 1,
+        "skipped": 0
+      },
+      "failingTests": [
+        "not ok 1 - [file] suspended military, police, and crime-link actions are refused with stable codes and change no state"
+      ],
+      "detected": true,
+      "log": "/tmp/s28/mutation-backups/M7-enlistment-suspension-removed/test.log",
+      "restore": {
+        "buildExit": 0,
+        "sourceHashesMatch": true,
+        "distHashesMatch": true
+      }
+    },
+    {
+      "id": "M8-arrest-suspension-removed",
+      "guard": "execute_arrest suspension entry removed.",
+      "tests": [
+        "test/family-containment.test.mjs"
+      ],
+      "expectFailures": true,
+      "preHashes": {
+        "src/multiplayer/world-engine.ts": "9d681841e106af058ebc25316cc955f45fcd648c4f5533ecfc5f392dcb099c52",
+        "src/justice/service.ts": "7099d4d9a7cc1901d28f0c08bed16045494d34520b5f61c31f39d5b7009718de",
+        "dist/multiplayer/world-engine.js": "2cfca11d0419f642cdece402c977ccb1dc793f781188ae36b4a52343a23bc843",
+        "dist/justice/service.js": "17a9f806c66aad6fd4265afdeca21c4087c64b14ae3aea244277bc43d084f024"
+      },
+      "editsApplied": 1,
+      "mutatedBuildExit": 0,
+      "mutatedDistChanged": [
+        {
+          "file": "dist/multiplayer/world-engine.js",
+          "changed": true
+        },
+        {
+          "file": "dist/justice/service.js",
+          "changed": false
+        }
+      ],
+      "testExit": 1,
+      "testSignal": null,
+      "counts": {
+        "tests": 3,
+        "pass": 2,
+        "fail": 1,
+        "skipped": 0
+      },
+      "failingTests": [
+        "not ok 1 - [file] suspended military, police, and crime-link actions are refused with stable codes and change no state"
+      ],
+      "detected": true,
+      "log": "/tmp/s28/mutation-backups/M8-arrest-suspension-removed/test.log",
+      "restore": {
+        "buildExit": 0,
+        "sourceHashesMatch": true,
+        "distHashesMatch": true
+      }
+    },
+    {
+      "id": "M9-crime-link-suspension-removed",
+      "guard": "link_to_justice suspension entry removed.",
+      "tests": [
+        "test/family-containment.test.mjs"
+      ],
+      "expectFailures": true,
+      "preHashes": {
+        "src/multiplayer/world-engine.ts": "9d681841e106af058ebc25316cc955f45fcd648c4f5533ecfc5f392dcb099c52",
+        "src/justice/service.ts": "7099d4d9a7cc1901d28f0c08bed16045494d34520b5f61c31f39d5b7009718de",
+        "dist/multiplayer/world-engine.js": "2cfca11d0419f642cdece402c977ccb1dc793f781188ae36b4a52343a23bc843",
+        "dist/justice/service.js": "17a9f806c66aad6fd4265afdeca21c4087c64b14ae3aea244277bc43d084f024"
+      },
+      "editsApplied": 1,
+      "mutatedBuildExit": 0,
+      "mutatedDistChanged": [
+        {
+          "file": "dist/multiplayer/world-engine.js",
+          "changed": true
+        },
+        {
+          "file": "dist/justice/service.js",
+          "changed": false
+        }
+      ],
+      "testExit": 1,
+      "testSignal": null,
+      "counts": {
+        "tests": 3,
+        "pass": 2,
+        "fail": 1,
+        "skipped": 0
+      },
+      "failingTests": [
+        "not ok 1 - [file] suspended military, police, and crime-link actions are refused with stable codes and change no state"
+      ],
+      "detected": true,
+      "log": "/tmp/s28/mutation-backups/M9-crime-link-suspension-removed/test.log",
+      "restore": {
+        "buildExit": 0,
+        "sourceHashesMatch": true,
+        "distHashesMatch": true
+      }
+    },
+    {
+      "id": "M10-client-education-trusted",
+      "guard": "Military application education read from the client again (D-04 eligibility bypass).",
+      "tests": [
+        "test/family-containment.test.mjs"
+      ],
+      "expectFailures": true,
+      "preHashes": {
+        "src/multiplayer/world-engine.ts": "9d681841e106af058ebc25316cc955f45fcd648c4f5533ecfc5f392dcb099c52",
+        "src/justice/service.ts": "7099d4d9a7cc1901d28f0c08bed16045494d34520b5f61c31f39d5b7009718de",
+        "dist/multiplayer/world-engine.js": "2cfca11d0419f642cdece402c977ccb1dc793f781188ae36b4a52343a23bc843",
+        "dist/justice/service.js": "17a9f806c66aad6fd4265afdeca21c4087c64b14ae3aea244277bc43d084f024"
+      },
+      "editsApplied": 1,
+      "mutatedBuildExit": 0,
+      "mutatedDistChanged": [
+        {
+          "file": "dist/multiplayer/world-engine.js",
+          "changed": true
+        },
+        {
+          "file": "dist/justice/service.js",
+          "changed": false
+        }
+      ],
+      "testExit": 1,
+      "testSignal": null,
+      "counts": {
+        "tests": 3,
+        "pass": 2,
+        "fail": 1,
+        "skipped": 0
+      },
+      "failingTests": [
+        "not ok 3 - [file] a client-supplied education value does not satisfy military or police recruitment"
+      ],
+      "detected": true,
+      "log": "/tmp/s28/mutation-backups/M10-client-education-trusted/test.log",
+      "restore": {
+        "buildExit": 0,
+        "sourceHashesMatch": true,
+        "distHashesMatch": true
+      }
+    },
+    {
+      "id": "M11-police-client-education-trusted",
+      "guard": "Police recruitment education read from the client again (D-04 eligibility bypass).",
+      "tests": [
+        "test/family-containment.test.mjs"
+      ],
+      "expectFailures": true,
+      "preHashes": {
+        "src/multiplayer/world-engine.ts": "9d681841e106af058ebc25316cc955f45fcd648c4f5533ecfc5f392dcb099c52",
+        "src/justice/service.ts": "7099d4d9a7cc1901d28f0c08bed16045494d34520b5f61c31f39d5b7009718de",
+        "dist/multiplayer/world-engine.js": "2cfca11d0419f642cdece402c977ccb1dc793f781188ae36b4a52343a23bc843",
+        "dist/justice/service.js": "17a9f806c66aad6fd4265afdeca21c4087c64b14ae3aea244277bc43d084f024"
+      },
+      "editsApplied": 1,
+      "mutatedBuildExit": 0,
+      "mutatedDistChanged": [
+        {
+          "file": "dist/multiplayer/world-engine.js",
+          "changed": true
+        },
+        {
+          "file": "dist/justice/service.js",
+          "changed": false
+        }
+      ],
+      "testExit": 1,
+      "testSignal": null,
+      "counts": {
+        "tests": 3,
+        "pass": 2,
+        "fail": 1,
+        "skipped": 0
+      },
+      "failingTests": [
+        "not ok 3 - [file] a client-supplied education value does not satisfy military or police recruitment"
+      ],
+      "detected": true,
+      "log": "/tmp/s28/mutation-backups/M11-police-client-education-trusted/test.log",
+      "restore": {
+        "buildExit": 0,
+        "sourceHashesMatch": true,
+        "distHashesMatch": true
+      }
+    },
+    {
+      "id": "M12-link-to-police-suspension-removed",
+      "guard": "Crime-to-police link suspension removed, so the link route is reachable again (D-04).",
+      "tests": [
+        "test/family-containment.test.mjs"
+      ],
+      "expectFailures": true,
+      "preHashes": {
+        "src/multiplayer/world-engine.ts": "9d681841e106af058ebc25316cc955f45fcd648c4f5533ecfc5f392dcb099c52",
+        "src/justice/service.ts": "7099d4d9a7cc1901d28f0c08bed16045494d34520b5f61c31f39d5b7009718de",
+        "dist/multiplayer/world-engine.js": "2cfca11d0419f642cdece402c977ccb1dc793f781188ae36b4a52343a23bc843",
+        "dist/justice/service.js": "17a9f806c66aad6fd4265afdeca21c4087c64b14ae3aea244277bc43d084f024"
+      },
+      "editsApplied": 1,
+      "mutatedBuildExit": 0,
+      "mutatedDistChanged": [
+        {
+          "file": "dist/multiplayer/world-engine.js",
+          "changed": true
+        },
+        {
+          "file": "dist/justice/service.js",
+          "changed": false
+        }
+      ],
+      "testExit": 1,
+      "testSignal": null,
+      "counts": {
+        "tests": 3,
+        "pass": 2,
+        "fail": 1,
+        "skipped": 0
+      },
+      "failingTests": [
+        "not ok 1 - [file] suspended military, police, and crime-link actions are refused with stable codes and change no state"
+      ],
+      "detected": true,
+      "log": "/tmp/s28/mutation-backups/M12-link-to-police-suspension-removed/test.log",
+      "restore": {
+        "buildExit": 0,
+        "sourceHashesMatch": true,
+        "distHashesMatch": true
+      }
+    }
+  ]
+}

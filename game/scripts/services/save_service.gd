@@ -42,11 +42,15 @@ static func load_state(path: String = DEFAULT_SAVE_PATH) -> Dictionary:
 	var save_version := int(parsed.get("version", 0))
 	if save_version < 1 or save_version > SAVE_VERSION:
 		return {"ok": false, "error": "This save version is not supported by the prototype."}
-	if not parsed.get("character", {}) is Dictionary or not parsed.get("clock", {}) is Dictionary:
+	# Default to null, not {}: a missing key must fail this check. A {} default passes an "is Dictionary"
+	# test and then fails on the direct lookup below.
+	var saved_character: Variant = parsed.get("character", null)
+	var saved_clock: Variant = parsed.get("clock", null)
+	if not (saved_character is Dictionary) or not (saved_clock is Dictionary):
 		return {"ok": false, "error": "The save file is missing character or clock data."}
 	return {
 		"ok": true,
 		"error": "",
-		"character": parsed["character"],
-		"clock": parsed["clock"],
+		"character": saved_character,
+		"clock": saved_clock,
 	}

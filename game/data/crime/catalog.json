@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "world_id": "nigeria-main",
+  "notice": "Stage 15 — Crime and Consequences System. Configurable crime catalogue for Naija: One World.",
+  "crime_categories": [
+    { "id": "theft", "label": "Theft", "severity": "minor", "description": "Taking another's property without consent." },
+    { "id": "fraud", "label": "Fraud", "severity": "moderate", "description": "Deception for personal gain." },
+    { "id": "robbery", "label": "Robbery", "severity": "serious", "description": "Taking property by force or threat." },
+    { "id": "property_damage", "label": "Property Damage", "severity": "minor", "description": "Deliberate destruction of property." },
+    { "id": "extortion", "label": "Extortion", "severity": "serious", "description": "Obtaining something through coercion." },
+    { "id": "smuggling", "label": "Smuggling", "severity": "serious", "description": "Illegal transport of goods across boundaries." },
+    { "id": "organized_crime", "label": "Organized Crime", "severity": "severe", "description": "Coordinated criminal activity by a group." },
+    { "id": "corruption", "label": "Corruption", "severity": "serious", "description": "Abuse of entrusted power for private gain." },
+    { "id": "kidnapping", "label": "Kidnapping", "severity": "severe", "description": "Unlawful confinement of a person." },
+    { "id": "assault", "label": "Assault", "severity": "moderate", "description": "Physical attack on another person." },
+    { "id": "cybercrime", "label": "Cybercrime", "severity": "moderate", "description": "Criminal activity conducted through digital systems." },
+    { "id": "financial_crime", "label": "Financial Crime", "severity": "serious", "description": "Criminal activity targeting financial systems." },
+    { "id": "public_misconduct", "label": "Public Office Misconduct", "severity": "serious", "description": "Criminal misuse of public office." },
+    { "id": "vandalism", "label": "Vandalism", "severity": "minor", "description": "Deliberate defacement or minor damage." }
+  ],
+  "crime_severities": [
+    { "id": "minor", "label": "Minor Offence", "base_detection_chance": 0.7, "base_fine_min": 5000, "base_fine_max": 50000 },
+    { "id": "moderate", "label": "Moderate Offence", "base_detection_chance": 0.5, "base_fine_min": 20000, "base_fine_max": 200000 },
+    { "id": "serious", "label": "Serious Offence", "base_detection_chance": 0.35, "base_fine_min": 100000, "base_fine_max": 1000000 },
+    { "id": "severe", "label": "Severe Offence", "base_detection_chance": 0.25, "base_fine_min": 500000, "base_fine_max": 5000000 }
+  ],
+  "crime_definitions": [
+    { "id": "shoplifting", "category": "theft", "label": "Shoplifting", "min_value": 1000, "max_value": 50000, "severity": "minor", "police_category": "theft", "justice_case_category": "criminal_theft", "requires_target_character": true, "cooldown_hours": 24 },
+    { "id": "pickpocketing", "category": "theft", "label": "Pickpocketing", "min_value": 500, "max_value": 30000, "severity": "minor", "police_category": "theft", "justice_case_category": "criminal_theft", "requires_target_character": true, "cooldown_hours": 12 },
+    { "id": "burglary", "category": "theft", "label": "Burglary", "min_value": 10000, "max_value": 500000, "severity": "moderate", "police_category": "theft", "justice_case_category": "criminal_theft", "requires_target_property": true, "cooldown_hours": 48 },
+    { "id": "fraudulent_dealing", "category": "fraud", "label": "Fraudulent Dealing", "min_value": 5000, "max_value": 200000, "severity": "moderate", "police_category": "fraud", "justice_case_category": "criminal_fraud", "requires_target_character": true, "cooldown_hours": 72 },
+    { "id": "forgery", "category": "fraud", "label": "Forgery", "min_value": 10000, "max_value": 300000, "severity": "moderate", "police_category": "fraud", "justice_case_category": "criminal_fraud", "requires_target_character": false, "cooldown_hours": 48 },
+    { "id": "armed_robbery", "category": "robbery", "label": "Armed Robbery", "min_value": 20000, "max_value": 1000000, "severity": "serious", "police_category": "theft", "justice_case_category": "criminal_robbery", "requires_target_character": true, "cooldown_hours": 96 },
+    { "id": "property_vandalism", "category": "property_damage", "label": "Property Vandalism", "min_value": 2000, "max_value": 100000, "severity": "minor", "police_category": "property_damage", "justice_case_category": "criminal_damage", "requires_target_property": true, "cooldown_hours": 24 },
+    { "id": "extortion_demand", "category": "extortion", "label": "Extortion Demand", "min_value": 10000, "max_value": 500000, "severity": "serious", "police_category": "disturbance", "justice_case_category": "criminal_extortion", "requires_target_character": true, "cooldown_hours": 72 },
+    { "id": "cyber_fraud", "category": "cybercrime", "label": "Cyber Fraud", "min_value": 5000, "max_value": 500000, "severity": "moderate", "police_category": "fraud", "justice_case_category": "criminal_fraud", "requires_target_character": true, "cooldown_hours": 48 },
+    { "id": "bribery", "category": "corruption", "label": "Bribery", "min_value": 10000, "max_value": 1000000, "severity": "serious", "police_category": "other", "justice_case_category": "criminal_corruption", "requires_target_character": true, "cooldown_hours": 96 },
+    { "id": "assault_civilian", "category": "assault", "label": "Assault", "min_value": 0, "max_value": 0, "severity": "moderate", "police_category": "assault", "justice_case_category": "criminal_assault", "requires_target_character": true, "cooldown_hours": 24 },
+    { "id": "business_fraud", "category": "financial_crime", "label": "Business Fraud", "min_value": 50000, "max_value": 2000000, "severity": "serious", "police_category": "fraud", "justice_case_category": "criminal_fraud", "requires_target_business": true, "cooldown_hours": 120 }
+  ],
+  "incident_statuses": [
+    { "id": "created", "label": "Created" },
+    { "id": "reported", "label": "Reported" },
+    { "id": "under_review", "label": "Under Review" },
+    { "id": "investigation_open", "label": "Investigation Open" },
+    { "id": "referred_to_court", "label": "Referred to Court" },
+    { "id": "resolved", "label": "Resolved" },
+    { "id": "closed", "label": "Closed" }
+  ],
+  "valid_transitions": {
+    "created": ["reported", "closed"],
+    "reported": ["under_review", "closed"],
+    "under_review": ["investigation_open", "closed", "resolved"],
+    "investigation_open": ["referred_to_court", "resolved", "closed"],
+    "referred_to_court": ["resolved", "closed"],
+    "resolved": ["closed"],
+    "closed": []
+  },
+  "rules": {
+    "minimum_age_for_crime_action": 15,
+    "victim_targeting_cooldown_hours": 48,
+    "max_reports_per_hour": 5,
+    "max_crime_actions_per_day": 10,
+    "new_player_protection_days": 7,
+    "new_player_protection_min_age": 16,
+    "offline_protection_loss_limit_percent": 25,
+    "description_max_length": 3000,
+    "summary_max_length": 500,
+    "reason_max_length": 1000,
+    "max_participants_per_incident": 10,
+    "max_victims_per_incident": 10,
+    "max_evidence_per_incident": 20,
+    "max_incidents_per_day_per_character": 5,
+    "notoriety_decay_rate_per_day": 0.01,
+    "notoriety_threshold_for_attention": 0.3,
+    "reputation_impact_minor": -1,
+    "reputation_impact_moderate": -3,
+    "reputation_impact_serious": -5,
+    "reputation_impact_severe": -10,
+    "rehabilitation_min_days": 30,
+    "rehabilitation_max_days": 365
+  },
+  "consequence_rules": {
+    "criminal_record_retention_years": 10,
+    "employment_background_check_categories": ["corruption", "financial_crime", "organized_crime", "fraud"],
+    "political_disqualification_categories": ["corruption", "organized_crime", "financial_crime"],
+    "business_license_impact_categories": ["fraud", "financial_crime", "organized_crime", "corruption"],
+    "restitution_percentage": 100,
+    "rehabilitation_reputation_recovery_per_day": 0.005
+  }
+}

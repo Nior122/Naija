@@ -1,0 +1,15 @@
+{
+  "mode": "synthetic padding, file backend, pretty format, default 16 MiB limit",
+  "limit_bytes": 16777216,
+  "pad_bytes": 1735956,
+  "identities_created": 639,
+  "first_refusal": {
+    "after_identities": 639,
+    "code": "world_capacity_reached"
+  },
+  "final_file_bytes": 16771701,
+  "shutdown": {
+    "ok": true
+  },
+  "elapsed_seconds": 132
+}

@@ -1,5 +1,9 @@
+import { performance } from "node:perf_hooks";
+import { monitoring, type HealthCheck } from "../monitoring.js";
 import { randomUUID } from "node:crypto";
-import { mkdir, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, open, rename, rm } from "node:fs/promises";
+import { SaveStatusTracker, classifySaveFailure, markSaveOutcome } from "../persistence-status.js";
+import { WorldFileLockLostError, WorldFileWriterLock } from "../persistence/writer-lock.js";
 import { readFileSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { geographicLocationIsValid } from "../geography/catalog.js";
@@ -8,8 +12,41 @@ import { isEducationStudentRecord, normalizeEducationRecord, syncLegacyEducation
 import { loadLifeCatalog, normalizeWorldClock, isValidDate } from "../life/calendar.js";
 import { normalizeLifeWorldState } from "../life/service.js";
 import { initializeCareerWorldState } from "../careers/service.js";
+import { loadNPCSocialCatalog, seedNeighbourResidents, validateNPCSocialRecords } from "../npc/index.js";
+import { assertRecordsValid, validateElectionRecords, validateGovernmentRecords, validateJusticeRecords, validatePropertyRecords } from "./record-validation.js";
+import { initializeEconomyWorldState } from "../economy/service.js";
+import { businessAccountMismatches, initializeBusinessWorldState, migrateLegacyBusinessAccounts } from "../businesses/service.js";
+import { initializePropertyWorldState } from "../properties/service.js";
+import { initializeGovernmentWorldState } from "../government/service.js";
+import { initializeElectionWorldState } from "../elections/service.js";
+import { initializeJusticeWorldState } from "../justice/service.js";
+import { emptyPoliceMaps, initializePoliceWorldState } from "../police/service.js";
+import { emptyMilitaryMaps, initializeMilitaryWorldState } from "../military/service.js";
+import { emptyCrimeMaps, initializeCrimeWorldState } from "../crime/service.js";
+import { emptyCultureMaps, initializeCultureWorldState } from "../culture/service.js";
+import { emptyEntertainmentMaps, initializeEntertainmentWorldState } from "../entertainment/service.js";
+import { emptySocialMaps, initializeSocialWorldState } from "../social/service.js";
+import { emptyTransportationMaps, initializeTransportationWorldState } from "../transportation/service.js";
+import { emptyWorldEventMaps, initializeWorldEventState } from "../world-events/service.js";
+import { WorldEventCatalogService } from "../world-events/catalog.js";
+import type { PersistentWorldEventMaps } from "../world-events/types.js";
+import { emptyNPCMaps, initializeNPCWorldState } from "../npc/service.js";
+import type { PersistentElectionMaps } from "../elections/types.js";
+import type { PersistentJusticeMaps } from "../justice/types.js";
+import type { PersistentPoliceMaps } from "../police/types.js";
+import type { PersistentMilitaryMaps } from "../military/types.js";
+import type { PersistentCrimeMaps } from "../crime/types.js";
+import type { PersistentCultureMaps } from "../culture/types.js";
+import type { PersistentEntertainmentMaps } from "../entertainment/types.js";
+import type { PersistentSocialMaps } from "../social/types.js";
+import type { PersistentTransportationMaps } from "../transportation/types.js";
+import type { PersistentNPCMaps } from "../npc/types.js";
 import type { LifeCatalog } from "../life/types.js";
 import type { PersistentCareerMaps } from "../careers/types.js";
+import type { PersistentEconomyMaps } from "../economy/types.js";
+import type { PersistentBusinessMaps } from "../businesses/types.js";
+import type { PersistentPropertyMaps } from "../properties/types.js";
+import type { PersistentGovernmentMaps } from "../government/types.js";
 import {
   WORLD_ID,
   isFiniteNumber,
@@ -18,8 +55,10 @@ import {
   type PersistentWorldState,
   type Point2D,
 } from "./types.js";
+import { isSessionMetadata } from "./session-policy.js";
 
-const MAX_STATE_FILE_BYTES = 16 * 1024 * 1024;
+/** The size limit for one saved world. A save over it is refused and the previous file is kept. */
+export const WORLD_STATE_LIMIT_BYTES = 16 * 1024 * 1024;
 const CHARACTER_TYPES = new Set(["girl", "boy", "androgynous"]);
 const LIFE_STATUSES = new Set(["alive", "retired", "deceased"]);
 const RELATIONSHIP_TYPES = new Set([
@@ -99,14 +138,24 @@ function isPersistentPlayerBase(value: unknown, playerId: string): value is Reco
     typeof value.creationKeyHash === "string" && /^[a-f0-9]{64}$/.test(value.creationKeyHash) &&
     Array.isArray(value.recentRequestIds) && value.recentRequestIds.length <= 256 &&
     value.recentRequestIds.every((requestId) => typeof requestId === "string" && requestId.length <= 80) &&
+    (value.recentPropertyRequests === undefined || (Array.isArray(value.recentPropertyRequests) &&
+      value.recentPropertyRequests.length <= 256 &&
+      value.recentPropertyRequests.every((entry) => isRecord(entry) && typeof entry.request_id === "string" &&
+        entry.request_id.length <= 80 && typeof entry.fingerprint === "string" && /^[a-f0-9]{64}$/.test(entry.fingerprint)))) &&
+    (value.recentRequestRecords === undefined || (Array.isArray(value.recentRequestRecords) &&
+      value.recentRequestRecords.length <= 256 &&
+      value.recentRequestRecords.every((entry) => isRecord(entry) && typeof entry.request_id === "string" &&
+        entry.request_id.length <= 80 && typeof entry.command === "string" && entry.command.length <= 64 &&
+        typeof entry.fingerprint === "string" && /^[a-f0-9]{64}$/.test(entry.fingerprint)))) &&
     typeof value.createdAt === "string" && typeof value.lastSeen === "string" &&
-    isCharacterBase(value.character) && value.character.player_id === playerId;
+    isCharacterBase(value.character) && value.character.player_id === playerId &&
+    (value.session === undefined || isSessionMetadata(value.session));
 }
 
 function isFamilyPerson(value: unknown, key: string): boolean {
   return isRecord(value) && value.person_id === key && typeof value.name === "string" &&
     isFiniteNumber(value.age) && Number.isSafeInteger(value.age) && value.age >= 0 && value.age <= 9998 &&
-    hasLifeFields(value) && ["parent", "guardian", "sibling", "child", "relative"].includes(String(value.family_role)) &&
+    hasLifeFields(value) && ["parent", "guardian", "sibling", "child", "relative", "neighbour"].includes(String(value.family_role)) &&
     typeof value.home_id === "string" && typeof value.current_location === "string" &&
     typeof value.education_level === "string" && typeof value.created_at === "string" && typeof value.updated_at === "string";
 }
@@ -328,6 +377,55 @@ function emptyCareerMaps(): PersistentCareerMaps {
   };
 }
 
+function emptyEconomyMaps(): PersistentEconomyMaps {
+  return {
+    economyAccounts: {}, economyTransactions: {}, economyLoans: {}, economyCreditScores: {}, economyEvents: {},
+  };
+}
+
+function emptyBusinessMaps(): PersistentBusinessMaps {
+  return {
+    businesses: {}, businessOwnership: {}, businessBranches: {}, businessProducts: {},
+    businessInventory: {}, businessInventoryMovements: {}, businessTransactions: {},
+    businessExpenses: {}, businessSales: {}, businessProductionRuns: {}, businessEvents: {},
+  };
+}
+
+function emptyPropertyMaps(): PersistentPropertyMaps {
+  return {
+    properties: {}, propertyOwnership: {}, propertyListings: {},
+    rentalAgreements: {}, rentalPayments: {}, propertySales: {},
+    propertyMaintenance: {}, propertyFurnishings: {}, propertyEvents: {},
+  };
+}
+
+function emptyGovernmentMaps(): PersistentGovernmentMaps {
+  return {
+    governmentOrganisations: {}, governmentOffices: {}, governmentAppointments: {},
+    governmentBudgets: {}, governmentRevenue: {}, governmentExpenditure: {},
+    governmentProjects: {}, governmentAnnouncements: {}, governmentEvents: {},
+  };
+}
+
+function emptyElectionMaps(): PersistentElectionMaps {
+  return {
+    politicalParties: {}, partyMemberships: {}, politicalProfiles: {},
+    elections: {}, candidates: {}, campaigns: {}, campaignEvents: {},
+    campaignFinances: {}, debates: {}, ballots: {}, voterParticipation: {},
+    electionDisputes: {}, electionAudits: {},
+  };
+}
+
+function emptyJusticeMaps(): PersistentJusticeMaps {
+  return {
+    laws: {}, lawProvisions: {}, legislativeProposals: {}, courts: {},
+    legalProfessionals: {}, legalRepresentations: {}, cases: {},
+    caseParticipants: {}, evidence: {}, witnesses: {}, hearings: {},
+    judgments: {}, sentences: {}, fines: {}, settlements: {}, appeals: {},
+    legalAudits: {},
+  };
+}
+
 function emptyLifeMaps(): Pick<
   PersistentWorldState,
   "people" | "households" | "families" | "relationships" | "lifeEvents" | "marriages" | "inheritanceEvents"
@@ -337,12 +435,160 @@ function emptyLifeMaps(): Pick<
   };
 }
 
-function validateState(value: unknown, now: number): PersistentWorldState {
-  if (!isRecord(value) || (value.schemaVersion !== 1 && value.schemaVersion !== 2 && value.schemaVersion !== 3) ||
+const ECONOMY_ACCOUNT_KINDS = new Set(["cash", "savings", "current", "fixed_deposit"]);
+const ECONOMY_ACCOUNT_STATUSES = new Set(["active", "frozen", "closed"]);
+const ECONOMY_LOAN_STATUSES = new Set(["active", "paid_off", "defaulted", "cancelled"]);
+const ECONOMY_TRANSACTION_KINDS = new Set([
+  "salary_credit", "market_purchase", "market_sale", "bank_deposit", "bank_withdrawal", "bank_transfer", "bank_fee",
+  "bank_interest", "tax_payment", "loan_disbursement", "loan_repayment", "loan_origination_fee",
+  "loan_late_fee", "initial_credit", "clinic_payment", "bus_fare", "government_payment",
+  "rent_payment", "rent_receipt", "property_purchase", "property_sale_proceeds", "property_furnishing",
+  "property_maintenance",
+  "business_capital", "business_withdrawal", "business_purchase", "business_sale", "business_salary",
+  "business_transfer", "business_expense", "business_setup_fee", "business_seed_capital", "business_legacy_import",
+]);
+
+function isEconomyAccount(value: unknown, key: string): boolean {
+  return isRecord(value) && value.account_id === key && typeof value.character_id === "string" &&
+    typeof value.kind === "string" && ECONOMY_ACCOUNT_KINDS.has(value.kind) &&
+    (value.bank_product_id === null || typeof value.bank_product_id === "string") &&
+    isFiniteNumber(value.balance_ngn) && value.balance_ngn >= 0 &&
+    typeof value.status === "string" && ECONOMY_ACCOUNT_STATUSES.has(value.status) &&
+    isValidDate(value.created_world_date) && typeof value.created_at === "string" && typeof value.updated_at === "string" &&
+    isValidDate(value.opened_world_date) &&
+    (value.last_interest_date === null || isValidDate(value.last_interest_date)) &&
+    (value.last_fee_date === undefined || value.last_fee_date === null || isValidDate(value.last_fee_date)) &&
+    isFiniteNumber(value.total_deposited_ngn) && isFiniteNumber(value.total_withdrawn_ngn) &&
+    isFiniteNumber(value.total_fees_paid_ngn) && isFiniteNumber(value.total_interest_earned_ngn) &&
+    isFiniteNumber(value.daily_withdrawal_total_ngn) &&
+    (value.daily_withdrawal_date === null || isValidDate(value.daily_withdrawal_date));
+}
+
+function isEconomyTransaction(value: unknown, key: string): boolean {
+  return isRecord(value) && value.transaction_id === key && typeof value.account_id === "string" &&
+    typeof value.character_id === "string" && typeof value.kind === "string" &&
+    ECONOMY_TRANSACTION_KINDS.has(value.kind) &&
+    isFiniteNumber(value.amount_ngn) && value.amount_ngn >= 0 &&
+    isFiniteNumber(value.balance_before_ngn) && isFiniteNumber(value.balance_after_ngn) &&
+    isFiniteNumber(value.fee_ngn) && typeof value.description === "string" &&
+    isValidDate(value.world_date) && isFiniteNumber(value.minute_of_day) &&
+    value.minute_of_day >= 0 && value.minute_of_day < 1440 &&
+    typeof value.posted_at === "string" &&
+    (value.reference_id === null || typeof value.reference_id === "string") &&
+    (value.counterparty_account_id === null || typeof value.counterparty_account_id === "string") &&
+    typeof value.idempotency_key === "string";
+}
+
+function isEconomyLoan(value: unknown, key: string): boolean {
+  return isRecord(value) && value.loan_id === key && typeof value.character_id === "string" &&
+    typeof value.loan_product_id === "string" &&
+    isFiniteNumber(value.principal_ngn) && value.principal_ngn >= 0 &&
+    isFiniteNumber(value.remaining_principal_ngn) && value.remaining_principal_ngn >= 0 &&
+    typeof value.interest_rate_monthly_percent === "number" &&
+    isFiniteNumber(value.term_months) && Number.isSafeInteger(value.term_months) &&
+    isFiniteNumber(value.monthly_payment_ngn) && isFiniteNumber(value.origination_fee_ngn) &&
+    typeof value.status === "string" && ECONOMY_LOAN_STATUSES.has(value.status) &&
+    isValidDate(value.start_date) && isValidDate(value.end_date) && isValidDate(value.next_payment_date) &&
+    isFiniteNumber(value.payments_made) && isFiniteNumber(value.payments_missed) &&
+    isFiniteNumber(value.total_paid_ngn) && typeof value.created_at === "string" &&
+    typeof value.updated_at === "string" && typeof value.disbursement_account_id === "string";
+}
+
+function isEconomyCreditScore(value: unknown, key: string): boolean {
+  return isRecord(value) && value.character_id === key &&
+    isFiniteNumber(value.score) && Number.isSafeInteger(value.score) &&
+    Array.isArray(value.history) && typeof value.updated_at === "string" &&
+    isValidDate(value.updated_world_date);
+}
+
+function isEconomyEvent(value: unknown, key: string): boolean {
+  return isRecord(value) && value.event_id === key && typeof value.character_id === "string" &&
+    typeof value.type === "string" && isValidDate(value.world_date) &&
+    isFiniteNumber(value.minute_of_day) && value.minute_of_day >= 0 && value.minute_of_day < 1440 &&
+    typeof value.summary === "string" && isRecord(value.details) &&
+    typeof value.created_at === "string" &&
+    (value.account_id === undefined || typeof value.account_id === "string") &&
+    (value.loan_id === undefined || typeof value.loan_id === "string") &&
+    (value.transaction_id === undefined || typeof value.transaction_id === "string");
+}
+
+const BUSINESS_STATUSES = new Set(["draft", "active", "suspended", "closed", "insolvent"]);
+const BUSINESS_MODELS = new Set(["retail", "food_service", "service", "production"]);
+const BUSINESS_OWNERSHIP_ROLES = new Set(["owner", "co_owner", "manager", "accountant", "inventory_manager", "employee"]);
+const BUSINESS_TX_KINDS = new Set([
+  "sale_product", "sale_service", "expense_operating", "expense_rent", "expense_salary",
+  "capital_contribution", "owner_withdrawal", "production_cost", "setup_cost", "refund", "purchase_stock",
+  "salary_paid", "transfer_in", "transfer_out", "legacy_import", "seed_capital",
+]);
+const BUSINESS_PREMISES_TYPES = new Set([
+  "home_based", "market_stall", "shop", "office", "workshop", "restaurant", "farm", "warehouse", "factory", "service_area", "studio",
+]);
+
+function isBusiness(value: unknown, key: string): boolean {
+  return isRecord(value) && value.business_id === key && typeof value.name === "string" && typeof value.description === "string" &&
+    typeof value.template_id === "string" && typeof value.category_id === "string" &&
+    typeof value.model === "string" && BUSINESS_MODELS.has(value.model) &&
+    typeof value.status === "string" && BUSINESS_STATUSES.has(value.status) &&
+    typeof value.primary_location_id === "string" &&
+    typeof value.premises_type === "string" && BUSINESS_PREMISES_TYPES.has(value.premises_type) &&
+    isFiniteNumber(value.reputation_score) && isFiniteNumber(value.balance_ngn) &&
+    isFiniteNumber(value.total_revenue_ngn) && isFiniteNumber(value.total_expenses_ngn) &&
+    isFiniteNumber(value.total_capital_ngn) && isFiniteNumber(value.total_withdrawals_ngn) &&
+    typeof value.created_at === "string" && typeof value.updated_at === "string" &&
+    isValidDate(value.created_world_date) && typeof value.owner_character_id === "string" &&
+    (value.closed_at === null || typeof value.closed_at === "string") &&
+    (value.closed_world_date === null || isValidDate(value.closed_world_date)) &&
+    (value.closure_reason === null || typeof value.closure_reason === "string") &&
+    (value.last_operating_date === null || isValidDate(value.last_operating_date));
+}
+
+function isBusinessOwnership(value: unknown, key: string): boolean {
+  return isRecord(value) && value.ownership_id === key && typeof value.business_id === "string" &&
+    typeof value.character_id === "string" &&
+    typeof value.role === "string" && BUSINESS_OWNERSHIP_ROLES.has(value.role) &&
+    isFiniteNumber(value.share_percent) && value.share_percent >= 0 && value.share_percent <= 100 &&
+    typeof value.created_at === "string" && typeof value.updated_at === "string" &&
+    isValidDate(value.created_world_date) && typeof value.is_founder === "boolean" &&
+    typeof value.active === "boolean";
+}
+
+function isBusinessTransaction(value: unknown, key: string): boolean {
+  return isRecord(value) && value.transaction_id === key && typeof value.business_id === "string" &&
+    typeof value.kind === "string" && BUSINESS_TX_KINDS.has(value.kind) &&
+    isFiniteNumber(value.amount_ngn) && isFiniteNumber(value.balance_before_ngn) && isFiniteNumber(value.balance_after_ngn) &&
+    typeof value.description === "string" && isValidDate(value.world_date) &&
+    isFiniteNumber(value.minute_of_day) && value.minute_of_day >= 0 && value.minute_of_day < 1440 &&
+    typeof value.posted_at === "string" &&
+    (value.reference_id === null || typeof value.reference_id === "string") &&
+    (value.counterparty_character_id === null || typeof value.counterparty_character_id === "string") &&
+    (value.economy_transaction_id === undefined || value.economy_transaction_id === null || typeof value.economy_transaction_id === "string") &&
+    typeof value.idempotency_key === "string";
+}
+
+function isBusinessSale(value: unknown, key: string): boolean {
+  return isRecord(value) && value.sale_id === key && typeof value.business_id === "string" &&
+    (value.product_record_id === null || typeof value.product_record_id === "string") &&
+    typeof value.product_definition_id === "string" &&
+    (value.buyer_character_id === null || typeof value.buyer_character_id === "string") &&
+    isFiniteNumber(value.quantity) && isFiniteNumber(value.unit_price_ngn) && isFiniteNumber(value.total_ngn) &&
+    isValidDate(value.world_date) && isFiniteNumber(value.minute_of_day) &&
+    typeof value.posted_at === "string" && typeof value.is_service === "boolean";
+}
+
+function isBusinessEvent(value: unknown, key: string): boolean {
+  return isRecord(value) && value.event_id === key && typeof value.business_id === "string" &&
+    typeof value.type === "string" && isValidDate(value.world_date) &&
+    isFiniteNumber(value.minute_of_day) && value.minute_of_day >= 0 && value.minute_of_day < 1440 &&
+    typeof value.summary === "string" && isRecord(value.details) &&
+    typeof value.created_at === "string";
+}
+
+export function validateState(value: unknown, now: number): PersistentWorldState {
+  if (!isRecord(value) || (value.schemaVersion !== 1 && value.schemaVersion !== 2 && value.schemaVersion !== 3 && value.schemaVersion !== 4 && value.schemaVersion !== 5 && value.schemaVersion !== 6 && value.schemaVersion !== 7 && value.schemaVersion !== 8 && value.schemaVersion !== 9 && value.schemaVersion !== 10 && value.schemaVersion !== 11 && value.schemaVersion !== 12 && value.schemaVersion !== 13 && value.schemaVersion !== 14 && value.schemaVersion !== 15 && value.schemaVersion !== 16 && value.schemaVersion !== 17 && value.schemaVersion !== 18) ||
     value.worldId !== WORLD_ID || !isRecord(value.worldClock) || !isRecord(value.players)) {
     throw new Error("World data has an invalid schema; refusing to start with reset state.");
   }
-  const schemaVersion = value.schemaVersion;
+  const schemaVersion = value.schemaVersion as number;
   const clock = value.worldClock;
   if (!isFiniteNumber(clock.day) || !Number.isSafeInteger(clock.day) || clock.day < 1 ||
     !isFiniteNumber(clock.minute_of_day) || !Number.isSafeInteger(clock.minute_of_day) ||
@@ -365,7 +611,7 @@ function validateState(value: unknown, now: number): PersistentWorldState {
       throw new Error("World data contains an invalid Stage 5 lifecycle record.");
     }
   }
-  if (schemaVersion === 3) {
+  if (schemaVersion >= 3) {
     const careerMapNames = [
       "careerEmployers", "careerVacancies", "careerApplications", "employments", "workSessions", "careerSkills",
       "careerLicenses", "careerReviews", "careerLeaveRequests", "careerEvents", "salaryPayments", "npcCareers",
@@ -389,37 +635,279 @@ function validateState(value: unknown, now: number): PersistentWorldState {
       throw new Error("World data contains an invalid Stage 6 career record.");
     }
   }
+  if (schemaVersion >= 4) {
+    const economyMapNames = [
+      "economyAccounts", "economyTransactions", "economyLoans", "economyCreditScores", "economyEvents",
+    ] as const;
+    if (economyMapNames.some((name) => !isRecord(value[name]))) {
+      throw new Error("World data is missing Stage 7 economy records; refusing to start with reset state.");
+    }
+    const economyMap = (name: typeof economyMapNames[number]): Record<string, unknown> => value[name] as Record<string, unknown>;
+    if (Object.entries(economyMap("economyAccounts")).some(([id, entry]) => !isEconomyAccount(entry, id)) ||
+      Object.entries(economyMap("economyTransactions")).some(([id, entry]) => !isEconomyTransaction(entry, id)) ||
+      Object.entries(economyMap("economyLoans")).some(([id, entry]) => !isEconomyLoan(entry, id)) ||
+      Object.entries(economyMap("economyCreditScores")).some(([id, entry]) => !isEconomyCreditScore(entry, id)) ||
+      Object.entries(economyMap("economyEvents")).some(([id, entry]) => !isEconomyEvent(entry, id))) {
+      throw new Error("World data contains an invalid Stage 7 economy record.");
+    }
+  }
+  if (schemaVersion >= 5) {
+    const businessMapNames = [
+      "businesses", "businessOwnership", "businessBranches", "businessProducts", "businessInventory",
+      "businessInventoryMovements", "businessTransactions", "businessExpenses", "businessSales",
+      "businessProductionRuns", "businessEvents",
+    ] as const;
+    if (businessMapNames.some((name) => !isRecord(value[name]))) {
+      throw new Error("World data is missing Stage 8 business records; refusing to start with reset state.");
+    }
+    const businessMap = (name: typeof businessMapNames[number]): Record<string, unknown> => value[name] as Record<string, unknown>;
+    if (Object.entries(businessMap("businesses")).some(([id, entry]) => !isBusiness(entry, id)) ||
+      Object.entries(businessMap("businessOwnership")).some(([id, entry]) => !isBusinessOwnership(entry, id)) ||
+      Object.entries(businessMap("businessTransactions")).some(([id, entry]) => !isBusinessTransaction(entry, id)) ||
+      Object.entries(businessMap("businessSales")).some(([id, entry]) => !isBusinessSale(entry, id)) ||
+      Object.entries(businessMap("businessEvents")).some(([id, entry]) => !isBusinessEvent(entry, id))) {
+      throw new Error("World data contains an invalid Stage 8 business record.");
+    }
+  }
 
   const catalog: LifeCatalog = loadLifeCatalog();
-  const careerMaps: PersistentCareerMaps = schemaVersion === 3 ? {
-    careerEmployers: value.careerEmployers as PersistentCareerMaps["careerEmployers"],
-    careerVacancies: value.careerVacancies as PersistentCareerMaps["careerVacancies"],
-    careerApplications: value.careerApplications as PersistentCareerMaps["careerApplications"],
-    employments: value.employments as PersistentCareerMaps["employments"],
-    workSessions: value.workSessions as PersistentCareerMaps["workSessions"],
-    careerSkills: value.careerSkills as PersistentCareerMaps["careerSkills"],
-    careerLicenses: value.careerLicenses as PersistentCareerMaps["careerLicenses"],
-    careerReviews: value.careerReviews as PersistentCareerMaps["careerReviews"],
-    careerLeaveRequests: value.careerLeaveRequests as PersistentCareerMaps["careerLeaveRequests"],
-    careerEvents: value.careerEvents as PersistentCareerMaps["careerEvents"],
-    salaryPayments: value.salaryPayments as PersistentCareerMaps["salaryPayments"],
-    npcCareers: value.npcCareers as PersistentCareerMaps["npcCareers"],
+  const careerMaps: PersistentCareerMaps = schemaVersion >= 3 ? {
+    careerEmployers: (value.careerEmployers ?? {}) as PersistentCareerMaps["careerEmployers"],
+    careerVacancies: (value.careerVacancies ?? {}) as PersistentCareerMaps["careerVacancies"],
+    careerApplications: (value.careerApplications ?? {}) as PersistentCareerMaps["careerApplications"],
+    employments: (value.employments ?? {}) as PersistentCareerMaps["employments"],
+    workSessions: (value.workSessions ?? {}) as PersistentCareerMaps["workSessions"],
+    careerSkills: (value.careerSkills ?? {}) as PersistentCareerMaps["careerSkills"],
+    careerLicenses: (value.careerLicenses ?? {}) as PersistentCareerMaps["careerLicenses"],
+    careerReviews: (value.careerReviews ?? {}) as PersistentCareerMaps["careerReviews"],
+    careerLeaveRequests: (value.careerLeaveRequests ?? {}) as PersistentCareerMaps["careerLeaveRequests"],
+    careerEvents: (value.careerEvents ?? {}) as PersistentCareerMaps["careerEvents"],
+    salaryPayments: (value.salaryPayments ?? {}) as PersistentCareerMaps["salaryPayments"],
+    npcCareers: (value.npcCareers ?? {}) as PersistentCareerMaps["npcCareers"],
   } : emptyCareerMaps();
+  const economyMaps: PersistentEconomyMaps = schemaVersion >= 4 ? {
+    economyAccounts: (value.economyAccounts ?? {}) as PersistentEconomyMaps["economyAccounts"],
+    economyTransactions: (value.economyTransactions ?? {}) as PersistentEconomyMaps["economyTransactions"],
+    economyLoans: (value.economyLoans ?? {}) as PersistentEconomyMaps["economyLoans"],
+    economyCreditScores: (value.economyCreditScores ?? {}) as PersistentEconomyMaps["economyCreditScores"],
+    economyEvents: (value.economyEvents ?? {}) as PersistentEconomyMaps["economyEvents"],
+  } : emptyEconomyMaps();
+  const businessMaps: PersistentBusinessMaps = schemaVersion >= 5 ? {
+    businesses: (value.businesses ?? {}) as PersistentBusinessMaps["businesses"],
+    businessOwnership: (value.businessOwnership ?? {}) as PersistentBusinessMaps["businessOwnership"],
+    businessBranches: (value.businessBranches ?? {}) as PersistentBusinessMaps["businessBranches"],
+    businessProducts: (value.businessProducts ?? {}) as PersistentBusinessMaps["businessProducts"],
+    businessInventory: (value.businessInventory ?? {}) as PersistentBusinessMaps["businessInventory"],
+    businessInventoryMovements: (value.businessInventoryMovements ?? {}) as PersistentBusinessMaps["businessInventoryMovements"],
+    businessTransactions: (value.businessTransactions ?? {}) as PersistentBusinessMaps["businessTransactions"],
+    businessExpenses: (value.businessExpenses ?? {}) as PersistentBusinessMaps["businessExpenses"],
+    businessSales: (value.businessSales ?? {}) as PersistentBusinessMaps["businessSales"],
+    businessProductionRuns: (value.businessProductionRuns ?? {}) as PersistentBusinessMaps["businessProductionRuns"],
+    businessEvents: (value.businessEvents ?? {}) as PersistentBusinessMaps["businessEvents"],
+  } : emptyBusinessMaps();
+  const propertyMaps: PersistentPropertyMaps = schemaVersion >= 6 ? {
+    properties: (value.properties ?? {}) as PersistentPropertyMaps["properties"],
+    propertyOwnership: (value.propertyOwnership ?? {}) as PersistentPropertyMaps["propertyOwnership"],
+    propertyListings: (value.propertyListings ?? {}) as PersistentPropertyMaps["propertyListings"],
+    rentalAgreements: (value.rentalAgreements ?? {}) as PersistentPropertyMaps["rentalAgreements"],
+    rentalPayments: (value.rentalPayments ?? {}) as PersistentPropertyMaps["rentalPayments"],
+    propertySales: (value.propertySales ?? {}) as PersistentPropertyMaps["propertySales"],
+    propertyMaintenance: (value.propertyMaintenance ?? {}) as PersistentPropertyMaps["propertyMaintenance"],
+    propertyFurnishings: (value.propertyFurnishings ?? {}) as PersistentPropertyMaps["propertyFurnishings"],
+    propertyEvents: (value.propertyEvents ?? {}) as PersistentPropertyMaps["propertyEvents"],
+  } : emptyPropertyMaps();
+  const governmentMaps: PersistentGovernmentMaps = schemaVersion >= 7 ? {
+    governmentOrganisations: (value.governmentOrganisations ?? {}) as PersistentGovernmentMaps["governmentOrganisations"],
+    governmentOffices: (value.governmentOffices ?? {}) as PersistentGovernmentMaps["governmentOffices"],
+    governmentAppointments: (value.governmentAppointments ?? {}) as PersistentGovernmentMaps["governmentAppointments"],
+    governmentBudgets: (value.governmentBudgets ?? {}) as PersistentGovernmentMaps["governmentBudgets"],
+    governmentRevenue: (value.governmentRevenue ?? {}) as PersistentGovernmentMaps["governmentRevenue"],
+    governmentExpenditure: (value.governmentExpenditure ?? {}) as PersistentGovernmentMaps["governmentExpenditure"],
+    governmentProjects: (value.governmentProjects ?? {}) as PersistentGovernmentMaps["governmentProjects"],
+    governmentAnnouncements: (value.governmentAnnouncements ?? {}) as PersistentGovernmentMaps["governmentAnnouncements"],
+    governmentEvents: (value.governmentEvents ?? {}) as PersistentGovernmentMaps["governmentEvents"],
+  } : emptyGovernmentMaps();
+  const electionMaps: PersistentElectionMaps = schemaVersion >= 8 ? {
+    politicalParties: (value.politicalParties ?? {}) as PersistentElectionMaps["politicalParties"],
+    partyMemberships: (value.partyMemberships ?? {}) as PersistentElectionMaps["partyMemberships"],
+    politicalProfiles: (value.politicalProfiles ?? {}) as PersistentElectionMaps["politicalProfiles"],
+    elections: (value.elections ?? {}) as PersistentElectionMaps["elections"],
+    candidates: (value.candidates ?? {}) as PersistentElectionMaps["candidates"],
+    campaigns: (value.campaigns ?? {}) as PersistentElectionMaps["campaigns"],
+    campaignEvents: (value.campaignEvents ?? {}) as PersistentElectionMaps["campaignEvents"],
+    campaignFinances: (value.campaignFinances ?? {}) as PersistentElectionMaps["campaignFinances"],
+    debates: (value.debates ?? {}) as PersistentElectionMaps["debates"],
+    ballots: (value.ballots ?? {}) as PersistentElectionMaps["ballots"],
+    voterParticipation: (value.voterParticipation ?? {}) as PersistentElectionMaps["voterParticipation"],
+    electionDisputes: (value.electionDisputes ?? {}) as PersistentElectionMaps["electionDisputes"],
+    electionAudits: (value.electionAudits ?? {}) as PersistentElectionMaps["electionAudits"],
+  } : emptyElectionMaps();
+  const justiceMaps: PersistentJusticeMaps = schemaVersion >= 9 ? {
+    laws: (value.laws ?? {}) as PersistentJusticeMaps["laws"],
+    lawProvisions: (value.lawProvisions ?? {}) as PersistentJusticeMaps["lawProvisions"],
+    legislativeProposals: (value.legislativeProposals ?? {}) as PersistentJusticeMaps["legislativeProposals"],
+    courts: (value.courts ?? {}) as PersistentJusticeMaps["courts"],
+    legalProfessionals: (value.legalProfessionals ?? {}) as PersistentJusticeMaps["legalProfessionals"],
+    legalRepresentations: (value.legalRepresentations ?? {}) as PersistentJusticeMaps["legalRepresentations"],
+    cases: (value.cases ?? {}) as PersistentJusticeMaps["cases"],
+    caseParticipants: (value.caseParticipants ?? {}) as PersistentJusticeMaps["caseParticipants"],
+    evidence: (value.evidence ?? {}) as PersistentJusticeMaps["evidence"],
+    witnesses: (value.witnesses ?? {}) as PersistentJusticeMaps["witnesses"],
+    hearings: (value.hearings ?? {}) as PersistentJusticeMaps["hearings"],
+    judgments: (value.judgments ?? {}) as PersistentJusticeMaps["judgments"],
+    sentences: (value.sentences ?? {}) as PersistentJusticeMaps["sentences"],
+    fines: (value.fines ?? {}) as PersistentJusticeMaps["fines"],
+    settlements: (value.settlements ?? {}) as PersistentJusticeMaps["settlements"],
+    appeals: (value.appeals ?? {}) as PersistentJusticeMaps["appeals"],
+    legalAudits: (value.legalAudits ?? {}) as PersistentJusticeMaps["legalAudits"],
+  } : emptyJusticeMaps();
+  const policeMaps: PersistentPoliceMaps = schemaVersion >= 10 ? {
+    policeUnits: (value.policeUnits ?? {}) as PersistentPoliceMaps["policeUnits"],
+    policeOfficers: (value.policeOfficers ?? {}) as PersistentPoliceMaps["policeOfficers"],
+    recruitmentApplications: (value.recruitmentApplications ?? {}) as PersistentPoliceMaps["recruitmentApplications"],
+    policeIncidents: (value.policeIncidents ?? {}) as PersistentPoliceMaps["policeIncidents"],
+    dispatches: (value.dispatches ?? {}) as PersistentPoliceMaps["dispatches"],
+    investigations: (value.investigations ?? {}) as PersistentPoliceMaps["investigations"],
+    policeEvidence: (value.policeEvidence ?? {}) as PersistentPoliceMaps["policeEvidence"],
+    wantedRecords: (value.wantedRecords ?? {}) as PersistentPoliceMaps["wantedRecords"],
+    arrestRecords: (value.arrestRecords ?? {}) as PersistentPoliceMaps["arrestRecords"],
+    misconductComplaints: (value.misconductComplaints ?? {}) as PersistentPoliceMaps["misconductComplaints"],
+    policeAudits: (value.policeAudits ?? {}) as PersistentPoliceMaps["policeAudits"],
+  } : emptyPoliceMaps();
+  const militaryMaps: PersistentMilitaryMaps = schemaVersion >= 11 ? {
+    militaryOrganizations: (value.militaryOrganizations ?? {}) as PersistentMilitaryMaps["militaryOrganizations"],
+    militaryBases: (value.militaryBases ?? {}) as PersistentMilitaryMaps["militaryBases"],
+    militaryUnits: (value.militaryUnits ?? {}) as PersistentMilitaryMaps["militaryUnits"],
+    militaryRecruitments: (value.militaryRecruitments ?? {}) as PersistentMilitaryMaps["militaryRecruitments"],
+    militaryServiceRecords: (value.militaryServiceRecords ?? {}) as PersistentMilitaryMaps["militaryServiceRecords"],
+    militaryTrainingRecords: (value.militaryTrainingRecords ?? {}) as PersistentMilitaryMaps["militaryTrainingRecords"],
+    militaryRankHistory: (value.militaryRankHistory ?? {}) as PersistentMilitaryMaps["militaryRankHistory"],
+    militaryCommandAppointments: (value.militaryCommandAppointments ?? {}) as PersistentMilitaryMaps["militaryCommandAppointments"],
+    militaryAssignments: (value.militaryAssignments ?? {}) as PersistentMilitaryMaps["militaryAssignments"],
+    militaryLeaveRecords: (value.militaryLeaveRecords ?? {}) as PersistentMilitaryMaps["militaryLeaveRecords"],
+    militaryAssets: (value.militaryAssets ?? {}) as PersistentMilitaryMaps["militaryAssets"],
+    nationalSecurityEvents: (value.nationalSecurityEvents ?? {}) as PersistentMilitaryMaps["nationalSecurityEvents"],
+    militaryDisciplinaryRecords: (value.militaryDisciplinaryRecords ?? {}) as PersistentMilitaryMaps["militaryDisciplinaryRecords"],
+    militaryAudits: (value.militaryAudits ?? {}) as PersistentMilitaryMaps["militaryAudits"],
+  } : emptyMilitaryMaps();
+  const crimeMaps: PersistentCrimeMaps = schemaVersion >= 12 ? {
+    crimeIncidents: (value.crimeIncidents ?? {}) as PersistentCrimeMaps["crimeIncidents"],
+    crimeParticipations: (value.crimeParticipations ?? {}) as PersistentCrimeMaps["crimeParticipations"],
+    crimeEvidence: (value.crimeEvidence ?? {}) as PersistentCrimeMaps["crimeEvidence"],
+    crimeReports: (value.crimeReports ?? {}) as PersistentCrimeMaps["crimeReports"],
+    criminalRecords: (value.criminalRecords ?? {}) as PersistentCrimeMaps["criminalRecords"],
+    crimeNotoriety: (value.crimeNotoriety ?? {}) as PersistentCrimeMaps["crimeNotoriety"],
+    crimeRestitution: (value.crimeRestitution ?? {}) as PersistentCrimeMaps["crimeRestitution"],
+    crimeRehabilitation: (value.crimeRehabilitation ?? {}) as PersistentCrimeMaps["crimeRehabilitation"],
+    crimeAudits: (value.crimeAudits ?? {}) as PersistentCrimeMaps["crimeAudits"],
+  } : emptyCrimeMaps();
+  const cultureMaps: PersistentCultureMaps = schemaVersion >= 13 ? {
+    communities: (value.communities ?? {}) as PersistentCultureMaps["communities"],
+    communityMemberships: (value.communityMemberships ?? {}) as PersistentCultureMaps["communityMemberships"],
+    institutions: (value.institutions ?? {}) as PersistentCultureMaps["institutions"],
+    institutionMemberships: (value.institutionMemberships ?? {}) as PersistentCultureMaps["institutionMemberships"],
+    culturalProfiles: (value.culturalProfiles ?? {}) as PersistentCultureMaps["culturalProfiles"],
+    communityEvents: (value.communityEvents ?? {}) as PersistentCultureMaps["communityEvents"],
+    communityProjects: (value.communityProjects ?? {}) as PersistentCultureMaps["communityProjects"],
+    communityAnnouncements: (value.communityAnnouncements ?? {}) as PersistentCultureMaps["communityAnnouncements"],
+    communityReputation: (value.communityReputation ?? {}) as PersistentCultureMaps["communityReputation"],
+    communityDisputes: (value.communityDisputes ?? {}) as PersistentCultureMaps["communityDisputes"],
+    communityContributions: (value.communityContributions ?? {}) as PersistentCultureMaps["communityContributions"],
+    communityAudits: (value.communityAudits ?? {}) as PersistentCultureMaps["communityAudits"],
+  } : emptyCultureMaps();
+  const entertainmentMaps: PersistentEntertainmentMaps = schemaVersion >= 14 ? {
+    entertainmentProfiles: (value.entertainmentProfiles ?? {}) as PersistentEntertainmentMaps["entertainmentProfiles"],
+    musicProjects: (value.musicProjects ?? {}) as PersistentEntertainmentMaps["musicProjects"],
+    filmProjects: (value.filmProjects ?? {}) as PersistentEntertainmentMaps["filmProjects"],
+    contentRecords: (value.contentRecords ?? {}) as PersistentEntertainmentMaps["contentRecords"],
+    entertainmentEvents: (value.entertainmentEvents ?? {}) as PersistentEntertainmentMaps["entertainmentEvents"],
+    entertainmentContracts: (value.entertainmentContracts ?? {}) as PersistentEntertainmentMaps["entertainmentContracts"],
+    newsReports: (value.newsReports ?? {}) as PersistentEntertainmentMaps["newsReports"],
+    controversies: (value.controversies ?? {}) as PersistentEntertainmentMaps["controversies"],
+    contentModeration: (value.contentModeration ?? {}) as PersistentEntertainmentMaps["contentModeration"],
+    entertainmentCollaborations: (value.entertainmentCollaborations ?? {}) as PersistentEntertainmentMaps["entertainmentCollaborations"],
+    entertainmentAudits: (value.entertainmentAudits ?? {}) as PersistentEntertainmentMaps["entertainmentAudits"],
+  } : emptyEntertainmentMaps();
+  const socialMaps: PersistentSocialMaps = schemaVersion >= 15 ? {
+    socialProfiles: (value.socialProfiles ?? {}) as PersistentSocialMaps["socialProfiles"],
+    socialFollows: (value.socialFollows ?? {}) as PersistentSocialMaps["socialFollows"],
+    socialFollowRequests: (value.socialFollowRequests ?? {}) as PersistentSocialMaps["socialFollowRequests"],
+    socialPosts: (value.socialPosts ?? {}) as PersistentSocialMaps["socialPosts"],
+    socialComments: (value.socialComments ?? {}) as PersistentSocialMaps["socialComments"],
+    socialReactions: (value.socialReactions ?? {}) as PersistentSocialMaps["socialReactions"],
+    socialHashtags: (value.socialHashtags ?? {}) as PersistentSocialMaps["socialHashtags"],
+    socialPostHashtags: (value.socialPostHashtags ?? {}) as PersistentSocialMaps["socialPostHashtags"],
+    socialNotifications: (value.socialNotifications ?? {}) as PersistentSocialMaps["socialNotifications"],
+    socialBlocks: (value.socialBlocks ?? {}) as PersistentSocialMaps["socialBlocks"],
+    socialMutes: (value.socialMutes ?? {}) as PersistentSocialMaps["socialMutes"],
+    socialReports: (value.socialReports ?? {}) as PersistentSocialMaps["socialReports"],
+    socialAdCampaigns: (value.socialAdCampaigns ?? {}) as PersistentSocialMaps["socialAdCampaigns"],
+    socialTrendingTopics: (value.socialTrendingTopics ?? {}) as PersistentSocialMaps["socialTrendingTopics"],
+    socialAudits: (value.socialAudits ?? {}) as PersistentSocialMaps["socialAudits"],
+  } : emptySocialMaps();
+  const transportationMaps: PersistentTransportationMaps = schemaVersion >= 16 ? {
+    ownedVehicles: (value.ownedVehicles ?? {}) as PersistentTransportationMaps["ownedVehicles"],
+    vehicleOwnershipHistory: (value.vehicleOwnershipHistory ?? {}) as PersistentTransportationMaps["vehicleOwnershipHistory"],
+    roadNodes: (value.roadNodes ?? {}) as PersistentTransportationMaps["roadNodes"],
+    roadSegments: (value.roadSegments ?? {}) as PersistentTransportationMaps["roadSegments"],
+    transportationFacilities: (value.transportationFacilities ?? {}) as PersistentTransportationMaps["transportationFacilities"],
+    transportRoutes: (value.transportRoutes ?? {}) as PersistentTransportationMaps["transportRoutes"],
+    transportTrips: (value.transportTrips ?? {}) as PersistentTransportationMaps["transportTrips"],
+    fuelPurchases: (value.fuelPurchases ?? {}) as PersistentTransportationMaps["fuelPurchases"],
+    vehicleMaintenanceRecords: (value.vehicleMaintenanceRecords ?? {}) as PersistentTransportationMaps["vehicleMaintenanceRecords"],
+    cargoShipments: (value.cargoShipments ?? {}) as PersistentTransportationMaps["cargoShipments"],
+    driverLicenses: (value.driverLicenses ?? {}) as PersistentTransportationMaps["driverLicenses"],
+  } : emptyTransportationMaps();
+  const npcMaps: PersistentNPCMaps = schemaVersion >= 17 ? {
+    npcProfiles: (value.npcProfiles ?? {}) as PersistentNPCMaps["npcProfiles"],
+    npcRoutines: (value.npcRoutines ?? {}) as PersistentNPCMaps["npcRoutines"],
+    npcActivityRecords: (value.npcActivityRecords ?? {}) as PersistentNPCMaps["npcActivityRecords"],
+    npcNeeds: (value.npcNeeds ?? {}) as PersistentNPCMaps["npcNeeds"],
+    npcMovements: (value.npcMovements ?? {}) as PersistentNPCMaps["npcMovements"],
+    npcSocialInteractions: (value.npcSocialInteractions ?? {}) as PersistentNPCMaps["npcSocialInteractions"],
+    npcPopulationConfigs: (value.npcPopulationConfigs ?? {}) as PersistentNPCMaps["npcPopulationConfigs"],
+    npcDecisionLogs: (value.npcDecisionLogs ?? {}) as PersistentNPCMaps["npcDecisionLogs"],
+    npcEventReactions: (value.npcEventReactions ?? {}) as PersistentNPCMaps["npcEventReactions"],
+    npcSimulationState: (value.npcSimulationState ?? null) as PersistentNPCMaps["npcSimulationState"],
+  } : emptyNPCMaps();
+  const worldEventMaps: PersistentWorldEventMaps = schemaVersion >= 18 ? {
+    worldEvents: (value.worldEvents ?? {}) as PersistentWorldEventMaps["worldEvents"],
+    worldEventDeliveries: (value.worldEventDeliveries ?? {}) as PersistentWorldEventMaps["worldEventDeliveries"],
+    worldEventEffects: (value.worldEventEffects ?? {}) as PersistentWorldEventMaps["worldEventEffects"],
+    worldEventConsumers: (value.worldEventConsumers ?? {}) as PersistentWorldEventMaps["worldEventConsumers"],
+    worldEventProcessingConfig: (value.worldEventProcessingConfig ?? null) as PersistentWorldEventMaps["worldEventProcessingConfig"],
+    worldStateSnapshots: (value.worldStateSnapshots ?? {}) as PersistentWorldEventMaps["worldStateSnapshots"],
+  } : emptyWorldEventMaps();
   const state = {
-    schemaVersion: 3 as const,
+    schemaVersion: 18 as const,
     worldId: WORLD_ID,
     worldClock: normalizeWorldClock(clock, now, catalog),
     players: {} as Record<string, PersistentPlayer>,
     ...(schemaVersion >= 2 ? {
-      people: value.people as PersistentWorldState["people"],
-      households: value.households as PersistentWorldState["households"],
-      families: value.families as PersistentWorldState["families"],
-      relationships: value.relationships as PersistentWorldState["relationships"],
-      lifeEvents: value.lifeEvents as PersistentWorldState["lifeEvents"],
-      marriages: value.marriages as PersistentWorldState["marriages"],
-      inheritanceEvents: value.inheritanceEvents as PersistentWorldState["inheritanceEvents"],
+      people: (value.people ?? {}) as PersistentWorldState["people"],
+      households: (value.households ?? {}) as PersistentWorldState["households"],
+      families: (value.families ?? {}) as PersistentWorldState["families"],
+      relationships: (value.relationships ?? {}) as PersistentWorldState["relationships"],
+      lifeEvents: (value.lifeEvents ?? {}) as PersistentWorldState["lifeEvents"],
+      marriages: (value.marriages ?? {}) as PersistentWorldState["marriages"],
+      inheritanceEvents: (value.inheritanceEvents ?? {}) as PersistentWorldState["inheritanceEvents"],
     } : emptyLifeMaps()),
     ...careerMaps,
+    ...economyMaps,
+    ...businessMaps,
+    ...propertyMaps,
+    ...governmentMaps,
+    ...electionMaps,
+    ...justiceMaps,
+    ...policeMaps,
+    ...militaryMaps,
+    ...crimeMaps,
+    ...cultureMaps,
+    ...entertainmentMaps,
+    ...socialMaps,
+    ...transportationMaps,
+    ...npcMaps,
+    ...worldEventMaps,
   } satisfies PersistentWorldState;
 
   for (const [playerId, rawPlayer] of Object.entries(value.players)) {
@@ -450,13 +938,49 @@ function validateState(value: unknown, now: number): PersistentWorldState {
   }
   normalizeLifeWorldState(state, now);
   initializeCareerWorldState(state, now);
+  initializeEconomyWorldState(state, now);
+  initializeBusinessWorldState(state);
+  // Stage 40: every saved world gets its business accounts (a balance recorded before this stage is carried over once,
+  // with an explicit ledger row), and is then reconciled. A world whose business balances do not match their accounts
+  // or ledger rows is refused, rather than trusted.
+  migrateLegacyBusinessAccounts(state, state.worldClock.world_date, now);
+  const businessProblems = businessAccountMismatches(state);
+  if (businessProblems.length > 0) {
+    throw new Error(`World data has business accounts that do not reconcile (${businessProblems.length}). First: ${businessProblems[0]}`);
+  }
+  initializePropertyWorldState(state);
+  initializeGovernmentWorldState(state);
+  initializeElectionWorldState(state);
+  initializeJusticeWorldState(state);
+  initializePoliceWorldState(state);
+  initializeMilitaryWorldState(state);
+  initializeCrimeWorldState(state);
+  initializeCultureWorldState(state);
+  initializeEntertainmentWorldState(state);
+  initializeSocialWorldState(state);
+  initializeTransportationWorldState(state);
+  initializeNPCWorldState(state, { year: catalog.calendar.epoch_world_date.year, month: catalog.calendar.epoch_world_date.month, day: catalog.calendar.starting_world_day });
+  // Stage 42: residents are seeded once with fixed IDs (an existing ID is kept), then their stored fields are checked.
+  const npcSocialCatalog = loadNPCSocialCatalog();
+  seedNeighbourResidents(state, npcSocialCatalog, now);
+  const npcSocialProblems = validateNPCSocialRecords(state, npcSocialCatalog);
+  if (npcSocialProblems.length > 0) {
+    throw new Error(`World data contains an invalid NPC social record: ${npcSocialProblems[0]}.`);
+  }
+  initializeWorldEventState(state, new WorldEventCatalogService());
+  // Record-level checks for the property, government, election, and justice maps. They run on the
+  // completed state (after seeding), so invalid records are rejected rather than loaded silently.
+  assertRecordsValid(validatePropertyRecords(state));
+  assertRecordsValid(validateGovernmentRecords(state));
+  assertRecordsValid(validateElectionRecords(state));
+  assertRecordsValid(validateJusticeRecords(state));
   return state;
 }
 
-function initialState(now: number): PersistentWorldState {
+export function initialState(now: number): PersistentWorldState {
   const catalog = loadLifeCatalog();
   const state: PersistentWorldState = {
-    schemaVersion: 3,
+    schemaVersion: 18,
     worldId: WORLD_ID,
     worldClock: normalizeWorldClock({
       day: catalog.calendar.starting_world_day,
@@ -467,21 +991,163 @@ function initialState(now: number): PersistentWorldState {
     players: {},
     ...emptyLifeMaps(),
     ...emptyCareerMaps(),
+    ...emptyEconomyMaps(),
+    ...emptyBusinessMaps(),
+    ...emptyPropertyMaps(),
+    ...emptyGovernmentMaps(),
+    ...emptyElectionMaps(),
+    ...emptyJusticeMaps(),
+    ...emptyPoliceMaps(),
+    ...emptyMilitaryMaps(),
+    ...emptyCrimeMaps(),
+    ...emptyCultureMaps(),
+    ...emptyEntertainmentMaps(),
+    ...emptySocialMaps(),
+    ...emptyTransportationMaps(),
+    ...emptyNPCMaps(),
+    ...emptyWorldEventMaps(),
   };
   initializeCareerWorldState(state, now);
+  initializeEconomyWorldState(state, now);
+  initializeBusinessWorldState(state);
+  initializePropertyWorldState(state);
+  initializeGovernmentWorldState(state);
+  initializeElectionWorldState(state);
+  initializeJusticeWorldState(state);
+  initializePoliceWorldState(state);
+  initializeMilitaryWorldState(state);
+  initializeCrimeWorldState(state);
+  initializeCultureWorldState(state);
+  initializeEntertainmentWorldState(state);
+  initializeSocialWorldState(state);
+  initializeTransportationWorldState(state);
+  initializeNPCWorldState(state, { year: catalog.calendar.epoch_world_date.year, month: catalog.calendar.epoch_world_date.month, day: catalog.calendar.starting_world_day });
+  initializeWorldEventState(state, new WorldEventCatalogService());
+  seedNeighbourResidents(state, loadNPCSocialCatalog(), now);
   return state;
 }
 
-export class WorldStore {
+/** Raised when a snapshot would exceed the size limit. The previous saved world is left unchanged. */
+export class WorldStateCapacityError extends Error {
+  constructor() {
+    super("world_capacity_reached");
+    this.name = "WorldStateCapacityError";
+    // Refused before any write: the previous world is still the saved one.
+    markSaveOutcome(this, "not_saved");
+  }
+}
+
+/** The storage contract the multiplayer engine depends on (JSON file or PostgreSQL). */
+export interface WorldStoreLike {
+  /** The live in-memory world. Only the engine changes it. */
+  readonly state: PersistentWorldState;
+  /** Save the live world. */
+  flush(): Promise<void>;
+  /**
+   * Save the given snapshot as the authoritative world, without changing the live world. The engine
+   * uses this to commit a creation before merging it into the live world. The snapshot must not be
+   * modified after the call.
+   */
+  saveState(candidate: PersistentWorldState): Promise<void>;
+  /**
+   * True once this store can no longer write the world (another writer took over). A fenced store refuses every save
+   * with an outcome of not_saved. Optional: a store without fencing does not implement it.
+   */
+  isFenced?(): boolean;
+  /**
+   * Stage 36: queue a durable request record. It is written in the same transaction as the next successful save, so it
+   * exists if and only if the world update that applied the request committed. A store without durable records omits it.
+   */
+  queueOperation?(record: import("../persistence/request-records.js").OperationRecord): void;
+  /**
+   * Stage 36: the durable record of a request that some save committed, or undefined. Used when the request is not in
+   * the live world's memory (for example, applied by another process). Throws if the lookup itself fails: the caller
+   * must then refuse the request, not treat it as new.
+   */
+  findOperation?(playerId: string, requestId: string): Promise<import("../persistence/request-records.js").StoredOperation | undefined>;
+}
+
+export type WorldFileFormat = "pretty" | "compact";
+
+/**
+ * Points inside a file save, for fault-injection tests only (see test/file-save-durability.test.mjs).
+ * - before-temp: nothing has been written yet.
+ * - after-temp-sync: the complete temporary file is on disk, and the saved file is still the previous one.
+ * - after-lock-check: the writer lock was checked for this save, immediately before the rename (Stage 35). The
+ *   window between this point and the rename is the residual race that is not closed (see the Stage 35 doc).
+ * - after-rename: the saved file has been replaced; directory sync has not run yet.
+ */
+export type FileWritePhase = "before-temp" | "after-temp-sync" | "after-lock-check" | "after-rename";
+
+export interface WorldStoreOptions {
+  /**
+   * Size limit override for tests and the capacity probe only. It must be a positive integer.
+   * Production code uses the default, WORLD_STATE_LIMIT_BYTES.
+   */
+  readonly maxBytes?: number;
+  /**
+   * Output format for saves. Default "pretty" (the format used before compact output existed), so an existing
+   * file is not converted by a save. "compact" is opt-in (NAIJA_WORLD_STATE_FORMAT=compact) and is for use only
+   * after the saved-world validation in docs/STAGE_28_COMPACT_JSON_ROLLOUT.md has been approved.
+   * Loading accepts both formats.
+   */
+  readonly format?: WorldFileFormat;
+  /** Test-only fault injection at a point in the file save. Production code never sets it. */
+  readonly fileWriteFaultHook?: (phase: FileWritePhase) => void | Promise<void>;
+}
+
+/**
+ * Writes a complete file and flushes its data to stable storage before it returns (fsync). The file is created
+ * exclusively, so an existing file is never overwritten.
+ */
+async function writeFileDurably(path: string, data: string): Promise<void> {
+  const handle = await open(path, "wx", 0o600);
+  try {
+    await handle.writeFile(data, "utf8");
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+}
+
+/**
+ * Flushes a directory entry to stable storage (fsync on the directory), so a completed rename survives a power loss.
+ * Node cannot open a directory on Windows, so this is skipped there. See docs/STAGE_28_PERSISTENCE_SAFETY.md.
+ */
+async function syncDirectory(directory: string): Promise<void> {
+  if (process.platform === "win32") return;
+  const handle = await open(directory, "r");
+  try {
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+}
+
+export class WorldStore implements WorldStoreLike {
   readonly filePath: string;
   readonly state: PersistentWorldState;
+  private readonly maxBytes: number;
+  private readonly format: WorldFileFormat;
+  private readonly fileWriteFaultHook: WorldStoreOptions["fileWriteFaultHook"];
   private writeQueue: Promise<void> = Promise.resolve();
+  /** Outcome of every save this instance has attempted (G1). Reported by health(). */
+  readonly saveStatus = new SaveStatusTracker();
+  /** Set by acquireWriterLock(). A store without a lock (tests, scripts) writes without the token check. */
+  private writerLock: WorldFileWriterLock | null = null;
+  /** Set when the lock was lost. Every later save is refused without touching the file. */
+  private fenced = false;
 
-  constructor(filePath: string, now: number = Date.now()) {
+  constructor(filePath: string, now: number = Date.now(), options: WorldStoreOptions = {}) {
     this.filePath = resolve(filePath);
+    this.format = options.format ?? "pretty";
+    this.fileWriteFaultHook = options.fileWriteFaultHook;
+    if (this.format !== "pretty" && this.format !== "compact") throw new Error('format must be "pretty" or "compact".');
+    this.maxBytes = options.maxBytes ?? WORLD_STATE_LIMIT_BYTES;
+    if (!Number.isSafeInteger(this.maxBytes) || this.maxBytes < 1) throw new Error("maxBytes must be a positive integer.");
     try {
       const size = statSync(this.filePath).size;
-      if (size > MAX_STATE_FILE_BYTES) throw new Error("World data file exceeds the 16 MiB prototype limit.");
+      if (size > this.maxBytes) throw new Error("World data file exceeds the 16 MiB prototype limit.");
       this.state = validateState(JSON.parse(readFileSync(this.filePath, "utf8")) as unknown, now);
     } catch (error) {
       if (isRecord(error) && error.code === "ENOENT") this.state = initialState(now);
@@ -489,17 +1155,110 @@ export class WorldStore {
     }
   }
 
+  /**
+   * Takes the single-writer lock for this world file (Stage 33). The server takes it before it accepts any player, and
+   * refuses to start if another live process holds it. Throws WorldFileLockedError.
+   */
+  acquireWriterLock(): void {
+    if (this.writerLock !== null) return;
+    this.writerLock = WorldFileWriterLock.acquire(this.filePath);
+  }
+
+  /**
+   * Releases the lock after the final save. A crashed process leaves a lock that the next start takes over.
+   * A store that held the lock is fenced once it is released: its file may now belong to another writer, so a save
+   * still queued behind this point must be refused, not written (Stage 44, Stage 43 section 8.3).
+   */
+  releaseWriterLock(): void {
+    if (this.writerLock !== null) this.fenced = true;
+    this.writerLock?.release();
+    this.writerLock = null;
+  }
+
+  isFenced(): boolean {
+    return this.fenced;
+  }
+
   async flush(): Promise<void> {
-    const snapshot = JSON.stringify(this.state, null, 2);
-    if (Buffer.byteLength(snapshot, "utf8") > MAX_STATE_FILE_BYTES) {
-      throw new Error("World data file exceeds the 16 MiB prototype limit.");
+    await this.saveState(this.state);
+  }
+
+  async saveState(candidate: PersistentWorldState): Promise<void> {
+    const started = performance.now();
+    try {
+      await this.writeSnapshot(candidate);
+      monitoring.recordPersistenceFlush(true, performance.now() - started);
+      this.saveStatus.recordSuccess(Date.now());
+    } catch (error) {
+      monitoring.recordPersistenceFlush(false, performance.now() - started);
+      this.saveStatus.recordFailure(classifySaveFailure(error), Date.now());
+      throw error;
     }
+  }
+
+  /**
+   * Health of this file store (development mode). Reports the outcome of the latest save (G1). A file store has no
+   * network dependency, so no other check applies.
+   */
+  async health(): Promise<HealthCheck> {
+    const saves = this.saveStatus.check();
+    return { ...saves, message: `File persistence (development mode); not PostgreSQL. ${saves.message}` };
+  }
+
+  /**
+   * The snapshot is serialized when its turn in the queue comes, so it reflects every earlier save.
+   * A rename is atomic on the same filesystem, so a failed write leaves the previous file in place.
+   */
+  private async writeSnapshot(state: PersistentWorldState): Promise<void> {
     const write = async (): Promise<void> => {
-      await mkdir(dirname(this.filePath), { recursive: true });
+      // Refused before any file operation. A fenced store, or a store whose lock was taken by another process, must
+      // not write: its snapshot may be older than the file that another writer has now.
+      if (this.fenced) throw markSaveOutcome(new WorldFileLockLostError(), "not_saved");
+      if (this.writerLock !== null) {
+        try {
+          this.writerLock.assertHeld();
+        } catch (error) {
+          // Only a confirmed takeover fences the store. A failure to read the lock file is refused for this save only.
+          if (error instanceof WorldFileLockLostError) this.fenced = true;
+          throw markSaveOutcome(error, "not_saved");
+        }
+      }
+      // "pretty" is the default and matches the earlier output. "compact" is opt-in (same content and schema, about a
+      // third smaller). Files in either format load the same way.
+      const snapshot = this.format === "compact" ? JSON.stringify(state) : JSON.stringify(state, null, 2);
+      if (Buffer.byteLength(snapshot, "utf8") > this.maxBytes) throw new WorldStateCapacityError();
       const temporaryPath = `${this.filePath}.${process.pid}.${randomUUID()}.tmp`;
+      // Until the rename, the file on disk is the previous world, so a failure is "not saved". After the rename the new
+      // world is visible, so a failure is "unknown": the save may have happened, even though it reports failure.
+      let renamed = false;
       try {
-        await writeFile(temporaryPath, snapshot, { encoding: "utf8", mode: 0o600 });
+        await mkdir(dirname(this.filePath), { recursive: true });
+        await this.fileWriteFaultHook?.("before-temp");
+        await writeFileDurably(temporaryPath, snapshot);
+        await this.fileWriteFaultHook?.("after-temp-sync");
+        // Stage 35: the lock is checked again immediately before the rename, after the temp file is synced. The first
+        // check above is only the early refusal. This one is the check that a replaced lock file must not pass.
+        // A store released while this save was in progress is fenced, and must not rename either.
+        if (this.fenced) throw markSaveOutcome(new WorldFileLockLostError(), "not_saved");
+        if (this.writerLock !== null) {
+          try {
+            this.writerLock.assertHeld();
+          } catch (error) {
+            if (error instanceof WorldFileLockLostError) this.fenced = true;
+            throw markSaveOutcome(error, "not_saved");
+          }
+        }
+        await this.fileWriteFaultHook?.("after-lock-check");
         await rename(temporaryPath, this.filePath);
+        renamed = true;
+        await this.fileWriteFaultHook?.("after-rename");
+        // The save is reported as successful only after the directory entry for the new file is synced (where the
+        // platform allows it). A failure here means the new file may not survive a power loss; the save is reported
+        // as failed, and the engine retries it.
+        await syncDirectory(dirname(this.filePath));
+        monitoring.recordWorldStateSaved(Buffer.byteLength(snapshot, "utf8"), Object.keys(state.players).length, this.maxBytes);
+      } catch (error) {
+        throw markSaveOutcome(error, renamed ? "unknown" : "not_saved");
       } finally {
         await rm(temporaryPath, { force: true });
       }

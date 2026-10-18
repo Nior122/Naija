@@ -1,7 +1,23 @@
+import type { NPCSocialProfile } from "../npc/types.js";
 import type { GeographicLocation } from "../geography/types.js";
 import type { StudentEducationRecord } from "../education/types.js";
 import type { WorldClockState } from "../life/calendar.js";
 import type { CareerProfileSnapshot, PersistentCareerMaps } from "../careers/types.js";
+import type { EconomyProfileSnapshot, PersistentEconomyMaps } from "../economy/types.js";
+import type { BusinessProfileSnapshot, PersistentBusinessMaps } from "../businesses/types.js";
+import type { PropertyProfileSnapshot, PersistentPropertyMaps, RentalAgreementSnapshot } from "../properties/types.js";
+import type { PersistentGovernmentMaps } from "../government/types.js";
+import type { PersistentElectionMaps } from "../elections/types.js";
+import type { PersistentJusticeMaps } from "../justice/types.js";
+import type { PersistentPoliceMaps, PoliceProfileSnapshot } from "../police/types.js";
+import type { PersistentMilitaryMaps, MilitaryProfileSnapshot } from "../military/types.js";
+import type { PersistentCrimeMaps, CriminalProfileSnapshot } from "../crime/types.js";
+import type { PersistentCultureMaps, CulturalProfileSnapshot } from "../culture/types.js";
+import type { PersistentEntertainmentMaps, EntertainmentProfileSnapshot } from "../entertainment/types.js";
+import type { PersistentSocialMaps } from "../social/types.js";
+import type { PersistentTransportationMaps } from "../transportation/types.js";
+import type { PersistentWorldEventMaps } from "../world-events/types.js";
+import type { PersistentNPCMaps } from "../npc/types.js";
 import type {
   FamilyPersonRecord,
   FamilyRecord,
@@ -13,6 +29,7 @@ import type {
   RelationshipRecord,
   CharacterLifeFields,
 } from "../life/types.js";
+import type { SessionMetadata } from "./session-policy.js";
 
 export const WORLD_ID = "nigeria-main" as const;
 export const MAP_WIDTH = 1600;
@@ -64,6 +81,36 @@ export interface CharacterRecord extends CharacterLifeFields {
   life_profile?: LifeProfileSnapshot;
   /** Private projection of employment data for this character's authenticated session only. */
   career_profile?: CareerProfileSnapshot;
+  /** Private projection of economy data for this character's authenticated session only. */
+  economy_profile?: EconomyProfileSnapshot;
+  /** List of business profile snapshots for businesses this character owns or manages. */
+  business_profiles?: BusinessProfileSnapshot[];
+  /** Stage 42: the NPCs this character can see now, with this character's own bond only. Built by the server. */
+  npc_profiles?: NPCSocialProfile[];
+  /** List of property profile snapshots for properties this character owns. */
+  property_profiles?: PropertyProfileSnapshot[];
+  /** List of rental agreement snapshots for agreements where this character is the tenant. */
+  rental_agreements?: RentalAgreementSnapshot[];
+  /** The character's current government appointments, if any. */
+  government_appointments?: import("../government/types.js").AppointmentSnapshot[];
+  /** The character's political profile, if any. */
+  political_profile?: import("../elections/types.js").PoliticalProfileSnapshot;
+  /** The character's legal profile, if any. */
+  legal_profile?: import("../justice/types.js").LegalProfileSnapshot;
+  /** The character's police profile, if any. */
+  police_profile?: PoliceProfileSnapshot;
+  /** The character's military profile, if any. */
+  military_profile?: MilitaryProfileSnapshot;
+  /** The character's criminal profile, if any. */
+  criminal_profile?: CriminalProfileSnapshot;
+  /** The character's cultural profile, if any. */
+  cultural_profile?: CulturalProfileSnapshot;
+  /** The character's entertainment profile, if any. */
+  entertainment_profile?: EntertainmentProfileSnapshot;
+  /** The character's social network profile, if any. */
+  social_profile?: import("../social/types.js").SocialProfileSnapshot;
+  /** The character's transportation profile, if any. */
+  transportation_profile?: import("../transportation/types.js").TransportationProfileSnapshot;
 }
 
 export interface PersistentPlayer {
@@ -71,13 +118,27 @@ export interface PersistentPlayer {
   tokenHash: string;
   creationKeyHash: string;
   recentRequestIds: string[];
+  /**
+   * Stage 35: the request IDs of recent property changes, with a fingerprint of each request's action and payload. A
+   * repeated ID with the same fingerprint is a duplicate; with a different fingerprint it is refused. Absent on records
+   * created before Stage 35, and then treated as empty. Bounded like recentRequestIds.
+   */
+  recentPropertyRequests?: { request_id: string; fingerprint: string }[];
+  /**
+   * Stage 36: the request IDs of recent consequential requests (money and property), with the command and a fingerprint
+   * of each request. A repeated ID is a duplicate only when command and fingerprint both match; otherwise it is refused.
+   * Bounded like recentRequestIds. Requests recorded before Stage 36 have no entry here and are answered from recentRequestIds.
+   */
+  recentRequestRecords?: { request_id: string; command: string; fingerprint: string }[];
   createdAt: string;
   lastSeen: string;
   character: CharacterRecord;
+  /** Optional session metadata (D-06 log-only groundwork). Absent on records created before it existed. */
+  session?: SessionMetadata;
 }
 
-export interface PersistentWorldState extends PersistentCareerMaps {
-  schemaVersion: 3;
+export interface PersistentWorldState extends PersistentCareerMaps, PersistentEconomyMaps, PersistentBusinessMaps, PersistentPropertyMaps, PersistentGovernmentMaps, PersistentElectionMaps, PersistentJusticeMaps, PersistentPoliceMaps, PersistentMilitaryMaps, PersistentCrimeMaps, PersistentCultureMaps, PersistentEntertainmentMaps, PersistentSocialMaps, PersistentTransportationMaps, PersistentNPCMaps, PersistentWorldEventMaps {
+  schemaVersion: 18;
   worldId: typeof WORLD_ID;
   worldClock: WorldClockState;
   players: Record<string, PersistentPlayer>;

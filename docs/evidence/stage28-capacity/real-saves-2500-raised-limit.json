@@ -1,0 +1,128 @@
+{
+  "mode": "real",
+  "format": "pretty",
+  "label": "Real saves on every creation (temporary file, size limit raised for this run)",
+  "requested_identities": 2500,
+  "created_identities": 2500,
+  "first_failure": null,
+  "size_limit_bytes": 1073741824,
+  "creation_latency_ms": {
+    "count": 2500,
+    "p50": 977.23,
+    "p95": 2783.74,
+    "max": 11910.34
+  },
+  "save_latency_ms": {
+    "count": 2501,
+    "p50": 313.57,
+    "p95": 699.95,
+    "max": 11133.05
+  },
+  "creation_phase_seconds": 2869.29,
+  "final_file_bytes": 58917782,
+  "bytes_per_identity_marginal": 23567,
+  "final_save": null,
+  "shutdown_ms": 693.45,
+  "shutdown_error": null,
+  "memory": [
+    {
+      "identities": 250,
+      "rss_mb": 218.28,
+      "heap_used_mb": 61.85
+    },
+    {
+      "identities": 500,
+      "rss_mb": 286.7,
+      "heap_used_mb": 97.18
+    },
+    {
+      "identities": 750,
+      "rss_mb": 308.39,
+      "heap_used_mb": 83.61
+    },
+    {
+      "identities": 1000,
+      "rss_mb": 430.8,
+      "heap_used_mb": 162.84
+    },
+    {
+      "identities": 1250,
+      "rss_mb": 408.14,
+      "heap_used_mb": 148.77
+    },
+    {
+      "identities": 1500,
+      "rss_mb": 442.21,
+      "heap_used_mb": 134.1
+    },
+    {
+      "identities": 1750,
+      "rss_mb": 459.23,
+      "heap_used_mb": 154.07
+    },
+    {
+      "identities": 2000,
+      "rss_mb": 477.3,
+      "heap_used_mb": 174.86
+    },
+    {
+      "identities": 2250,
+      "rss_mb": 494.29,
+      "heap_used_mb": 195.06
+    },
+    {
+      "identities": 2500,
+      "rss_mb": 567.12,
+      "heap_used_mb": 214.33
+    },
+    {
+      "identities": 2500,
+      "rss_mb": 567.12,
+      "heap_used_mb": 214.34
+    }
+  ],
+  "size_checkpoints": [
+    {
+      "identities": 250,
+      "file_bytes": 5994515
+    },
+    {
+      "identities": 500,
+      "file_bytes": 11836408
+    },
+    {
+      "identities": 750,
+      "file_bytes": 17780213
+    },
+    {
+      "identities": 1000,
+      "file_bytes": 23608049
+    },
+    {
+      "identities": 1250,
+      "file_bytes": 29464364
+    },
+    {
+      "identities": 1500,
+      "file_bytes": 35346038
+    },
+    {
+      "identities": 1750,
+      "file_bytes": 41269290
+    },
+    {
+      "identities": 2000,
+      "file_bytes": 47174843
+    },
+    {
+      "identities": 2250,
+      "file_bytes": 53097610
+    },
+    {
+      "identities": 2500,
+      "file_bytes": 58917782
+    }
+  ],
+  "node": "v22.22.3",
+  "finished_at": "2026-10-10T21:17:50.832Z"
+}

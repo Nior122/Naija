@@ -1,0 +1,755 @@
+{
+  "schema_version": 1,
+  "world_id": "nigeria-main",
+  "notice": "Regional environment profiles for Nigerian states.",
+  "profiles": {
+    "ng:state:ab": {
+      "climate": "tropical",
+      "terrain": "forest",
+      "primary_industries": [
+        "commerce",
+        "agriculture",
+        "manufacturing"
+      ],
+      "languages": [
+        "igbo",
+        "english"
+      ],
+      "cultural_significance": "Commercial hub of southeastern Nigeria",
+      "gameplay_features": [
+        "urban_exploration",
+        "market_trading",
+        "business_ownership"
+      ],
+      "restrictions": []
+    },
+    "ng:state:ad": {
+      "climate": "semi-arid",
+      "terrain": "savanna",
+      "primary_industries": [
+        "agriculture",
+        "livestock",
+        "fishing"
+      ],
+      "languages": [
+        "fulfulde",
+        "hausa",
+        "english"
+      ],
+      "cultural_significance": "Gateway to northeastern Nigeria",
+      "gameplay_features": [
+        "rural_life",
+        "agriculture",
+        "cultural_tourism"
+      ],
+      "restrictions": []
+    },
+    "ng:state:ak": {
+      "climate": "tropical",
+      "terrain": "coastal",
+      "primary_industries": [
+        "oil-and-gas",
+        "agriculture",
+        "fishing"
+      ],
+      "languages": [
+        "ibibio",
+        "efik",
+        "english"
+      ],
+      "cultural_significance": "Oil-rich coastal state",
+      "gameplay_features": [
+        "oil_industry",
+        "coastal_living",
+        "fishing"
+      ],
+      "restrictions": []
+    },
+    "ng:state:an": {
+      "climate": "tropical",
+      "terrain": "forest",
+      "primary_industries": [
+        "commerce",
+        "manufacturing",
+        "agriculture"
+      ],
+      "languages": [
+        "igbo",
+        "english"
+      ],
+      "cultural_significance": "Commercial and industrial center",
+      "gameplay_features": [
+        "urban_exploration",
+        "market_trading",
+        "manufacturing"
+      ],
+      "restrictions": []
+    },
+    "ng:state:ba": {
+      "climate": "semi-arid",
+      "terrain": "savanna",
+      "primary_industries": [
+        "agriculture",
+        "mining",
+        "livestock"
+      ],
+      "languages": [
+        "hausa",
+        "fulfulde",
+        "english"
+      ],
+      "cultural_significance": "Educational center of northeastern Nigeria",
+      "gameplay_features": [
+        "rural_life",
+        "agriculture",
+        "mining"
+      ],
+      "restrictions": []
+    },
+    "ng:state:be": {
+      "climate": "tropical",
+      "terrain": "savanna",
+      "primary_industries": [
+        "agriculture",
+        "livestock"
+      ],
+      "languages": [
+        "tiv",
+        "idoma",
+        "english"
+      ],
+      "cultural_significance": "Food basket of the nation",
+      "gameplay_features": [
+        "agriculture",
+        "rural_life",
+        "cultural_festivals"
+      ],
+      "restrictions": []
+    },
+    "ng:state:bo": {
+      "climate": "arid",
+      "terrain": "savanna",
+      "primary_industries": [
+        "agriculture",
+        "livestock",
+        "trade"
+      ],
+      "languages": [
+        "kanuri",
+        "hausa",
+        "english"
+      ],
+      "cultural_significance": "Historic center of Kanem-Borno Empire",
+      "gameplay_features": [
+        "desert_survival",
+        "cultural_heritage",
+        "trade"
+      ],
+      "restrictions": [
+        "security_zones"
+      ]
+    },
+    "ng:state:by": {
+      "climate": "tropical",
+      "terrain": "coastal",
+      "primary_industries": [
+        "oil-and-gas",
+        "fishing",
+        "agriculture"
+      ],
+      "languages": [
+        "ijaw",
+        "english"
+      ],
+      "cultural_significance": "Oil-rich Niger Delta state",
+      "gameplay_features": [
+        "oil_industry",
+        "river_transport",
+        "fishing"
+      ],
+      "restrictions": []
+    },
+    "ng:state:cr": {
+      "climate": "tropical",
+      "terrain": "forest",
+      "primary_industries": [
+        "tourism",
+        "agriculture",
+        "oil-and-gas"
+      ],
+      "languages": [
+        "efik",
+        "ejagham",
+        "english"
+      ],
+      "cultural_significance": "Tourism capital with Calabar Carnival",
+      "gameplay_features": [
+        "tourism",
+        "cultural_festivals",
+        "rainforest_exploration"
+      ],
+      "restrictions": []
+    },
+    "ng:state:de": {
+      "climate": "tropical",
+      "terrain": "coastal",
+      "primary_industries": [
+        "oil-and-gas",
+        "agriculture",
+        "fishing"
+      ],
+      "languages": [
+        "urhobo",
+        "igor",
+        "english"
+      ],
+      "cultural_significance": "Oil-rich Niger Delta state",
+      "gameplay_features": [
+        "oil_industry",
+        "river_transport",
+        "fishing"
+      ],
+      "restrictions": []
+    },
+    "ng:state:eb": {
+      "climate": "tropical",
+      "terrain": "forest",
+      "primary_industries": [
+        "agriculture",
+        "mining"
+      ],
+      "languages": [
+        "igbo",
+        "english"
+      ],
+      "cultural_significance": "Rice production center",
+      "gameplay_features": [
+        "agriculture",
+        "mining",
+        "rural_life"
+      ],
+      "restrictions": []
+    },
+    "ng:state:ed": {
+      "climate": "tropical",
+      "terrain": "forest",
+      "primary_industries": [
+        "oil-and-gas",
+        "agriculture",
+        "rubber"
+      ],
+      "languages": [
+        "edo",
+        "english"
+      ],
+      "cultural_significance": "Ancient Benin Kingdom heritage",
+      "gameplay_features": [
+        "cultural_heritage",
+        "oil_industry",
+        "agriculture"
+      ],
+      "restrictions": []
+    },
+    "ng:state:ek": {
+      "climate": "tropical",
+      "terrain": "plateau",
+      "primary_industries": [
+        "education",
+        "agriculture"
+      ],
+      "languages": [
+        "yoruba",
+        "english"
+      ],
+      "cultural_significance": "Land of honour, education hub",
+      "gameplay_features": [
+        "education",
+        "agriculture",
+        "cultural_heritage"
+      ],
+      "restrictions": []
+    },
+    "ng:state:en": {
+      "climate": "tropical",
+      "terrain": "plateau",
+      "primary_industries": [
+        "coal-mining",
+        "commerce",
+        "education"
+      ],
+      "languages": [
+        "igbo",
+        "english"
+      ],
+      "cultural_significance": "Coal city, eastern Nigeria hub",
+      "gameplay_features": [
+        "urban_exploration",
+        "mining",
+        "education"
+      ],
+      "restrictions": []
+    },
+    "ng:state:fc": {
+      "climate": "tropical",
+      "terrain": "savanna",
+      "primary_industries": [
+        "government",
+        "services",
+        "real-estate"
+      ],
+      "languages": [
+        "english",
+        "hausa",
+        "yoruba",
+        "igbo"
+      ],
+      "cultural_significance": "Nigeria's capital, center of governance",
+      "gameplay_features": [
+        "government_jobs",
+        "diplomacy",
+        "urban_living"
+      ],
+      "restrictions": []
+    },
+    "ng:state:go": {
+      "climate": "semi-arid",
+      "terrain": "savanna",
+      "primary_industries": [
+        "agriculture",
+        "education"
+      ],
+      "languages": [
+        "hausa",
+        "fulfulde",
+        "english"
+      ],
+      "cultural_significance": "Jewel in the savannah",
+      "gameplay_features": [
+        "education",
+        "agriculture",
+        "rural_life"
+      ],
+      "restrictions": []
+    },
+    "ng:state:im": {
+      "climate": "tropical",
+      "terrain": "forest",
+      "primary_industries": [
+        "oil-and-gas",
+        "commerce",
+        "education"
+      ],
+      "languages": [
+        "igbo",
+        "english"
+      ],
+      "cultural_significance": "Eastern heartland, oil producer",
+      "gameplay_features": [
+        "oil_industry",
+        "urban_exploration",
+        "education"
+      ],
+      "restrictions": []
+    },
+    "ng:state:ji": {
+      "climate": "semi-arid",
+      "terrain": "savanna",
+      "primary_industries": [
+        "agriculture",
+        "livestock"
+      ],
+      "languages": [
+        "hausa",
+        "fulfulde",
+        "english"
+      ],
+      "cultural_significance": "Agricultural state in the north",
+      "gameplay_features": [
+        "agriculture",
+        "rural_life",
+        "cultural_heritage"
+      ],
+      "restrictions": []
+    },
+    "ng:state:kd": {
+      "climate": "tropical",
+      "terrain": "savanna",
+      "primary_industries": [
+        "manufacturing",
+        "agriculture",
+        "education"
+      ],
+      "languages": [
+        "hausa",
+        "english"
+      ],
+      "cultural_significance": "Centre of learning, industrial hub",
+      "gameplay_features": [
+        "urban_exploration",
+        "manufacturing",
+        "education"
+      ],
+      "restrictions": []
+    },
+    "ng:state:ke": {
+      "climate": "semi-arid",
+      "terrain": "savanna",
+      "primary_industries": [
+        "agriculture",
+        "fishing"
+      ],
+      "languages": [
+        "hausa",
+        "english"
+      ],
+      "cultural_significance": "Land of equity",
+      "gameplay_features": [
+        "agriculture",
+        "fishing",
+        "rural_life"
+      ],
+      "restrictions": []
+    },
+    "ng:state:kn": {
+      "climate": "semi-arid",
+      "terrain": "savanna",
+      "primary_industries": [
+        "commerce",
+        "manufacturing",
+        "agriculture"
+      ],
+      "languages": [
+        "hausa",
+        "english"
+      ],
+      "cultural_significance": "Commercial center of northern Nigeria",
+      "gameplay_features": [
+        "market_trading",
+        "commerce",
+        "cultural_heritage"
+      ],
+      "restrictions": []
+    },
+    "ng:state:ko": {
+      "climate": "tropical",
+      "terrain": "savanna",
+      "primary_industries": [
+        "agriculture",
+        "mining",
+        "trade"
+      ],
+      "languages": [
+        "igala",
+        "yoruba",
+        "english"
+      ],
+      "cultural_significance": "Confluence state, central Nigeria",
+      "gameplay_features": [
+        "river_transport",
+        "mining",
+        "trade"
+      ],
+      "restrictions": []
+    },
+    "ng:state:kt": {
+      "climate": "semi-arid",
+      "terrain": "savanna",
+      "primary_industries": [
+        "agriculture",
+        "livestock"
+      ],
+      "languages": [
+        "hausa",
+        "fulfulde",
+        "english"
+      ],
+      "cultural_significance": "Home of hospitality",
+      "gameplay_features": [
+        "agriculture",
+        "rural_life",
+        "cultural_heritage"
+      ],
+      "restrictions": []
+    },
+    "ng:state:kw": {
+      "climate": "tropical",
+      "terrain": "savanna",
+      "primary_industries": [
+        "agriculture",
+        "education"
+      ],
+      "languages": [
+        "yoruba",
+        "english"
+      ],
+      "cultural_significance": "State of harmony",
+      "gameplay_features": [
+        "education",
+        "agriculture",
+        "cultural_heritage"
+      ],
+      "restrictions": []
+    },
+    "ng:state:la": {
+      "climate": "tropical",
+      "terrain": "coastal",
+      "primary_industries": [
+        "commerce",
+        "finance",
+        "entertainment",
+        "technology"
+      ],
+      "languages": [
+        "yoruba",
+        "english"
+      ],
+      "cultural_significance": "Commercial capital of Nigeria, entertainment hub",
+      "gameplay_features": [
+        "urban_exploration",
+        "business_ownership",
+        "entertainment",
+        "tech_industry"
+      ],
+      "restrictions": []
+    },
+    "ng:state:na": {
+      "climate": "tropical",
+      "terrain": "savanna",
+      "primary_industries": [
+        "agriculture",
+        "mining",
+        "tourism"
+      ],
+      "languages": [
+        "english"
+      ],
+      "cultural_significance": "Home of solid minerals",
+      "gameplay_features": [
+        "mining",
+        "tourism",
+        "agriculture"
+      ],
+      "restrictions": []
+    },
+    "ng:state:ni": {
+      "climate": "tropical",
+      "terrain": "savanna",
+      "primary_industries": [
+        "agriculture",
+        "hydroelectric",
+        "tourism"
+      ],
+      "languages": [
+        "hausa",
+        "english"
+      ],
+      "cultural_significance": "Largest state by area, power generation",
+      "gameplay_features": [
+        "tourism",
+        "hydroelectric",
+        "rural_life"
+      ],
+      "restrictions": []
+    },
+    "ng:state:og": {
+      "climate": "tropical",
+      "terrain": "forest",
+      "primary_industries": [
+        "manufacturing",
+        "education",
+        "agriculture"
+      ],
+      "languages": [
+        "yoruba",
+        "english"
+      ],
+      "cultural_significance": "Gateway state, industrial hub",
+      "gameplay_features": [
+        "manufacturing",
+        "education",
+        "urban_exploration"
+      ],
+      "restrictions": []
+    },
+    "ng:state:on": {
+      "climate": "tropical",
+      "terrain": "forest",
+      "primary_industries": [
+        "oil-and-gas",
+        "agriculture",
+        "tourism"
+      ],
+      "languages": [
+        "yoruba",
+        "english"
+      ],
+      "cultural_significance": "Sunshine state, cocoa producer",
+      "gameplay_features": [
+        "agriculture",
+        "oil_industry",
+        "tourism"
+      ],
+      "restrictions": []
+    },
+    "ng:state:os": {
+      "climate": "tropical",
+      "terrain": "forest",
+      "primary_industries": [
+        "education",
+        "agriculture",
+        "tourism"
+      ],
+      "languages": [
+        "yoruba",
+        "english"
+      ],
+      "cultural_significance": "Land of harmony, cultural heritage",
+      "gameplay_features": [
+        "cultural_heritage",
+        "education",
+        "tourism"
+      ],
+      "restrictions": []
+    },
+    "ng:state:oy": {
+      "climate": "tropical",
+      "terrain": "savanna",
+      "primary_industries": [
+        "agriculture",
+        "education",
+        "commerce"
+      ],
+      "languages": [
+        "yoruba",
+        "english"
+      ],
+      "cultural_significance": "Pace setter state, historic Oyo Empire",
+      "gameplay_features": [
+        "cultural_heritage",
+        "education",
+        "agriculture"
+      ],
+      "restrictions": []
+    },
+    "ng:state:pl": {
+      "climate": "montane",
+      "terrain": "plateau",
+      "primary_industries": [
+        "tourism",
+        "agriculture",
+        "mining"
+      ],
+      "languages": [
+        "english"
+      ],
+      "cultural_significance": "Home of peace and tourism",
+      "gameplay_features": [
+        "tourism",
+        "mining",
+        "agriculture"
+      ],
+      "restrictions": []
+    },
+    "ng:state:ri": {
+      "climate": "tropical",
+      "terrain": "coastal",
+      "primary_industries": [
+        "oil-and-gas",
+        "commerce",
+        "fishing"
+      ],
+      "languages": [
+        "english"
+      ],
+      "cultural_significance": "Oil capital, commercial hub",
+      "gameplay_features": [
+        "oil_industry",
+        "urban_exploration",
+        "commerce"
+      ],
+      "restrictions": []
+    },
+    "ng:state:so": {
+      "climate": "arid",
+      "terrain": "savanna",
+      "primary_industries": [
+        "agriculture",
+        "livestock"
+      ],
+      "languages": [
+        "hausa",
+        "fulfulde",
+        "english"
+      ],
+      "cultural_significance": "Seat of the caliphate, spiritual center",
+      "gameplay_features": [
+        "cultural_heritage",
+        "agriculture",
+        "rural_life"
+      ],
+      "restrictions": []
+    },
+    "ng:state:ta": {
+      "climate": "tropical",
+      "terrain": "plateau",
+      "primary_industries": [
+        "agriculture",
+        "tourism"
+      ],
+      "languages": [
+        "english"
+      ],
+      "cultural_significance": "Nature's gift, diverse ecology",
+      "gameplay_features": [
+        "tourism",
+        "agriculture",
+        "nature_exploration"
+      ],
+      "restrictions": []
+    },
+    "ng:state:yo": {
+      "climate": "arid",
+      "terrain": "savanna",
+      "primary_industries": [
+        "agriculture",
+        "livestock"
+      ],
+      "languages": [
+        "hausa",
+        "kanuri",
+        "english"
+      ],
+      "cultural_significance": "Pride of the savannah",
+      "gameplay_features": [
+        "agriculture",
+        "rural_life",
+        "cultural_heritage"
+      ],
+      "restrictions": [
+        "security_zones"
+      ]
+    },
+    "ng:state:za": {
+      "climate": "semi-arid",
+      "terrain": "savanna",
+      "primary_industries": [
+        "mining",
+        "agriculture"
+      ],
+      "languages": [
+        "hausa",
+        "fulfulde",
+        "english"
+      ],
+      "cultural_significance": "Farming state, mineral wealth",
+      "gameplay_features": [
+        "mining",
+        "agriculture",
+        "rural_life"
+      ],
+      "restrictions": [
+        "security_zones"
+      ]
+    }
+  }
+}

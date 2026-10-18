@@ -622,7 +622,7 @@ func _is_scheduled_now(schedule: Dictionary) -> bool:
 func _has_leave_today(value: Variant) -> bool:
 	if not value is Array:
 		return false
-	var today := _character.get("world_date", {})
+	var today: Variant = _character.get("world_date", {})
 	for leave_value in value:
 		if (
 			not leave_value is Dictionary

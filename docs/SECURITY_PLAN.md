@@ -1,5 +1,8 @@
 # Security and Safety Plan
 
+> **Status update (2026-10-11, Stage 28 Foundation Hardening, D-05).** Key-only identity recovery is REFUSED by the server: `identity.create` with an existing creation key returns `identity_recovery_unavailable` and changes nothing. The waiting-period recovery procedure is NOT implemented (no verified notification channel exists). The client no longer repeats `identity.create` with a saved key after `session_invalid`. Statements below that describe key-based recovery as working describe the earlier state. See `docs/STAGE_28_FOUNDATION_HARDENING.md`.
+
+
 Security and player safety are foundational constraints. Stage 2 adds a **bounded local multiplayer prototype**, and Stages 4–6 extend its server authority to education, life and careers; none of this is a public-ready service. Godot runtime behavior—including the new career UI—has not been verified here. Do not expose the prototype to untrusted networks or treat its identity, persistence, or abuse controls as production security.
 
 ## Prototype controls currently implemented

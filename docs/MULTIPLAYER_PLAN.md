@@ -1,5 +1,8 @@
 # Multiplayer and One-World Plan
 
+> **Status update (2026-10-11, Stage 28 Foundation Hardening, D-05).** Key-only identity recovery is REFUSED by the server: `identity.create` with an existing creation key returns `identity_recovery_unavailable` and changes nothing. The waiting-period recovery procedure is NOT implemented (no verified notification channel exists). The client no longer repeats `identity.create` with a saved key after `session_invalid`. Statements below that describe key-based recovery as working describe the earlier state. See `docs/STAGE_28_FOUNDATION_HARDENING.md`.
+
+
 ## Core invariant
 
 There is **one logical Nigeria**: one canonical world identity, one shared world clock and one coherent set of authoritative national state. Never introduce selectable `Server 1 Nigeria`, `Server 2 Nigeria`, or regional copies with independent histories, economies, laws or public events.
@@ -17,7 +20,7 @@ The prototype transport is **JSON over WebSocket** (`ws` on Node and `WebSocketP
 | Area | Current server behavior |
 |---|---|
 | Identity and character | `identity.create` accepts a random recovery key and profile, applies server defaults/allowlists, generates a server ID and persists the character with education/life fields, DOB and unique starter-family records. Only hashes of the recovery key/session token are stored server-side. A recovered identity receives a replacement bearer token. This remains an anonymous prototype, not an account/login system. |
-| Session and presence | `session.resume` validates the token, prevents duplicate live sessions and returns that character, world/clock and the viewer-specific nearby presence list. Public presence includes name/appearance, local scene and map position, optional geographic location, region/chunk IDs and connection state. |
+| Session and presence | `session.resume` validates the token, refuses a revoked session, prevents duplicate live sessions and returns that character, world/clock and the viewer-specific nearby presence list. `session.logout` revokes the current session (see Session lifecycle below). Public presence includes name/appearance, local scene and map position, optional geographic location, region/chunk IDs and connection state. |
 | Movement | Clients send normalized movement direction, running intent and an increasing sequence number—not coordinates, money or character state. The server applies walk/run speed and bounds. If a player has opted into geographic presence and is outdoors, the server derives WGS84 location/admin/chunk fields from its authoritative 1600×900 sample-map position as it moves. |
 | Geographic identity | `geography.enter` accepts only the known `ng:region:ondo:akure-south-core` region ID and only while the server location is the outdoor `town`; it derives coordinates from server position, not client-supplied coordinates/administrative IDs. A geographic profile coordinate is accepted only after region/WGS84 viewport validation. `geography.leave` clears the optional identity. Travel into a non-town subscene clears it; users may opt in again outdoors. |
 | Nearby interest/social | For two geographic players, presence requires the same local scene and region, a cell within one 500 m chunk in each grid axis and at most 1,500 m geographic distance. Chat (600 m) and waves (92 m) use tighter distances. Geographic and legacy-null players are not mixed into global interest lists. Two legacy-null players retain Stage 2 map-unit proximity/chat behavior. |
@@ -31,6 +34,19 @@ The server also bounds WebSocket messages to 8 KiB, defaults to 64 simultaneous 
 ### Prototype protocol outline
 
 The server path defaults to `/ws`. The client sends JSON messages including `identity.create`, `session.resume`, `movement.input`, `world.travel`, `world.bus`, `shop.purchase`, `inventory.consume`, `clinic.care`, `character.rest`, `school.begin`, `school.answer`, `education.action`, `relationship.progress`, `family.childbirth`, `career.action`, `chat.send`, `player.interact`, `geography.enter` and `geography.leave`. `relationship.progress` requests one age-validated, mutually confirmed friendship/romantic progression; `family.childbirth` requires an active marriage and creates an NPC child record. `career.action` sends bounded search, application, shift, leave, promotion, resignation or retirement intent. The server sends `identity.created`, `session.ready`, private `character.snapshot` (including education/life/career projections), filtered public `world.snapshot`, presence events, chat/interactions, school/education/social/family/career results and structured errors. Employer termination and registration are not exposed to players. Outcomes remain server-owned. This protocol is not yet a versioned public compatibility contract.
+
+## Session lifecycle (Stage 28 follow-up, D-06 policy A: log-only)
+
+Each identity's `PersistentPlayer` may carry an optional `session` object: `{ issuedAt?, lastActivityAt, revokedAt? }`.
+
+- **Creation.** A new identity is saved with `issuedAt` and `lastActivityAt` in the same save as the identity, so the metadata and the identity commit together.
+- **Activity.** Any accepted, authenticated command updates `lastActivityAt` in memory, in the same way as `lastSeen`. Duplicate requests do not count. Activity updates are not written to disk on their own.
+- **Legacy records.** A record with no `session` field is never modified on resume or activity, and it is never invalidated for missing metadata. Only logout creates a `session` for such a record, containing `lastActivityAt` and `revokedAt` with no `issuedAt`.
+- **Logout.** `session.logout` is handled before player lookup. It sets `revokedAt`, removes the token from the index, and saves. On a successful save the server detaches the connection, removes the player from presence (`presence.left`), and replies `session.logged_out`. If the save fails, nothing is revoked and the server replies `persistence_failed` or `world_capacity_reached`. Rejected requests change nothing.
+- **Revocation.** Revoked tokens are excluded from the token index at load time, so revocation survives a restart. `session.resume` refuses a revoked record with `session_invalid`.
+- **Policy (log-only).** The server logs one line on each successful resume stating whether the session would exceed 30 days absolute or 7 days inactive (`unknown` when the issue time is missing, for example a legacy record that was only logged out). It does NOT enforce either limit. No session is locked out by age. Logs never contain tokens, token hashes, or creation keys.
+- **Disclosure.** A logged-out identity cannot be resumed. No re-authentication path exists: key-only takeover is refused, and the 24-hour recovery procedure is not implemented. There is no client logout control yet; the client only exposes the request.
+- **Client.** After `session_invalid`, the client does not send `identity.create` with the saved creation key again, including after a relaunch. The client records an `identity_issued` flag in its local cfg. A legacy cfg with a saved token counts as issued.
 
 ### Personal character data versus shared world state
 
@@ -62,6 +78,13 @@ npm run geography:check
 For two local Godot clients under the same OS account, choose different `NAIJA_MULTIPLAYER_SESSION_PATH` values, e.g. `user://naija-client-a.cfg` and `user://naija-client-b.cfg`; create an online character in each. In the outdoor town, toggle **Map data** to join the bounded Akure South sample and inspect a mapped POI. Move between chunks to test nearby presence, chat or a wave. Toggle **Map data** off to leave the geographic interest view. Relaunch with the same config path to check reconnect.
 
 The automated Node tests use real WebSocket connections and temporary files. The current `npm run check` covers lint/build, 11 focused Stage 6 career tests, eight focused education tests, ten focused Stage 5 life tests and retained regressions (48 Node tests total). Career coverage includes catalogue/eligibility, applications/capacity, schedules/work/performance, idempotent payroll, leave, promotion, termination, resignation, retirement/death, schema migration, authenticated action routing and private/public data separation. Life coverage includes calendar/date/age/birthday catch-up, persistent NPC family trees, age-appropriate friendship, adult restrictions, marriage/children, death/history/inheritance hooks, shared-clock multiplayer and save/restart. Education coverage retains secondary progression, assessments, exams, university/ND/HND/training, scholarships, schoolyard co-presence and persistence. Geographic coverage checks co-presence/chunk filtering, entry validation, source/data/coordinate/chunk invariants, identity recovery, chat/rates, clock and HTTP behavior. Godot careers/profile UI, two-window client workflows, local save/restart, Stage 5 rendering and actual Godot runtime are not claimed as tested here.
+
+## Socket reliability: the per-minute snapshot and the heartbeat (Stage 38, R5)
+
+- Each game minute, the server sends each online player a character snapshot. Before Stage 38 this was sent with no check on the socket backlog. A paused or slow reader then accumulated a backlog that grew without limit, and the heartbeat could terminate that live socket, because its pong waited behind the backlog.
+- Stage 38 holds back the per-minute snapshot for a socket whose unsent backlog is over 1 MiB, and sends the latest state once the backlog drains. A held-back snapshot is not dropped. Normal play is below the limit (a design assumption; production snapshot sizes were not measured).
+- The heartbeat is unchanged: it pings every 15 s, and terminates a socket that did not answer the previous ping. Stage 38 adds diagnostic lines that record counts, times, and byte counts only (the termination, a large outbound queue, and an event-loop block over 1 s). No timeout was raised.
+- Verified on this sandbox: the slow-reader and heartbeat tests pass on both backends; the notify-once test passes three of three loaded runs after the fix. The Stage 37 close with code 1006 at 13.97 s is not explained (STAGE_38 report, section 7). Multi-host behaviour is not claimed.
 
 ## Security and prototype limitations
 
